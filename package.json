@@ -1,0 +1,15 @@
+{
+  "name": "voicetalk",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=customer-app",
+    "dev:api": "cd apps/api && python3 -m uvicorn app.main:app --reload --port 8000",
+    "dev:all": "concurrently \"npm run dev:api\" \"npm run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
