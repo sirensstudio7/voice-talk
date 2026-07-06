@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export type Business = {
@@ -205,7 +207,7 @@ export type HealthStatus = {
 };
 
 export async function getHealth(): Promise<HealthStatus> {
-  const response = await fetch(`${API_URL}/health`);
+  const response = await fetchWithTimeout(`${API_URL}/health`, {}, 15000);
   if (!response.ok) {
     throw new Error("Health check failed");
   }

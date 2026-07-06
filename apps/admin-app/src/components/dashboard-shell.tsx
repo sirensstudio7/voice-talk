@@ -46,7 +46,7 @@ function useAiStatus() {
     };
 
     check();
-    const interval = window.setInterval(check, 30_000);
+    const interval = window.setInterval(check, 15_000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
@@ -64,7 +64,12 @@ function AiStatusBadge({ status }: { status: AiStatus }) {
         ? "bg-amber-400 animate-pulse"
         : "bg-gray-400";
 
-  const label = status === "online" ? "AI Online" : status === "checking" ? "Checking AI…" : "AI Offline";
+  const label =
+    status === "online"
+      ? "AI Online"
+      : status === "checking"
+        ? "Checking AI…"
+        : "AI Offline (API waking?)";
 
   return (
     <div
