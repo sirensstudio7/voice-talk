@@ -3,7 +3,7 @@
 import { Bounds, Center, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Suspense, useMemo, useRef } from "react";
-import { Group, SRGBColorSpace, type Material, type Mesh } from "three";
+import { Group, SRGBColorSpace, Texture, type Material, type Mesh } from "three";
 
 const MODEL_PATH = "/models/cart-basket.web.glb";
 const VIEWPORT_HEIGHT_PX = 176;
@@ -21,11 +21,11 @@ function prepareMaterials(root: Group) {
 
     for (const mat of materials) {
       if ("map" in mat && mat.map) {
-        mat.map.colorSpace = SRGBColorSpace;
+        (mat.map as Texture).colorSpace = SRGBColorSpace;
       }
 
       if ("emissiveMap" in mat && mat.emissiveMap) {
-        mat.emissiveMap.colorSpace = SRGBColorSpace;
+        (mat.emissiveMap as Texture).colorSpace = SRGBColorSpace;
       }
 
       mat.needsUpdate = true;
