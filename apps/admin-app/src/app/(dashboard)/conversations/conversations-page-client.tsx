@@ -7,7 +7,7 @@ import { PageHeader, StatCard } from "@/components/ui";
 import { api, type TranscriptMessage, type VoiceSession, type VoiceSessionDetail } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { parseApiDate } from "@/lib/dates";
-import { formatCurrency } from "@voicetalk/shared";
+import { formatCurrency } from "@/lib/currency";
 
 function formatTimestamp(iso: string) {
   const date = parseApiDate(iso);

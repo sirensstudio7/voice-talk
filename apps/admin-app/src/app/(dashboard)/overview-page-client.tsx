@@ -6,7 +6,7 @@ import { DailyOrdersChart, TopProductsPanel } from "@/components/stats-charts";
 import { PageHeader, StatCard } from "@/components/ui";
 import { api, type StatsDailyPoint, type StatsOverview, type TopProductStat } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { formatCurrency } from "@voicetalk/shared";
+import { formatCurrency } from "@/lib/currency";
 
 function formatDuration(seconds: number | null | undefined) {
   if (seconds == null) return "—";

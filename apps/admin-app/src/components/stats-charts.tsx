@@ -1,5 +1,5 @@
 import type { StatsDailyPoint, TopProductStat } from "@/lib/api";
-import { formatCurrency } from "@voicetalk/shared";
+import { formatCurrency } from "@/lib/currency";
 
 function formatShortDate(isoDate: string): string {
   const date = new Date(`${isoDate}T12:00:00`);

@@ -7,7 +7,7 @@ import { ChevronDown, Pencil, Plus, Search, Trash2, Upload, UtensilsCrossed, X }
 import { PageHeader, StatCard } from "@/components/ui";
 import { api, type Product } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { CURRENCY_PREFIX, formatCurrency } from "@voicetalk/shared";
+import { CURRENCY_PREFIX, formatCurrency } from "@/lib/currency";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 

@@ -8,7 +8,7 @@ import { DateFilter } from "@/components/date-filter";
 import { api, type Order } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatFilterDateLabel, parseApiDate } from "@/lib/dates";
-import { formatCurrency } from "@voicetalk/shared";
+import { formatCurrency } from "@/lib/currency";
 
 function formatOrderTime(iso: string) {
   return parseApiDate(iso).toLocaleTimeString(undefined, {
