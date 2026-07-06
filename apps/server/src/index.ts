@@ -6,7 +6,7 @@ import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { closeDb } from "./db/client.js";
-import { env, getAllowedOrigins, hasSupabaseStorage } from "./env.js";
+import { env, hasSupabaseStorage, isAllowedOrigin } from "./env.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerPublicRoutes } from "./routes/public.js";
@@ -16,7 +16,13 @@ import { getUploadRoot } from "./storage/index.js";
 const app = Fastify({ logger: true });
 
 await app.register(cors, {
-  origin: getAllowedOrigins(),
+  origin: (origin, cb) => {
+    if (isAllowedOrigin(origin)) {
+      cb(null, true);
+      return;
+    }
+    cb(new Error("Origin not allowed"), false);
+  },
   credentials: true,
 });
 

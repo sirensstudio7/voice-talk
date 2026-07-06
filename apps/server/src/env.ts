@@ -31,6 +31,29 @@ export function getAllowedOrigins(): string[] | true {
   return raw.split(",").map((o) => o.trim()).filter(Boolean);
 }
 
+/** CORS origin check: explicit list + localhost + any Vercel deploy URL. */
+export function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return true;
+
+  const allowed = getAllowedOrigins();
+  if (allowed === true) return true;
+  if (allowed.includes(origin)) return true;
+
+  try {
+    const { hostname, protocol } = new URL(origin);
+    if (protocol === "http:" && (hostname === "localhost" || hostname === "127.0.0.1")) {
+      return true;
+    }
+    if (protocol === "https:" && hostname.endsWith(".vercel.app")) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
 export function hasSupabaseStorage(): boolean {
   return Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY);
 }
