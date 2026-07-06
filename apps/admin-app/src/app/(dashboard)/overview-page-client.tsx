@@ -6,6 +6,7 @@ import { DailyOrdersChart, TopProductsPanel } from "@/components/stats-charts";
 import { PageHeader, StatCard } from "@/components/ui";
 import { api, type StatsDailyPoint, type StatsOverview, type TopProductStat } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { formatCurrency } from "@voicetalk/shared";
 
 function formatDuration(seconds: number | null | undefined) {
   if (seconds == null) return "—";
@@ -52,8 +53,8 @@ export function OverviewPageClient() {
       <div className="grid gap-[16px] md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <StatCard label="Sessions today" value={String(stats?.sessions_today ?? 0)} />
         <StatCard label="Orders today" value={String(stats?.orders_today ?? 0)} />
-        <StatCard label="Revenue today" value={`$${stats?.revenue_today?.toFixed(2) ?? "0.00"}`} />
-        <StatCard label="Avg order value" value={`$${stats?.avg_order_value?.toFixed(2) ?? "0.00"}`} />
+        <StatCard label="Revenue today" value={formatCurrency(stats?.revenue_today ?? 0)} />
+        <StatCard label="Avg order value" value={formatCurrency(stats?.avg_order_value ?? 0)} />
         <StatCard
           label="Avg call duration"
           value={formatDuration(stats?.avg_call_duration_seconds)}

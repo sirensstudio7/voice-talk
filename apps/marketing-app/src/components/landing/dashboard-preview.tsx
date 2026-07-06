@@ -15,6 +15,8 @@ import {
   Store,
 } from "lucide-react";
 
+import { formatCurrency } from "@voicetalk/shared";
+
 const NAV: Array<{
   label: string;
   icon: (typeof LayoutGrid);
@@ -34,8 +36,8 @@ const NAV: Array<{
 const STATS: Array<{ label: string; value: string; hint?: string }> = [
   { label: "Sessions today", value: "24" },
   { label: "Orders today", value: "18" },
-  { label: "Revenue today", value: "$142.50" },
-  { label: "Avg order value", value: "$7.92" },
+  { label: "Revenue today", value: formatCurrency(1_280_000) },
+  { label: "Avg order value", value: formatCurrency(71_000) },
   { label: "Avg call duration", value: "2m 14s", hint: "All-time average" },
   { label: "Active sessions", value: "3", hint: "Live voice sessions" },
 ];
@@ -43,11 +45,11 @@ const STATS: Array<{ label: string; value: string; hint?: string }> = [
 const CHART = [28, 42, 35, 58, 44, 72, 51, 66, 48, 74, 61, 80, 55, 68];
 
 const TOP_PRODUCTS = [
-  { name: "Iced Latte", orders: 42, revenue: 168 },
-  { name: "Croissant", orders: 31, revenue: 93 },
-  { name: "Flat White", orders: 24, revenue: 96 },
-  { name: "Avocado Toast", orders: 18, revenue: 126 },
-  { name: "Cold Brew", orders: 15, revenue: 60 },
+  { name: "Iced Latte", orders: 42, revenue: 1_890_000 },
+  { name: "Croissant", orders: 31, revenue: 868_000 },
+  { name: "Flat White", orders: 24, revenue: 1_080_000 },
+  { name: "Avocado Toast", orders: 18, revenue: 1_170_000 },
+  { name: "Cold Brew", orders: 15, revenue: 600_000 },
 ] as const;
 
 function NavItem({
@@ -173,7 +175,7 @@ export function DashboardPreview() {
                   </div>
                   <div>
                     <p className="text-slate-400">Total revenue</p>
-                    <p className="font-semibold tabular-nums text-orange-600">$1,472.50</p>
+                    <p className="font-semibold tabular-nums text-orange-600">{formatCurrency(14_725_000)}</p>
                   </div>
                 </div>
               </div>
@@ -206,7 +208,7 @@ export function DashboardPreview() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-xs font-medium text-slate-900 sm:text-sm">{product.name}</p>
                       <p className="text-[10px] text-slate-500 sm:text-xs">
-                        {product.orders} orders · ${product.revenue.toFixed(2)}
+                        {product.orders} orders · {formatCurrency(product.revenue)}
                       </p>
                     </div>
                   </li>

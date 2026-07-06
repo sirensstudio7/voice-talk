@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@voicetalk/avatar": "*",
+    "@voicetalk/shared": "*",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "lucide-react": "^1.22.0",

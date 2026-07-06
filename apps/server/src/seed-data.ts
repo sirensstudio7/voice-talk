@@ -19,7 +19,7 @@ export const PRODUCTS = [
   {
     id: "latte",
     name: "Latte",
-    price: 5.0,
+    price: 45000,
     category: "Coffee",
     description: "Espresso with steamed milk.",
     image_url:
@@ -28,7 +28,7 @@ export const PRODUCTS = [
   {
     id: "cappuccino",
     name: "Cappuccino",
-    price: 5.0,
+    price: 45000,
     category: "Coffee",
     description: "Equal parts espresso, steamed milk, and foam.",
     image_url:
@@ -37,7 +37,7 @@ export const PRODUCTS = [
   {
     id: "americano",
     name: "Americano",
-    price: 4.0,
+    price: 35000,
     category: "Coffee",
     description: "Espresso with hot water.",
     image_url:
@@ -46,7 +46,7 @@ export const PRODUCTS = [
   {
     id: "mocha",
     name: "Mocha",
-    price: 5.5,
+    price: 52000,
     category: "Coffee",
     description: "Espresso, chocolate, and steamed milk.",
     image_url:
@@ -55,7 +55,7 @@ export const PRODUCTS = [
   {
     id: "cold-brew",
     name: "Cold Brew",
-    price: 4.5,
+    price: 40000,
     category: "Coffee",
     description: "Slow-steeped iced coffee.",
     image_url:
@@ -64,7 +64,7 @@ export const PRODUCTS = [
   {
     id: "croissant",
     name: "Butter Croissant",
-    price: 3.0,
+    price: 28000,
     category: "Pastry",
     description: "Flaky, buttery classic croissant.",
     image_url:
@@ -73,7 +73,7 @@ export const PRODUCTS = [
   {
     id: "muffin",
     name: "Blueberry Muffin",
-    price: 3.5,
+    price: 32000,
     category: "Pastry",
     description: "Baked fresh with wild blueberries.",
     image_url:
@@ -82,7 +82,7 @@ export const PRODUCTS = [
   {
     id: "bagel",
     name: "Everything Bagel",
-    price: 2.5,
+    price: 25000,
     category: "Pastry",
     description: "Toasted everything bagel.",
     image_url:
@@ -91,7 +91,7 @@ export const PRODUCTS = [
   {
     id: "sandwich",
     name: "Egg Sandwich",
-    price: 6.5,
+    price: 65000,
     category: "Food",
     description: "Egg, cheese, and your choice of bread.",
     image_url:
@@ -100,7 +100,7 @@ export const PRODUCTS = [
   {
     id: "water",
     name: "Sparkling Water",
-    price: 2.0,
+    price: 18000,
     category: "Drinks",
     description: "Chilled sparkling water.",
     image_url:

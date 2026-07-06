@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { usePaymentQr } from "@/hooks/use-payment-qr";
 import type { OrderState } from "@/types/voice";
+import { formatCurrency } from "@voicetalk/shared";
 
 interface PaymentStepProps {
   order: OrderState;
@@ -72,13 +73,13 @@ export function PaymentStep({ order, onPaid, onExpired }: PaymentStepProps) {
               <span className="text-slate-700">
                 {item.quantity}× {item.name}
               </span>
-              <span className="font-semibold text-slate-900">${item.subtotal.toFixed(2)}</span>
+              <span className="font-semibold text-slate-900">{formatCurrency(item.subtotal)}</span>
             </li>
           ))}
         </ul>
         <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
           <span className="text-sm font-medium text-slate-600">Total to pay</span>
-          <span className="text-xl font-bold text-slate-900">${order.total.toFixed(2)}</span>
+          <span className="text-xl font-bold text-slate-900">{formatCurrency(order.total)}</span>
         </div>
       </div>
 
@@ -139,7 +140,7 @@ export function PaymentStep({ order, onPaid, onExpired }: PaymentStepProps) {
         </div>
 
         <p className="mt-3 text-sm font-semibold text-slate-900">
-          Pay ${order.total.toFixed(2)} via PayNow, DuitNow, or your banking app
+          Pay {formatCurrency(order.total)} via QRIS or your banking app
         </p>
       </div>
 

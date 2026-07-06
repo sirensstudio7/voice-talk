@@ -10,6 +10,7 @@ import { slideOverBackdropClass, slideOverPanelClass, useSlideOver } from "@/com
 import { useBusinessSlug } from "@/context/business-context";
 import { fetchMenu, menuFetchErrorMessage, type MenuProduct } from "@/lib/menu-api";
 import { useSessionStore } from "@/store/session-store";
+import { formatCurrency } from "@voicetalk/shared";
 
 function resolveMediaUrl(path: string): string {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -123,15 +124,15 @@ function MenuProductCard({ item }: MenuProductCardProps) {
           {item.original_price && item.original_price > item.price ? (
             <div className="flex flex-col">
               <p className="text-sm font-bold tabular-nums tracking-tight text-orange-600">
-                ${item.price.toFixed(2)}
+                {formatCurrency(item.price)}
               </p>
               <p className="text-[11px] tabular-nums text-slate-400 line-through">
-                ${item.original_price.toFixed(2)}
+                {formatCurrency(item.original_price)}
               </p>
             </div>
           ) : (
             <p className="text-sm font-bold tabular-nums tracking-tight text-slate-900">
-              ${item.price.toFixed(2)}
+              {formatCurrency(item.price)}
             </p>
           )}
           {canAddItems ? (
@@ -192,6 +193,12 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
     visibleRef.current = visible;
   }, [visible]);
 
+  useEffect(() => {
+    if (menuCacheSlug !== businessSlug || !menuCache) return;
+    setBusiness(menuCache.business);
+    setProducts(menuCache.products);
+  }, [businessSlug, menuCache, menuCacheSlug]);
+
   const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
   const showContinue = checkoutPhase === "shopping" && itemCount > 0;
 
@@ -201,7 +208,8 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
   };
 
   const loadMenu = useCallback(async () => {
-    const hasCache = menuCacheSlug === businessSlug && (menuCache?.products.length ?? 0) > 0;
+    const { menuCache: cached, menuCacheSlug: cachedSlug } = useSessionStore.getState();
+    const hasCache = cachedSlug === businessSlug && (cached?.products.length ?? 0) > 0;
     if (!hasCache) {
       setLoading(true);
     }
@@ -225,7 +233,7 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
     } finally {
       if (visibleRef.current) setLoading(false);
     }
-  }, [businessSlug, menuCache?.products.length, menuCacheSlug, setMenuCache]);
+  }, [businessSlug, setMenuCache]);
 
   useEffect(() => {
     if (!visible) return;
@@ -354,12 +362,19 @@ export function StoreMenuPanelRoot() {
 }
 
 export function StoreMenuButton() {
+  const businessSlug = useBusinessSlug();
   const openMenuPanel = useSessionStore((s) => s.openMenuPanel);
+  const refreshMenuCache = useSessionStore((s) => s.refreshMenuCache);
+
+  const handleClick = () => {
+    openMenuPanel();
+    void refreshMenuCache(businessSlug);
+  };
 
   return (
     <button
       type="button"
-      onClick={openMenuPanel}
+      onClick={handleClick}
       className="absolute bottom-8 right-6 z-10 flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] backdrop-blur-sm transition hover:bg-white hover:scale-[1.02] active:scale-[0.98]"
       aria-label="View menu"
     >

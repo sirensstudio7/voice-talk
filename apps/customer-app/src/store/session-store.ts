@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import { emitOrderSync } from "@/lib/order-sync";
-import type { MenuResponse } from "@/lib/menu-api";
+import { fetchMenu, type MenuResponse } from "@/lib/menu-api";
 import {
   AiLanguage,
   CheckoutPhase,
@@ -184,6 +184,7 @@ interface SessionStore {
   completeFlyAnimation: (id: string) => void;
   setMenuProductMeta: (products: Record<string, MenuProductMeta>) => void;
   setMenuCache: (slug: string, menu: MenuResponse) => void;
+  refreshMenuCache: (slug: string) => Promise<boolean>;
   setAssistantName: (name: string) => void;
   hydrateLanguageFromStorage: () => void;
   decrementItemFromOrder: (productId: string) => void;
@@ -192,7 +193,7 @@ interface SessionStore {
   reset: (options?: { keepTranscript?: boolean }) => void;
 }
 
-export const useSessionStore = create<SessionStore>((set) => ({
+export const useSessionStore = create<SessionStore>((set, get) => ({
   status: "idle",
   isTalking: false,
   error: null,
@@ -449,6 +450,15 @@ export const useSessionStore = create<SessionStore>((set) => ({
         menuProductMeta,
       };
     }),
+  refreshMenuCache: async (slug) => {
+    try {
+      const menu = await fetchMenu(slug);
+      get().setMenuCache(slug, menu);
+      return true;
+    } catch {
+      return false;
+    }
+  },
   setAssistantName: (name) =>
     set({ assistantName: name.trim() || "Eva" }),
   hydrateLanguageFromStorage: () => {

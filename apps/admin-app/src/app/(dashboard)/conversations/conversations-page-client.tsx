@@ -7,6 +7,7 @@ import { PageHeader, StatCard } from "@/components/ui";
 import { api, type TranscriptMessage, type VoiceSession, type VoiceSessionDetail } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { parseApiDate } from "@/lib/dates";
+import { formatCurrency } from "@voicetalk/shared";
 
 function formatTimestamp(iso: string) {
   const date = parseApiDate(iso);
@@ -168,7 +169,7 @@ function ConversationRow({
               </span>
               {session.order_id ? (
                 <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                  Order ${session.order_total?.toFixed(2) ?? "—"}
+                  Order {session.order_total != null ? formatCurrency(session.order_total) : "—"}
                 </span>
               ) : (
                 <span className="inline-flex items-center rounded-full bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-500">

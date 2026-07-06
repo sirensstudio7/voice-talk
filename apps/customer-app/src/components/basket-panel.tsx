@@ -15,6 +15,7 @@ import { useBusinessSlug } from "@/context/business-context";
 import { persistConfirmedOrder } from "@/lib/order-api";
 import { useSessionStore } from "@/store/session-store";
 import type { CheckoutPhase, OrderItem } from "@/types/voice";
+import { formatCurrency } from "@voicetalk/shared";
 
 const BasketModel3D = dynamic(
   () => import("@/components/basket-model-3d").then((mod) => ({ default: mod.BasketModel3D })),
@@ -137,7 +138,7 @@ function BasketItemRow({
           <p className="truncate text-[15px] font-semibold leading-tight text-slate-900">
             {item.name}
           </p>
-          <p className="mt-1 text-xs text-slate-500">${item.price.toFixed(2)} each</p>
+          <p className="mt-1 text-xs text-slate-500">{formatCurrency(item.price)} each</p>
           {item.note && !isEditingNote ? (
             <p className="mt-1 line-clamp-2 text-xs text-slate-500">{item.note}</p>
           ) : null}
@@ -145,7 +146,7 @@ function BasketItemRow({
 
         <div className="flex shrink-0 flex-col items-end gap-2.5">
           <p className="text-[15px] font-bold tabular-nums tracking-tight text-slate-900">
-            ${item.subtotal.toFixed(2)}
+            {formatCurrency(item.subtotal)}
           </p>
 
           {canEdit ? (
@@ -357,7 +358,7 @@ export function CheckoutPanel() {
             <div className="mb-4 flex items-end justify-between">
               <span className="text-sm text-slate-500">Total</span>
               <span className="text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
-                ${order.total.toFixed(2)}
+                {formatCurrency(order.total)}
               </span>
             </div>
             {confirmError ? (

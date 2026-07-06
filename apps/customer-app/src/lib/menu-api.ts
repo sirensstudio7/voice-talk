@@ -25,6 +25,7 @@ export interface MenuResponse {
 export async function fetchMenu(businessSlug: string): Promise<MenuResponse> {
   const response = await fetchWithTimeout(
     `${API_URL}/menu?business=${encodeURIComponent(businessSlug)}`,
+    { cache: "no-store" },
   );
   if (!response.ok) {
     throw new Error("Unable to load menu.");

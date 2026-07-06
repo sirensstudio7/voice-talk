@@ -3,6 +3,7 @@
 import { CheckCircle2 } from "lucide-react";
 
 import type { OrderState } from "@/types/voice";
+import { formatCurrency } from "@voicetalk/shared";
 
 interface OrderCompleteStepProps {
   order: OrderState;
@@ -36,13 +37,13 @@ export function OrderCompleteStep({ order, onNewOrder }: OrderCompleteStepProps)
               <span className="text-slate-700">
                 {item.quantity}× {item.name}
               </span>
-              <span className="font-semibold text-slate-900">${item.subtotal.toFixed(2)}</span>
+              <span className="font-semibold text-slate-900">{formatCurrency(item.subtotal)}</span>
             </li>
           ))}
         </ul>
         <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
           <span className="text-sm font-medium text-slate-600">Total paid</span>
-          <span className="text-lg font-bold text-slate-900">${order.total.toFixed(2)}</span>
+          <span className="text-lg font-bold text-slate-900">{formatCurrency(order.total)}</span>
         </div>
       </div>
 

@@ -8,6 +8,7 @@ import { DateFilter } from "@/components/date-filter";
 import { api, type Order } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatFilterDateLabel, parseApiDate } from "@/lib/dates";
+import { formatCurrency } from "@voicetalk/shared";
 
 function formatOrderTime(iso: string) {
   return parseApiDate(iso).toLocaleTimeString(undefined, {
@@ -171,7 +172,7 @@ function OrderRow({
           </div>
 
           <div className="flex shrink-0 flex-col items-end gap-1.5">
-            <p className="text-xl font-bold tabular-nums text-slate-900">${order.total.toFixed(2)}</p>
+            <p className="text-xl font-bold tabular-nums text-slate-900">{formatCurrency(order.total)}</p>
             <div className="flex items-center gap-2">
               <StatusBadge status={order.status} />
               <ChevronDown
@@ -201,11 +202,11 @@ function OrderRow({
                     {item.name}
                   </p>
                   {item.quantity > 1 ? (
-                    <p className="text-xs text-slate-400">${item.price.toFixed(2)} each</p>
+                    <p className="text-xs text-slate-400">{formatCurrency(item.price)} each</p>
                   ) : null}
                 </div>
                 <span className="shrink-0 font-semibold tabular-nums text-slate-900">
-                  ${item.subtotal.toFixed(2)}
+                  {formatCurrency(item.subtotal)}
                 </span>
               </li>
             ))}
@@ -231,7 +232,7 @@ function OrderRow({
               </p>
             </div>
             <p className="shrink-0 text-base font-bold tabular-nums text-slate-900">
-              ${order.total.toFixed(2)}
+              {formatCurrency(order.total)}
             </p>
           </div>
         </div>
@@ -303,8 +304,8 @@ export function OrdersPageClient() {
       {orders.length > 0 ? (
         <div className="mb-6 grid gap-[16px] sm:grid-cols-3">
           <StatCard label="Total orders" value={String(stats.count)} />
-          <StatCard label="Total revenue" value={`$${stats.revenue.toFixed(2)}`} />
-          <StatCard label="Average order" value={`$${stats.avg.toFixed(2)}`} />
+          <StatCard label="Total revenue" value={formatCurrency(stats.revenue)} />
+          <StatCard label="Average order" value={formatCurrency(stats.avg)} />
         </div>
       ) : null}
 
@@ -329,8 +330,8 @@ export function OrdersPageClient() {
               <div className="mb-2 flex items-baseline justify-between px-1">
                 <h2 className="text-sm font-semibold text-slate-900">{group.label}</h2>
                 <p className="text-xs text-slate-500">
-                  {group.orders.length} {group.orders.length === 1 ? "order" : "orders"} · $
-                  {group.revenue.toFixed(2)}
+                  {group.orders.length} {group.orders.length === 1 ? "order" : "orders"} ·{" "}
+                  {formatCurrency(group.revenue)}
                 </p>
               </div>
 

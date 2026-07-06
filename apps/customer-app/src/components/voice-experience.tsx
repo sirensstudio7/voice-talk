@@ -53,7 +53,7 @@ export function VoiceExperience() {
   useEffect(() => {
     let cancelled = false;
 
-    void (async () => {
+    const preloadMenu = async () => {
       try {
         const data = await fetchMenu(businessSlug);
         if (cancelled) return;
@@ -69,10 +69,19 @@ export function VoiceExperience() {
       } catch {
         // Menu preload is optional for fly animation fallback.
       }
-    })();
+    };
+
+    void preloadMenu();
+
+    const handleFocus = () => {
+      void preloadMenu();
+    };
+
+    window.addEventListener("focus", handleFocus);
 
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", handleFocus);
     };
   }, [businessSlug, setAssistantName, setMenuCache]);
 

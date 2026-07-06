@@ -7,6 +7,7 @@ import { ChevronDown, Pencil, Plus, Search, Trash2, Upload, UtensilsCrossed, X }
 import { PageHeader, StatCard } from "@/components/ui";
 import { api, type Product } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { CURRENCY_PREFIX, formatCurrency } from "@voicetalk/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -24,7 +25,7 @@ const emptyForm = {
 
 function effectivePrice(price: number, discountPercent: number): number {
   if (discountPercent <= 0) return price;
-  return Math.round(price * (1 - Math.min(discountPercent, 100) / 100) * 100) / 100;
+  return Math.round(price * (1 - Math.min(discountPercent, 100) / 100));
 }
 
 function ProductPrice({ price, discountPercent }: { price: number; discountPercent: number }) {
@@ -33,9 +34,9 @@ function ProductPrice({ price, discountPercent }: { price: number; discountPerce
     return (
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <p className="text-base font-bold tabular-nums tracking-tight text-orange-600">
-          ${salePrice.toFixed(2)}
+          {formatCurrency(salePrice)}
         </p>
-        <p className="text-sm tabular-nums text-slate-400 line-through">${price.toFixed(2)}</p>
+        <p className="text-sm tabular-nums text-slate-400 line-through">{formatCurrency(price)}</p>
         <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700">
           -{discountPercent % 1 === 0 ? discountPercent : discountPercent.toFixed(1)}%
         </span>
@@ -45,7 +46,7 @@ function ProductPrice({ price, discountPercent }: { price: number; discountPerce
 
   return (
     <p className="text-base font-bold tabular-nums tracking-tight text-slate-900">
-      ${price.toFixed(2)}
+      {formatCurrency(price)}
     </p>
   );
 }
@@ -476,15 +477,15 @@ function ProductFormModal({
               <FormField id="product-price" label="Price">
                 <div className="relative">
                   <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm text-slate-400">
-                    $
+                    {CURRENCY_PREFIX}
                   </span>
                   <input
                     id="product-price"
                     type="number"
                     min="0"
-                    step="0.01"
-                    className={`${inputClassName} pl-7 tabular-nums`}
-                    placeholder="5.00"
+                    step="1"
+                    className={`${inputClassName} pl-9 tabular-nums`}
+                    placeholder="45000"
                     value={form.price}
                     onChange={(event) => onChange({ ...form, price: event.target.value })}
                   />
@@ -519,8 +520,7 @@ function ProductFormModal({
               !Number.isNaN(Number(form.discount_percent)) &&
               Number(form.discount_percent) > 0 ? (
                 <p className="mt-1.5 text-xs text-orange-600">
-                  Sale price: $
-                  {effectivePrice(Number(form.price), Number(form.discount_percent)).toFixed(2)}
+                  Sale price: {formatCurrency(effectivePrice(Number(form.price), Number(form.discount_percent)))}
                 </p>
               ) : null}
             </FormField>

@@ -1,4 +1,5 @@
 import type { StatsDailyPoint, TopProductStat } from "@/lib/api";
+import { formatCurrency } from "@voicetalk/shared";
 
 function formatShortDate(isoDate: string): string {
   const date = new Date(`${isoDate}T12:00:00`);
@@ -31,7 +32,7 @@ export function DailyOrdersChart({
             </div>
             <div>
               <p className="text-xs text-slate-400">Total revenue</p>
-              <p className="font-semibold tabular-nums text-orange-600">${totalRevenue.toFixed(2)}</p>
+              <p className="font-semibold tabular-nums text-orange-600">{formatCurrency(totalRevenue)}</p>
             </div>
           </div>
         ) : null}
@@ -61,7 +62,7 @@ export function DailyOrdersChart({
                       height: `${heightPercent}%`,
                       minHeight: point.orders > 0 ? "8px" : "2px",
                     }}
-                    title={`${formatShortDate(point.date)}: ${point.orders} orders · $${point.revenue.toFixed(2)}`}
+                    title={`${formatShortDate(point.date)}: ${point.orders} orders · ${formatCurrency(point.revenue)}`}
                   />
                 </div>
                 <span className="text-[10px] text-slate-400">{point.date.slice(8)}</span>
@@ -115,7 +116,7 @@ export function TopProductsPanel({
                   <p className="mt-0.5 text-xs text-slate-500">{product.quantity} sold</p>
                 </div>
                 <p className="shrink-0 text-sm font-semibold tabular-nums text-orange-600">
-                  ${product.revenue.toFixed(2)}
+                  {formatCurrency(product.revenue)}
                 </p>
               </div>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">

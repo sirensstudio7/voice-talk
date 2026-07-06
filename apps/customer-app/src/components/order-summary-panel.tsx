@@ -3,6 +3,7 @@
 import { ChevronRight, ShoppingBag } from "lucide-react";
 
 import { useSessionStore } from "@/store/session-store";
+import { formatCurrency } from "@voicetalk/shared";
 
 export function OrderSummaryPanel() {
   const { order } = useSessionStore();
@@ -24,7 +25,7 @@ export function OrderSummaryPanel() {
             {order.items.map((item) => `${item.quantity}x ${item.name}`).join(", ")}
           </p>
           <p className="text-xs font-medium text-slate-600">
-            ${order.total.toFixed(2)} · {order.status}
+            {formatCurrency(order.total)} · {order.status}
           </p>
         </div>
 
