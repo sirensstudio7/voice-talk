@@ -13,7 +13,17 @@ import { useSessionStore } from "@/store/session-store";
 import { OrderState, TranscriptMessage } from "@/types/voice";
 
 function buildWsUrl(businessSlug: string, language: string): string {
-  const base = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/session";
+  let base = process.env.NEXT_PUBLIC_WS_URL;
+  if (!base && process.env.NEXT_PUBLIC_API_URL) {
+    const api = new URL(process.env.NEXT_PUBLIC_API_URL);
+    api.protocol = api.protocol === "https:" ? "wss:" : "ws:";
+    api.pathname = "/ws/session";
+    api.search = "";
+    base = api.toString();
+  }
+  if (!base) {
+    base = "ws://localhost:8000/ws/session";
+  }
   const url = new URL(base);
   url.searchParams.set("business", businessSlug);
   url.searchParams.set("language", language);

@@ -56,7 +56,7 @@ const start = async () => {
   console.info(`Default business slug: ${env.DEFAULT_BUSINESS_SLUG}`);
   console.info(`Supabase storage: ${hasSupabaseStorage()}`);
 
-  await app.listen({ port: env.API_PORT, host: "0.0.0.0" });
+  await app.listen({ port: env.PORT ?? env.API_PORT, host: "0.0.0.0" });
 };
 
 process.on("SIGINT", async () => {

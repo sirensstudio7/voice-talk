@@ -14,6 +14,8 @@ const envSchema = z.object({
   JWT_SECRET: z.string().default("dev-secret-change-in-production"),
   JWT_EXPIRE_HOURS: z.coerce.number().default(72),
   API_PORT: z.coerce.number().default(8000),
+  /** Render/Railway set PORT; prefer it over API_PORT in production. */
+  PORT: z.coerce.number().optional(),
   DEFAULT_BUSINESS_SLUG: z.string().default("sunrise-coffee"),
   ADMIN_EMAIL: z.string().default("admin@sunrise.coffee"),
   ADMIN_PASSWORD: z.string().default("admin123"),
