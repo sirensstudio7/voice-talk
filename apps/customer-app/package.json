@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 6670",
+    "dev": "npm run api:ensure --prefix ../.. && next dev -p 6670",
     "build": "next build",
     "start": "next start -p 6670",
     "lint": "eslint"
   },
   "dependencies": {
+    "@voicetalk/avatar": "*",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "lucide-react": "^1.22.0",

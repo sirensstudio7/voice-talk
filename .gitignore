@@ -11,3 +11,6 @@ dist/
 .next/
 .DS_Store
 *.egg-info/
+.demo-*.log
+.api.log
+apps/server/uploads/

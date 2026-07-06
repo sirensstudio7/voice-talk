@@ -1,15 +1,19 @@
 "use client";
 
-import { ChevronRight, ShoppingBag } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef } from "react";
 
+import { LanguageToggle } from "@/components/voice-controls";
 import { useSessionStore } from "@/store/session-store";
+import { AiLanguage } from "@/types/voice";
 
-export function TranscriptPanel() {
+type TranscriptPanelProps = {
+  onLanguageChange: (language: AiLanguage) => void;
+};
+
+export function TranscriptPanel({ onLanguageChange }: TranscriptPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { transcript, order } = useSessionStore();
-  const hasOrder = order.items.length > 0;
+  const { transcript, language } = useSessionStore();
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -20,10 +24,11 @@ export function TranscriptPanel() {
 
   return (
     <div className="flex max-h-[min(600px,100%)] min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white/95 shadow-lg backdrop-blur-sm">
-      <div className="shrink-0 border-b border-slate-100 px-4 py-2.5">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           Conversation
         </p>
+        <LanguageToggle value={language} onChange={onLanguageChange} />
       </div>
 
       <div
@@ -75,30 +80,6 @@ export function TranscriptPanel() {
           })
         )}
       </div>
-
-      {hasOrder ? (
-        <div className="shrink-0 border-t border-slate-100 px-3 py-3">
-          <div className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-600">
-              <ShoppingBag className="h-4 w-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                Live Order
-              </p>
-              <p className="truncate text-sm font-semibold text-slate-900">
-                {order.items
-                  .map((item) => `${item.quantity}x ${item.name}`)
-                  .join(", ")}
-              </p>
-              <p className="text-xs text-slate-600">
-                ${order.total.toFixed(2)} · {order.status}
-              </p>
-            </div>
-            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

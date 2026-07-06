@@ -4,38 +4,74 @@ Phase 1 voice vertical slice for the AI Cashier demo.
 
 ## Stack
 
-- `apps/api` — FastAPI + Gemini Live API + order tools
-- `apps/customer-app` — Next.js customer voice UI
+- `apps/server` — Fastify + Gemini Live API + Supabase Postgres + multi-tenant admin API
+- `apps/customer-app` — Next.js customer voice UI (`/b/{slug}`)
+- `apps/admin-app` — Next.js admin dashboard (menu, knowledge, AI rules, orders, analytics)
+- `apps/marketing-app` — Next.js marketing landing page
+- `supabase/` — Postgres schema migrations + Storage bucket setup
 
 ## Setup
 
 ### 1. Environment
 
-Copy `.env.example` to `.env` and set `GEMINI_API_KEY`.
+Copy `.env.example` to `.env` and configure:
 
-Get a free key from [Google AI Studio](https://aistudio.google.com/apikey).
+- `GEMINI_API_KEY` — from [Google AI Studio](https://aistudio.google.com/apikey)
+- `DATABASE_URL` — Supabase Postgres connection pooler URL (port 6543)
+- `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` — for file uploads (optional locally; falls back to `apps/server/uploads/`)
 
-### 2. API
+For local Postgres without Supabase:
 
 ```bash
-cd apps/api
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+docker compose up -d postgres
+# DATABASE_URL defaults to postgresql://postgres:postgres@localhost:5432/voicetalk
 ```
 
-### 3. Customer app
+### 2. Database
 
 ```bash
-cd apps/customer-app
 npm install
+npm run seed:db
+```
+
+This runs the schema migration and seeds Sunrise Coffee + admin user.
+
+### 3. API server
+
+```bash
+npm run dev:api
+```
+
+Or from `apps/server`: `npm run dev`
+
+Health check: [http://localhost:8000/health](http://localhost:8000/health)
+
+### 4. Customer app
+
+```bash
 npm run dev
 ```
 
-Open [http://localhost:6670](http://localhost:6670).
+Open [http://localhost:6670/b/sunrise-coffee](http://localhost:6670/b/sunrise-coffee).
 
 > Note: Next.js blocks port 6666 (reserved for IRC). Use **6670** instead.
+
+### 5. Admin dashboard
+
+```bash
+npm run dev:admin
+```
+
+Open [http://localhost:6680](http://localhost:6680) and sign in:
+
+- Email: `admin@sunrise.coffee`
+- Password: `admin123`
+
+Or run everything together:
+
+```bash
+npm run dev:all
+```
 
 ## Try it
 
@@ -45,43 +81,95 @@ Open [http://localhost:6670](http://localhost:6670).
 
 ## API endpoints
 
+**Public (customer app)**
+
 - `GET /health`
-- `GET /menu`
-- `WS /ws/session`
+- `GET /menu?business={slug}`
+- `GET /businesses/{slug}`
+- `WS /ws/session?business={slug}`
+
+**Admin (JWT)**
+
+- `POST /admin/auth/login`
+- `GET /admin/businesses`
+- CRUD: `/admin/businesses/{id}/products`, `/knowledge`, `/ai-rules`
+- `GET /admin/businesses/{id}/orders`
+- Stats: `/stats/overview`, `/stats/daily`, `/stats/top-products`
 
 ## Notes
 
 - Seed business: Sunrise Coffee
 - Voice provider: Gemini Live (free tier)
 - Push-to-talk for MVP simplicity
+- File uploads use Supabase Storage in production; local disk fallback for dev
 
 ## Deploy for demo
 
 Repo: [github.com/sirensstudio7/voice-talk](https://github.com/sirensstudio7/voice-talk)
 
-### 1. API on Render
+### Recommended: Cloudflare Tunnel (free, no credit card)
 
-1. Connect the GitHub repo on [Render](https://render.com)
-2. Use **Blueprint** with `render.yaml`, or create a Web Service manually:
-   - Root Directory: `apps/api`
-   - Build: `pip install -r requirements.txt`
-   - Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-3. Set `GEMINI_API_KEY` in Render environment variables
-4. Test: `https://YOUR-API.onrender.com/health`
+Share a public HTTPS link while running the app on your Mac.
 
-### 2. Frontend on Vercel
+**Prerequisites**
 
-1. Import the repo on [Vercel](https://vercel.com)
-2. Set **Root Directory** to `apps/customer-app`
-3. Add environment variables (replace with your Render URL):
-
-```
-NEXT_PUBLIC_API_URL=https://YOUR-API.onrender.com
-NEXT_PUBLIC_WS_URL=wss://YOUR-API.onrender.com/ws/session
+```bash
+brew install cloudflared   # one-time
 ```
 
-4. Deploy and open the Vercel URL in Chrome or Safari (mic required)
+Make sure `.env` has `GEMINI_API_KEY` and `DATABASE_URL` set.
 
-### Demo tip
+**Start the demo**
 
-Render free tier sleeps when idle. Hit `/health` ~1 minute before your demo to wake the API.
+```bash
+cd /Users/rio/Desktop/voicetalk
+npm run demo:cloudflare
+```
+
+The script will:
+
+1. Start the Fastify API on port 8000
+2. Open a Cloudflare tunnel for the API
+3. Start the Next.js app on port 6670
+4. Open a Cloudflare tunnel for the frontend
+5. Print a **shareable link** like `https://xxxx.trycloudflare.com`
+
+Keep the terminal open during the demo. Press **Ctrl+C** to stop everything.
+
+Open the shareable link in **Chrome or Safari** and allow the microphone.
+
+> Tunnel URLs change each time you run the script. That is normal for the free quick tunnel.
+
+### Optional: Vercel frontend + Cloudflare API tunnel
+
+Use this if you want a stable frontend URL on Vercel:
+
+1. Deploy `apps/customer-app` on [Vercel](https://vercel.com) (no credit card)
+2. Run API + tunnel locally:
+
+```bash
+npm run dev:api
+cloudflared tunnel --url http://localhost:8000
+```
+
+3. Copy the `https://....trycloudflare.com` URL
+4. In Vercel → Settings → Environment Variables:
+
+```
+NEXT_PUBLIC_API_URL=https://YOUR-TUNNEL-URL.trycloudflare.com
+NEXT_PUBLIC_WS_URL=wss://YOUR-TUNNEL-URL.trycloudflare.com/ws/session
+```
+
+5. Redeploy Vercel, then keep your Mac running with the API + tunnel during the demo
+
+### Production: Supabase + custom domain
+
+1. **Supabase:** [`docs/SUPABASE-SETUP.md`](docs/SUPABASE-SETUP.md) — create project, run SQL, copy credentials
+2. **Deploy:** [`docs/DEPLOY-DOMAIN.md`](docs/DEPLOY-DOMAIN.md) — Render (API) + Vercel (apps) + DNS
+
+```bash
+npm run setup:supabase   # checklist
+npm run check:deploy     # validate env before deploy
+```
+
+Template: [`.env.production.example`](.env.production.example)

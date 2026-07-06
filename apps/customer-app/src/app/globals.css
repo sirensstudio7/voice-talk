@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@source "../../../../packages/avatar/src/**/*.{ts,tsx}";
+
 :root {
   --background: #e8f0f6;
   --foreground: #0f172a;
@@ -97,6 +99,52 @@ body {
   animation-delay: 1s;
 }
 
+.language-toggle-pill {
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+}
+
+.language-toggle-pill--animated {
+  transition:
+    transform 0.36s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.36s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform, width;
+}
+
+.header-status-label {
+  line-height: 17px;
+}
+
+.header-status-label--enter {
+  animation: header-status-in 0.32s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.header-status-label--leave {
+  animation: header-status-out 0.32s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@keyframes header-status-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes header-status-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, -100%, 0);
+  }
+}
+
 @keyframes avatar-pulse {
   0%,
   100% {
@@ -109,4 +157,23 @@ body {
 
 .avatar-talking {
   animation: avatar-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes basket-bump {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.08);
+  }
+  70% {
+    transform: scale(0.97);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.basket-bump {
+  animation: basket-bump 450ms cubic-bezier(0.34, 1.3, 0.64, 1);
 }

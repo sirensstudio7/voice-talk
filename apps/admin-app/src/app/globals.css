@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@source "../../../../packages/avatar/src/**/*.{ts,tsx}";
+
+@theme {
+  --sidebar-width: 16rem;
+  --header-height: 3.5rem;
+}
+
+:root {
+  --background: #f1f5f9;
+  --foreground: #0f172a;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --primary: #f97316;
+  --muted: #64748b;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}

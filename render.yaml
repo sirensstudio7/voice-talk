@@ -1,14 +1,24 @@
 services:
   - type: web
     name: voice-talk-api
-    runtime: python
+    runtime: node
     plan: free
-    rootDir: apps/api
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    rootDir: apps/server
+    buildCommand: npm install && npm run build
+    startCommand: node dist/src/index.js
     healthCheckPath: /health
     envVars:
       - key: GEMINI_MODEL
         value: gemini-3.1-flash-live-preview
       - key: GEMINI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ALLOWED_ORIGINS
         sync: false

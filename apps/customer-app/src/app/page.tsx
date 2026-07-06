@@ -1,5 +1,5 @@
-import { VoiceExperience } from "@/components/voice-experience";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <VoiceExperience />;
+  redirect("/b/sunrise-coffee");
 }

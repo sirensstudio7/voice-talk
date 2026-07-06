@@ -20,6 +20,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} h-full`}>
+      <head>
+        <link
+          rel="preload"
+          href="/models/angelica3d.web.glb"
+          as="fetch"
+          crossOrigin="anonymous"
+        />
+      </head>
       <body className="min-h-full bg-slate-100 text-slate-900 antialiased">{children}</body>
     </html>
   );

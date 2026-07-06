@@ -2,12 +2,24 @@
   "name": "voicetalk",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=customer-app",
-    "dev:api": "cd apps/api && python3 -m uvicorn app.main:app --reload --port 8000",
-    "dev:all": "concurrently \"npm run dev:api\" \"npm run dev\""
+    "dev": "npm run api:ensure && npm run dev --workspace=customer-app",
+    "dev:admin": "npm run api:ensure && npm run dev --workspace=admin-app",
+    "dev:marketing": "npm run dev --workspace=marketing-app",
+    "dev:api": "bash scripts/dev-api.sh start",
+    "api:restart": "bash scripts/dev-api.sh restart",
+    "api:stop": "bash scripts/dev-api.sh stop",
+    "api:health": "bash scripts/dev-api.sh health",
+    "api:ensure": "bash scripts/dev-api.sh ensure",
+    "dev:all": "concurrently \"npm run dev:api\" \"npm run dev\" \"npm run dev:admin\" \"npm run dev:marketing\"",
+    "seed:db": "npm run db:migrate --workspace=server && npm run seed --workspace=server",
+    "setup:db": "bash scripts/setup-db.sh",
+    "setup:supabase": "bash scripts/setup-supabase.sh",
+    "check:deploy": "bash scripts/check-deploy-env.sh",
+    "demo:cloudflare": "bash scripts/demo-cloudflare.sh"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
