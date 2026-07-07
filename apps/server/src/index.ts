@@ -21,7 +21,8 @@ await app.register(cors, {
       cb(null, true);
       return;
     }
-    cb(new Error("Origin not allowed"), false);
+    app.log.warn({ origin }, "CORS origin not allowed");
+    cb(null, false);
   },
   credentials: true,
 });
@@ -51,10 +52,12 @@ app.setErrorHandler((error, _request, reply) => {
 });
 
 const start = async () => {
+  const allowedOrigins = env.ALLOWED_ORIGINS?.trim();
   console.info(`Gemini model default: ${env.GEMINI_MODEL}`);
   console.info(`API key configured: ${Boolean(env.GEMINI_API_KEY)}`);
   console.info(`Default business slug: ${env.DEFAULT_BUSINESS_SLUG}`);
   console.info(`Supabase storage: ${hasSupabaseStorage()}`);
+  console.info(`CORS allowed origins: ${allowedOrigins || "(all)"}`);
 
   await app.listen({ port: env.PORT ?? env.API_PORT, host: "0.0.0.0" });
 };

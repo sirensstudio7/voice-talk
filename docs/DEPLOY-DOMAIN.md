@@ -47,8 +47,10 @@ SUPABASE_SERVICE_ROLE_KEY=eyJ...
 GEMINI_API_KEY=...
 JWT_SECRET=<long-random-string>
 GEMINI_MODEL=gemini-3.1-flash-live-preview
-ALLOWED_ORIGINS=https://app.yourdomain.com,https://admin.yourdomain.com,https://yourdomain.com
+ALLOWED_ORIGINS=https://app.yourdomain.com,https://admin.yourdomain.com,yourdomain.com
 ```
+
+Domain-only entries (e.g. `yourdomain.com`) allow any `https://` subdomain. Host-only entries (e.g. `app.yourdomain.com`) match that host exactly.
 
 4. Deploy → note Render URL: `https://voice-talk-api.onrender.com`
 5. Test: `https://voice-talk-api.onrender.com/health`

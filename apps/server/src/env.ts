@@ -33,22 +33,57 @@ export function getAllowedOrigins(): string[] | true {
   return raw.split(",").map((o) => o.trim()).filter(Boolean);
 }
 
+function normalizeOrigin(origin: string): string {
+  return origin.replace(/\/+$/, "");
+}
+
+type AllowedEntry =
+  | { kind: "origin"; value: string }
+  | { kind: "hostname"; value: string }
+  | { kind: "domain"; value: string };
+
+function parseAllowedEntry(entry: string): AllowedEntry {
+  if (/^https?:\/\//i.test(entry)) {
+    return { kind: "origin", value: normalizeOrigin(entry) };
+  }
+  const host = entry.startsWith("*.") ? entry.slice(2) : entry;
+  if (host.includes(".")) {
+    return { kind: "domain", value: host.toLowerCase() };
+  }
+  return { kind: "hostname", value: host.toLowerCase() };
+}
+
+function hostnameMatchesDomain(hostname: string, domain: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === domain || host.endsWith(`.${domain}`);
+}
+
 /** CORS origin check: explicit list + localhost + any Vercel deploy URL. */
 export function isAllowedOrigin(origin: string | undefined): boolean {
   if (!origin) return true;
 
   const allowed = getAllowedOrigins();
   if (allowed === true) return true;
-  if (allowed.includes(origin)) return true;
+
+  const normalized = normalizeOrigin(origin);
 
   try {
-    const { hostname, protocol } = new URL(origin);
-    if (protocol === "http:" && (hostname === "localhost" || hostname === "127.0.0.1")) {
-      return true;
+    const { hostname, protocol } = new URL(normalized);
+    const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+
+    for (const entry of allowed) {
+      const parsed = parseAllowedEntry(entry);
+      if (parsed.kind === "origin" && parsed.value === normalized) return true;
+      if (parsed.kind === "hostname" && hostname.toLowerCase() === parsed.value) {
+        return protocol === "https:" || isLocalhost;
+      }
+      if (parsed.kind === "domain" && hostnameMatchesDomain(hostname, parsed.value)) {
+        return protocol === "https:" || isLocalhost;
+      }
     }
-    if (protocol === "https:" && hostname.endsWith(".vercel.app")) {
-      return true;
-    }
+
+    if (protocol === "http:" && isLocalhost) return true;
+    if (protocol === "https:" && hostname.endsWith(".vercel.app")) return true;
   } catch {
     return false;
   }
