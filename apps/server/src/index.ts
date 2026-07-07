@@ -6,7 +6,7 @@ import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { closeDb } from "./db/client.js";
-import { env, hasSupabaseStorage, isAllowedOrigin } from "./env.js";
+import { env, getProductionDomains, hasSupabaseStorage, isAllowedOrigin } from "./env.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerPublicRoutes } from "./routes/public.js";
@@ -53,11 +53,13 @@ app.setErrorHandler((error, _request, reply) => {
 
 const start = async () => {
   const allowedOrigins = env.ALLOWED_ORIGINS?.trim();
+  const productionDomains = getProductionDomains();
   console.info(`Gemini model default: ${env.GEMINI_MODEL}`);
   console.info(`API key configured: ${Boolean(env.GEMINI_API_KEY)}`);
   console.info(`Default business slug: ${env.DEFAULT_BUSINESS_SLUG}`);
   console.info(`Supabase storage: ${hasSupabaseStorage()}`);
   console.info(`CORS allowed origins: ${allowedOrigins || "(all)"}`);
+  console.info(`CORS production domains: ${productionDomains.join(", ") || "(none)"}`);
 
   await app.listen({ port: env.PORT ?? env.API_PORT, host: "0.0.0.0" });
 };

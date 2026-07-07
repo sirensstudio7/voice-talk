@@ -23,6 +23,8 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   /** Comma-separated origins for CORS, e.g. https://app.example.com,https://admin.example.com */
   ALLOWED_ORIGINS: z.string().optional(),
+  /** Comma-separated production domains always allowed over HTTPS, e.g. lorescale.com */
+  PRODUCTION_DOMAIN: z.string().default("lorescale.com"),
 });
 
 export const env = envSchema.parse(process.env);
@@ -58,7 +60,13 @@ function hostnameMatchesDomain(hostname: string, domain: string): boolean {
   return host === domain || host.endsWith(`.${domain}`);
 }
 
-/** CORS origin check: explicit list + localhost + any Vercel deploy URL. */
+export function getProductionDomains(): string[] {
+  const raw = env.PRODUCTION_DOMAIN?.trim();
+  if (!raw) return [];
+  return raw.split(",").map((d) => d.trim()).filter(Boolean);
+}
+
+/** CORS origin check: explicit list + production domains + localhost + any Vercel deploy URL. */
 export function isAllowedOrigin(origin: string | undefined): boolean {
   if (!origin) return true;
 
@@ -71,7 +79,9 @@ export function isAllowedOrigin(origin: string | undefined): boolean {
     const { hostname, protocol } = new URL(normalized);
     const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
 
-    for (const entry of allowed) {
+    const entries = [...allowed, ...getProductionDomains()];
+
+    for (const entry of entries) {
       const parsed = parseAllowedEntry(entry);
       if (parsed.kind === "origin" && parsed.value === normalized) return true;
       if (parsed.kind === "hostname" && hostname.toLowerCase() === parsed.value) {
