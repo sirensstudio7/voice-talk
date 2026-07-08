@@ -2,7 +2,7 @@ const DEFAULT_DEMO_SLUG = "sunrise-coffee";
 const isProduction = process.env.NODE_ENV === "production";
 
 const DEFAULT_CUSTOMER_URL = isProduction
-  ? "https://voice.lorescale.com"
+  ? "https://voice-talk-customer.vercel.app"
   : "http://localhost:6670";
 const DEFAULT_ADMIN_URL = isProduction
   ? "https://app.lorescale.com"
