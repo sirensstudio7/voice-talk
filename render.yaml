@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     rootDir: apps/server
-    buildCommand: npm install && npm run build
+    buildCommand: cd ../.. && npm install && npm run build --workspace=server
     startCommand: node dist/src/index.js
     healthCheckPath: /health
     envVars:

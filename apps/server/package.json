@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "npm run build --prefix ../../packages/shared && tsc",
     "start": "node dist/src/index.js",
     "seed": "tsx scripts/seed.ts",
     "db:migrate": "tsx scripts/migrate.ts",

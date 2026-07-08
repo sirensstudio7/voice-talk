@@ -1,7 +1,7 @@
-export { CURRENCY_PREFIX, formatCurrency } from "./currency";
+export { CURRENCY_PREFIX, formatCurrency } from "./currency.js";
 export {
   getBusinessCapabilities,
   normalizePrimaryUseCase,
   type BusinessCapabilities,
   type PrimaryUseCase,
-} from "./business-capabilities";
+} from "./business-capabilities.js";
