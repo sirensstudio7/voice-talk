@@ -25,6 +25,7 @@ await app.register(cors, {
     cb(null, false);
   },
   credentials: true,
+  methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
 });
 
 await app.register(multipart, { limits: { fileSize: 5 * 1024 * 1024 } });

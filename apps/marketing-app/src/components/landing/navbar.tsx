@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Mic } from "lucide-react";
 
 import { adminLoginUrl, demoUrl } from "@/lib/site-links";
 
@@ -12,13 +11,10 @@ const NAV_LINKS = [
 
 export function Navbar() {
   return (
-    <header className="fixed inset-x-0 top-0 z-50">
-      <div className="glass-nav mx-auto flex h-16 max-w-6xl items-center justify-between border-b border-black/[0.04] px-4 sm:px-6 lg:px-8">
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-black/[0.06] bg-white">
+      <div className="landing-container flex h-16 items-center justify-between">
         <Link href="/" className="flex items-center gap-2 text-[#181818]">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 ring-1 ring-black/[0.06]">
-            <Mic className="h-4 w-4" aria-hidden />
-          </span>
-          <span className="text-lg font-semibold tracking-tight">Lore</span>
+          <span className="text-lg font-semibold tracking-tight">Lorescale</span>
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">

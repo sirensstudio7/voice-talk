@@ -1,27 +1,44 @@
-import { Check } from "lucide-react";
+"use client";
+
+import { useState } from "react";
 
 import { adminLoginUrl } from "@/lib/site-links";
 
-const PLANS = [
+type Plan = {
+  name: string;
+  description: string;
+  features: readonly string[];
+  cta: string;
+  href: string;
+  highlighted?: boolean;
+  monthlyPrice?: number;
+  yearlyPrice?: number;
+  priceLabel?: string;
+};
+
+const PLANS: readonly Plan[] = [
   {
     name: "Starter",
-    price: "$49",
-    period: "/mo",
-    description: "Single location getting started with voice ordering.",
+    monthlyPrice: 49,
+    yearlyPrice: 470,
+    description:
+      "For one location getting started with voice ordering. Launch fast with menu setup and a shareable store link.",
     features: [
       "1 store location",
       "Voice ordering + menu",
       "Payment QR checkout",
       "Basic analytics",
+      "Email support",
     ],
     cta: "Start free trial",
-    highlighted: false,
+    href: adminLoginUrl,
   },
   {
     name: "Growth",
-    price: "$149",
-    period: "/mo",
-    description: "Growing brands that need control and insights.",
+    monthlyPrice: 149,
+    yearlyPrice: 1430,
+    description:
+      "For growing brands with multiple locations. More control over AI, branding, and order insights as you scale.",
     features: [
       "Up to 5 locations",
       "Custom appearance",
@@ -29,14 +46,15 @@ const PLANS = [
       "Orders & conversation history",
       "Advanced analytics",
     ],
-    cta: "Start free trial",
+    cta: "Get growth",
+    href: adminLoginUrl,
     highlighted: true,
   },
   {
     name: "Enterprise",
-    price: "Custom",
-    period: "",
-    description: "Multi-brand operators with custom needs.",
+    priceLabel: "Custom",
+    description:
+      "For multi-brand operators with custom needs. Dedicated support, SLAs, and integrations built for scale.",
     features: [
       "Unlimited locations",
       "Custom AI models & SLA",
@@ -44,75 +62,141 @@ const PLANS = [
       "SSO & custom integrations",
     ],
     cta: "Contact sales",
-    highlighted: false,
+    href: "mailto:hello@lore.app",
   },
 ];
 
-export function PricingSection() {
+function BillingToggle({
+  yearly,
+  onChange,
+}: {
+  yearly: boolean;
+  onChange: (yearly: boolean) => void;
+}) {
+  const [morphing, setMorphing] = useState(false);
+
+  function handleToggle() {
+    setMorphing(true);
+    onChange(!yearly);
+    window.setTimeout(() => setMorphing(false), 500);
+  }
+
   return (
-    <section id="pricing" className="bg-slate-50 py-24">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className="text-sm font-semibold uppercase tracking-wide text-orange-500">Pricing</p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-            Simple plans that scale with you
-          </h2>
-          <p className="mt-4 text-base leading-relaxed text-slate-600">
-            Placeholder pricing for launch. All plans include core voice ordering — pick what fits
-            your operation.
-          </p>
+    <div className="flex items-center justify-center gap-3">
+      <span
+        className={`text-sm transition-colors duration-300 ${yearly ? "text-white/40" : "text-white"}`}
+      >
+        Monthly
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={yearly}
+        aria-label="Toggle yearly billing"
+        onClick={handleToggle}
+        className={`relative h-7 w-12 rounded-full border transition-colors duration-300 ${
+          yearly ? "border-[#FF4081]/40 bg-[#FF4081]/15" : "border-white/40 bg-white/10"
+        }`}
+      >
+        <span
+          className={`absolute top-1/2 h-5 -translate-y-1/2 rounded-full bg-[#FF4081] transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+            morphing ? "w-6" : "w-5"
+          } ${
+            yearly
+              ? `${morphing ? "left-[calc(100%-1.5rem-0.25rem)]" : "left-[calc(100%-1.25rem-0.25rem)]"} shadow-[0_0_12px_rgba(255,64,129,0.35)]`
+              : "left-1"
+          }`}
+        />
+      </button>
+      <span
+        className={`text-sm transition-colors duration-300 ${yearly ? "text-white" : "text-white/40"}`}
+      >
+        Yearly
+      </span>
+    </div>
+  );
+}
+
+function PlanBullet({ label }: { label: string }) {
+  return (
+    <li className="flex items-center gap-3">
+      <span className="h-1.5 w-1.5 shrink-0 bg-white" aria-hidden />
+      <span className="text-sm text-white">{label}</span>
+    </li>
+  );
+}
+
+function PricingCard({ plan, yearly }: { plan: Plan; yearly: boolean }) {
+  const period = yearly ? "/year" : "/mo";
+  const price =
+    plan.priceLabel ??
+    `$${yearly ? plan.yearlyPrice : plan.monthlyPrice}`;
+
+  return (
+    <article className="relative flex h-full min-h-[580px] flex-col bg-black p-8 sm:min-h-[620px] sm:p-10">
+      <div className="relative text-center">
+        <h3 className="text-lg font-medium text-white">{plan.name}</h3>
+        <div className="mt-4 flex items-end justify-center gap-1">
+          <span className="text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+            {price}
+          </span>
+          {plan.priceLabel ? null : (
+            <span className="pb-1 text-sm text-white">{period}</span>
+          )}
         </div>
+        <p className="mt-3 text-sm text-white/60">{plan.description}</p>
+      </div>
 
-        <div className="mt-14 grid gap-6 lg:grid-cols-3">
-          {PLANS.map((plan) => (
-            <article
-              key={plan.name}
-              className={`flex flex-col rounded-2xl border p-8 ${
-                plan.highlighted
-                  ? "border-orange-200 bg-white shadow-xl shadow-orange-500/10 ring-1 ring-orange-100"
-                  : "border-slate-200 bg-white shadow-sm"
-              }`}
-            >
-              {plan.highlighted ? (
-                <span className="mb-4 inline-flex w-fit rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
-                  Most popular
-                </span>
-              ) : (
-                <span className="mb-4 h-6" />
-              )}
+      <a
+        href={plan.href}
+        className={`relative mt-8 inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-medium transition ${
+          plan.highlighted
+            ? "bg-[#FF4081] text-white hover:bg-[#ff5a96]"
+            : "border border-white bg-white text-black hover:bg-white/90"
+        }`}
+      >
+        {plan.cta}
+      </a>
 
-              <h3 className="text-lg font-semibold text-slate-900">{plan.name}</h3>
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-4xl font-semibold tracking-tight text-slate-900">
-                  {plan.price}
-                </span>
-                {plan.period ? (
-                  <span className="text-sm text-slate-500">{plan.period}</span>
-                ) : null}
-              </div>
-              <p className="mt-3 text-sm leading-relaxed text-slate-600">{plan.description}</p>
+      <ul className="relative mt-8 flex flex-1 flex-col gap-3">
+        {plan.features.map((feature) => (
+          <PlanBullet key={feature} label={feature} />
+        ))}
+      </ul>
+    </article>
+  );
+}
 
-              <ul className="mt-6 flex-1 space-y-3">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2 text-sm text-slate-700">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" aria-hidden />
-                    {feature}
-                  </li>
-                ))}
-              </ul>
+export function PricingSection() {
+  const [yearly, setYearly] = useState(true);
 
-              <a
-                href={plan.name === "Enterprise" ? "mailto:hello@lore.app" : adminLoginUrl}
-                className={`mt-8 inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold transition ${
-                  plan.highlighted
-                    ? "bg-orange-500 text-white hover:bg-orange-600"
-                    : "bg-slate-900 text-white hover:bg-slate-800"
-                }`}
-              >
-                {plan.cta}
-              </a>
-            </article>
-          ))}
+  return (
+    <section id="pricing" className="bg-black">
+      <div className="landing-container border-x border-dashed border-white/10">
+        <div className="px-6 py-20 sm:px-8 sm:py-24 lg:px-10">
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="mb-6 text-sm uppercase tracking-wide text-[#737373]">Pricing</div>
+            <h2 className="text-[clamp(1.75rem,4vw,2.75rem)] font-semibold leading-[1.15] tracking-tight text-white">
+              <span className="block">Choose the plan that</span>
+              <span className="block">fits your business.</span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-white/60">
+              Simple, transparent pricing with everything you need to run voice commerce and scale
+              with confidence.
+            </p>
+          </div>
+
+          <div className="mt-10">
+            <BillingToggle yearly={yearly} onChange={setYearly} />
+          </div>
+
+          <div className="mt-10 border border-white/10">
+            <div className="grid grid-cols-1 gap-px bg-white/10 lg:grid-cols-3">
+              {PLANS.map((plan) => (
+                <PricingCard key={plan.name} plan={plan} yearly={yearly} />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </section>

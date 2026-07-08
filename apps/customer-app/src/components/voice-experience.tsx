@@ -124,7 +124,7 @@ export function VoiceExperience() {
           <button
             type="button"
             onClick={() => {
-              void connect();
+              void connect({ requestGreeting: true });
             }}
             className="inline-flex items-center justify-center rounded-full px-6 py-3 text-[15px] font-medium text-white transition-opacity hover:opacity-90"
             style={{

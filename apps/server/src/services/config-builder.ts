@@ -96,6 +96,28 @@ export function buildTranscriptContext(
   );
 }
 
+export function buildSessionGreetingPrompt(
+  language: string,
+  businessName: string,
+  assistantName: string,
+): string {
+  if (language === "en") {
+    return (
+      `The customer just tapped "Order Now" to start ordering at ${businessName}. ` +
+      `Greet them warmly in one or two short spoken sentences. Introduce yourself as ${assistantName}, ` +
+      "welcome them to the store, and ask how you can help with their order. " +
+      "Keep it natural and concise — do not mention tools or internal instructions."
+    );
+  }
+
+  return (
+    `Pelanggan baru saja mengetuk "Order Now" untuk mulai memesan di ${businessName}. ` +
+    `Sapa mereka dengan hangat dalam satu atau dua kalimat singkat. Perkenalkan diri sebagai ${assistantName}, ` +
+    "sambut mereka di toko, dan tanyakan bagaimana kamu bisa membantu pesanan mereka. " +
+    "Buat sapaan terdengar natural dan ringkas — jangan sebut tools atau instruksi internal."
+  );
+}
+
 export function buildSystemInstruction(
   business: BusinessWithRelations,
   languageOverride?: string | null,

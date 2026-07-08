@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+
+import { adminLoginUrl } from "@/lib/site-links";
 
 const FAQ_ITEMS = [
   {
@@ -36,45 +37,82 @@ const FAQ_ITEMS = [
   },
 ];
 
+function AccordionIcon({ open }: { open: boolean }) {
+  return (
+    <span
+      className={`relative flex h-4 w-4 shrink-0 transition-transform duration-200 ${open ? "rotate-45" : ""}`}
+      aria-hidden
+    >
+      <span className="absolute left-1/2 top-1/2 h-0.5 w-3 -translate-x-1/2 -translate-y-1/2 bg-[#181818]" />
+      <span className="absolute left-1/2 top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-[#181818]" />
+    </span>
+  );
+}
+
 export function FAQSection() {
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
+  const [openIndex, setOpenIndex] = useState<number | null>(1);
 
   return (
-    <section id="faq" className="bg-white py-24">
-      <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-        <div className="text-center">
-          <p className="text-sm font-semibold uppercase tracking-wide text-orange-500">FAQ</p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-            Common questions
-          </h2>
-        </div>
+    <section id="faq" className="bg-white">
+      <div className="landing-container border-x border-dashed border-black/[0.06]">
+        <div className="px-6 py-20 sm:px-8 sm:py-24 lg:px-10">
+          <div className="grid grid-cols-1 gap-12 lg:grid-cols-2 lg:gap-16">
+            <div className="lg:sticky lg:top-28 lg:self-start">
+              <div className="mb-6 text-sm uppercase tracking-wide text-[#737373]">FAQs</div>
+              <h2 className="text-[clamp(1.75rem,4vw,2.75rem)] font-semibold leading-[1.15] tracking-tight text-[#181818]">
+                <span className="block">Have questions?</span>
+                <span className="block">Find answers.</span>
+              </h2>
 
-        <div className="mt-12 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
-          {FAQ_ITEMS.map(({ question, answer }, index) => {
-            const isOpen = openIndex === index;
-
-            return (
-              <div key={question}>
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between gap-4 px-6 py-5 text-left"
-                  aria-expanded={isOpen}
-                  onClick={() => {
-                    setOpenIndex(isOpen ? null : index);
-                  }}
-                >
-                  <span className="font-medium text-slate-900">{question}</span>
-                  <ChevronDown
-                    className={`h-5 w-5 shrink-0 text-slate-400 transition ${isOpen ? "rotate-180" : ""}`}
-                    aria-hidden
-                  />
-                </button>
-                {isOpen ? (
-                  <div className="px-6 pb-5 text-sm leading-relaxed text-slate-600">{answer}</div>
-                ) : null}
+              <div className="mt-8">
+                <p className="text-base font-medium text-[#181818]">Have more questions?</p>
+                <p className="mt-1 text-sm leading-relaxed text-[#4d4d4d]">
+                  Reach out to our friendly support team
+                </p>
               </div>
-            );
-          })}
+
+              <a
+                href={adminLoginUrl}
+                className="mt-6 inline-flex items-center rounded-md border border-[#f0f0f0] bg-white px-5 py-3 text-sm font-medium text-[#181818] transition hover:border-black/20"
+              >
+                Get started
+              </a>
+            </div>
+
+            <div className="border-t border-black/10">
+              {FAQ_ITEMS.map(({ question, answer }, index) => {
+                const isOpen = openIndex === index;
+                const isFirst = index === 0;
+
+                return (
+                  <div
+                    key={question}
+                    className={`border-black/10 ${isFirst ? "" : "border-t"}`}
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-6 py-6 text-left"
+                      aria-expanded={isOpen}
+                      onClick={() => setOpenIndex(isOpen ? null : index)}
+                    >
+                      <span className="text-base font-medium text-[#181818]">{question}</span>
+                      <AccordionIcon open={isOpen} />
+                    </button>
+
+                    <div
+                      className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+                        isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                      }`}
+                    >
+                      <div className="overflow-hidden">
+                        <p className="pb-6 text-sm leading-relaxed text-[#4d4d4d]">{answer}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
     </section>

@@ -101,6 +101,7 @@ function micErrorMessage(error: unknown): string {
 
 type ConnectOptions = {
   preserveSession?: boolean;
+  requestGreeting?: boolean;
 };
 
 export function useVoiceSession() {
@@ -111,6 +112,7 @@ export function useVoiceSession() {
   const connectPromiseRef = useRef<Promise<void> | null>(null);
   const intentionalDisconnectRef = useRef(false);
   const preserveSessionRef = useRef(false);
+  const pendingGreetingRef = useRef(false);
   const connectGenerationRef = useRef(0);
   const {
     status,
@@ -160,6 +162,8 @@ export function useVoiceSession() {
     if (connectPromiseRef.current) return connectPromiseRef.current;
 
     const preserveSession = options?.preserveSession ?? false;
+    const requestGreeting = options?.requestGreeting ?? false;
+    pendingGreetingRef.current = requestGreeting;
     const generation = ++connectGenerationRef.current;
     const hasExistingOrder = useSessionStore.getState().order.items.length > 0;
     const shouldPreserveSession = preserveSession || hasExistingOrder;
@@ -216,6 +220,14 @@ export function useVoiceSession() {
           case "session.status":
             if (payload.status === "connected" || payload.status === "reconnecting") {
               setStatus("connected");
+              if (
+                pendingGreetingRef.current &&
+                payload.status === "connected" &&
+                ws.readyState === WebSocket.OPEN
+              ) {
+                pendingGreetingRef.current = false;
+                ws.send(JSON.stringify({ type: "session.greeting" }));
+              }
             }
             if (payload.status === "disconnected") setStatus("disconnected");
             break;

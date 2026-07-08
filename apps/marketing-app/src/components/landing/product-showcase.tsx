@@ -94,29 +94,31 @@ function AdminMockup() {
 
 export function ProductShowcase() {
   return (
-    <section className="relative bg-white pb-20 pt-16">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className="text-sm font-semibold uppercase tracking-wide text-orange-500">
-            Product preview
-          </p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-            Voice ordering customers love. Dashboard you control.
-          </h2>
-          <p className="mt-4 text-base leading-relaxed text-slate-600">
-            Lore pairs a immersive customer voice experience with a full merchant dashboard for
-            menu, AI rules, orders, and analytics.
-          </p>
-        </div>
+    <section className="relative bg-white">
+      <div className="landing-container border-x border-dashed border-black/[0.06]">
+        <div className="px-6 py-20 sm:px-8 sm:py-24 lg:px-10">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="text-sm font-semibold uppercase tracking-wide text-orange-500">
+              Product preview
+            </p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+              Voice ordering customers love. Dashboard you control.
+            </h2>
+            <p className="mt-4 text-base leading-relaxed text-slate-600">
+              Lore pairs a immersive customer voice experience with a full merchant dashboard for
+              menu, AI rules, orders, and analytics.
+            </p>
+          </div>
 
-        <div className="mt-12 grid gap-8 lg:grid-cols-[1.4fr_1fr] lg:items-start">
-          <BrowserChrome title="lore.app/b/your-store">
-            <CustomerMockup />
-          </BrowserChrome>
+          <div className="mt-12 grid gap-8 lg:grid-cols-[1.4fr_1fr] lg:items-start">
+            <BrowserChrome title="lore.app/b/your-store">
+              <CustomerMockup />
+            </BrowserChrome>
 
-          <BrowserChrome title="admin.lore.app">
-            <AdminMockup />
-          </BrowserChrome>
+            <BrowserChrome title="admin.lore.app">
+              <AdminMockup />
+            </BrowserChrome>
+          </div>
         </div>
       </div>
     </section>

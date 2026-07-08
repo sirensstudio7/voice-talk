@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@source "../../../../packages/avatar/src/**/*.{ts,tsx}";
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -38,4 +40,128 @@ body {
   background: rgba(15, 23, 42, 0.55);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+}
+
+.landing-container {
+  width: min(calc(100vw - 60px), 1280px);
+  margin-inline: auto;
+}
+
+@keyframes hero-voice-preview-mic-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.65);
+    opacity: 0;
+  }
+}
+
+.hero-voice-preview__mic-pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid rgba(249, 115, 22, 0.55);
+  pointer-events: none;
+  animation: hero-voice-preview-mic-pulse 2s ease-out infinite;
+}
+
+.hero-voice-preview__mic-pulse--delay {
+  animation-delay: 1s;
+}
+
+@keyframes avatar-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+.avatar-talking {
+  animation: avatar-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes hero-brand-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.hero-brand-marquee-track {
+  animation: hero-brand-marquee 45s linear infinite;
+}
+
+.features-use-case-marquee-track {
+  animation: hero-brand-marquee 55s linear infinite;
+}
+
+.features-use-case-marquee-track-reverse {
+  animation: hero-brand-marquee 65s linear infinite reverse;
+}
+
+@keyframes features-data-path-dot {
+  from {
+    left: 0;
+  }
+  to {
+    left: calc(100% - 8px);
+  }
+}
+
+.features-data-path-dot {
+  animation: features-data-path-dot 4s linear infinite;
+}
+
+@keyframes features-cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.features-cursor-blink {
+  animation: features-cursor-blink 1s step-end infinite;
+}
+
+.features-vertical-marquee-track {
+  animation: features-vertical-marquee 16s linear infinite;
+}
+
+@keyframes features-vertical-marquee {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+.features-model-marquee-track {
+  animation: hero-brand-marquee 22s linear infinite;
+}
+
+.features-integration-marquee-track {
+  animation: hero-brand-marquee 28s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-brand-marquee-track {
+    animation: none;
+  }
+
+  .features-use-case-marquee-track,
+  .features-use-case-marquee-track-reverse,
+  .features-data-path-dot,
+  .features-cursor-blink,
+  .features-vertical-marquee-track,
+  .features-model-marquee-track,
+  .features-integration-marquee-track {
+    animation: none;
+  }
 }

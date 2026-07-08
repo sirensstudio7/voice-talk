@@ -19,9 +19,15 @@ function getScrollProgress(element: HTMLElement) {
   return Math.min(1, Math.max(0, progress));
 }
 
+function getSideInset(width: number, progress: number) {
+  const maxInset = width >= 1024 ? 30 : width >= 640 ? 20 : 12;
+  return maxInset * progress;
+}
+
 export function HeroDashboardScale({ children }: { children: ReactNode }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.92);
+  const [sideInset, setSideInset] = useState(0);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -34,6 +40,7 @@ export function HeroDashboardScale({ children }: { children: ReactNode }) {
       const minScale = getMinScale(window.innerWidth);
       const progress = getScrollProgress(container);
       setScale(minScale + (1 - minScale) * progress);
+      setSideInset(getSideInset(window.innerWidth, progress));
     };
 
     const onScrollOrResize = () => {
@@ -55,10 +62,18 @@ export function HeroDashboardScale({ children }: { children: ReactNode }) {
   return (
     <div
       ref={containerRef}
-      className="relative mx-auto max-w-[1012px] origin-center will-change-transform"
-      style={{ transform: `scale(${scale})` }}
+      className="relative mx-auto w-full"
+      style={{
+        paddingLeft: sideInset,
+        paddingRight: sideInset,
+      }}
     >
-      {children}
+      <div
+        className="origin-center will-change-transform"
+        style={{ transform: `scale(${scale})` }}
+      >
+        {children}
+      </div>
     </div>
   );
 }

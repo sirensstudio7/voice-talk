@@ -2,7 +2,7 @@
 
 import { Component, Suspense, type ReactNode } from "react";
 
-import { Avatar3D } from "./avatar-3d";
+import { Avatar3D, type Avatar3DProps } from "./avatar-3d";
 import { DEFAULT_MODEL_PATH } from "./model-calibration";
 
 export const HERO_FRAME_CLASS =
@@ -64,6 +64,7 @@ export type AvatarHeroProps = {
   frameClassName?: string;
   pngSrc?: string;
   usePngFallback?: boolean;
+  resize?: Avatar3DProps["resize"];
 };
 
 export function AvatarHero({
@@ -73,6 +74,7 @@ export function AvatarHero({
   frameClassName = HERO_FRAME_CLASS,
   pngSrc = "/eva-cashier-nobg.png",
   usePngFallback = false,
+  resize,
 }: AvatarHeroProps) {
   const ariaLabel = `${assistantName}, AI assistant`;
 
@@ -102,7 +104,7 @@ export function AvatarHero({
       >
         <Suspense fallback={<AvatarHeroFallback assistantName={assistantName} />}>
           <div className="h-full w-full">
-            <Avatar3D isTalking={isTalking} modelPath={modelPath} />
+            <Avatar3D isTalking={isTalking} modelPath={modelPath} resize={resize} />
           </div>
         </Suspense>
       </div>

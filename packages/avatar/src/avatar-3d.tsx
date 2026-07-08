@@ -391,11 +391,17 @@ function Scene({
 export type Avatar3DProps = {
   isTalking: boolean;
   modelPath?: string;
+  resize?: {
+    scroll?: boolean;
+    offsetSize?: boolean;
+    debounce?: number | { scroll: number; resize: number };
+  };
 };
 
 export function Avatar3D({
   isTalking,
   modelPath = DEFAULT_MODEL_PATH,
+  resize,
 }: Avatar3DProps) {
   return (
     <Canvas
@@ -403,6 +409,7 @@ export function Avatar3D({
       dpr={[1, 2]}
       gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
       camera={{ fov: 28, near: 0.01, far: 100 }}
+      resize={resize}
       style={{ width: "100%", height: "100%", display: "block", background: "transparent" }}
     >
       <Scene isTalking={isTalking} modelPath={modelPath} />

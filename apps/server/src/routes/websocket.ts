@@ -2,9 +2,11 @@ import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import { env } from "../env.js";
 import {
+  buildSessionGreetingPrompt,
   buildSystemInstruction,
   buildTranscriptContext,
   getActiveProducts,
+  resolveAssistantName,
   resolveLanguage,
 } from "../services/config-builder.js";
 import { handleClientOrderMessage } from "../services/client-order.js";
@@ -134,6 +136,16 @@ async function handleSession(
           if (restoreTimer) clearTimeout(restoreTimer);
           resolveRestore();
         }
+      } else if (msgType === "session.greeting") {
+        audioQueue.push(
+          new ClientTextEvent(
+            buildSessionGreetingPrompt(
+              resolvedLanguage,
+              tenant.name,
+              resolveAssistantName(tenant.aiRules),
+            ),
+          ),
+        );
       } else if (
         msgType === "order.add_item" ||
         msgType === "order.decrement_item" ||
