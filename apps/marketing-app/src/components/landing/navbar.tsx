@@ -11,7 +11,7 @@ const NAV_LINKS = [
 
 export function Navbar() {
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-black/[0.06] bg-white">
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-dashed border-black/[0.06] bg-white">
       <div className="landing-container flex h-16 items-center justify-between">
         <Link href="/" className="flex items-center gap-2 text-[#181818]">
           <span className="text-lg font-semibold tracking-tight">Lorescale</span>
@@ -32,6 +32,8 @@ export function Navbar() {
         <div className="flex items-center gap-2 sm:gap-3">
           <a
             href={adminLoginUrl}
+            target="_blank"
+            rel="noopener noreferrer"
             className="inline-flex items-center rounded-full bg-[#181818] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2a2a2a]"
           >
             Get started
