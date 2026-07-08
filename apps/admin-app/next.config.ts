@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@voicetalk/avatar"],
+  transpilePackages: ["@voicetalk/avatar", "@voicetalk/shared"],
   turbopack: {
     root: path.join(__dirname, "../.."),
   },
@@ -10,8 +10,17 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: "https",
+        hostname: "**.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
+      {
+        protocol: "https",
         hostname: "*.supabase.co",
         pathname: "/storage/v1/object/public/**",
+      },
+      {
+        protocol: "https",
+        hostname: "images.unsplash.com",
       },
       {
         protocol: "http",

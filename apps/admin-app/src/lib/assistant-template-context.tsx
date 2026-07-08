@@ -17,7 +17,7 @@ import {
   type AssistantTemplate,
 } from "@/lib/assistant-templates";
 
-const STORAGE_KEY = "eva_admin_assistant_template";
+const STORAGE_KEY = "lorescale_admin_assistant_template";
 
 type AssistantTemplateContextValue = {
   selectedTemplateId: string;

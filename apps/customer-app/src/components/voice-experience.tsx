@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 
-import { EvaHero } from "@/components/eva-hero";
+import { LorescaleHero } from "@/components/lorescale-hero";
 import { ExperienceBackground } from "@/components/experience-background";
+import { AppointmentBookingPanelRoot } from "@/components/appointment-booking-panel";
 import { CheckoutPanel } from "@/components/basket-panel";
 import { FlyToBasketLayer } from "@/components/fly-to-basket";
 import { StoreMenuPanelRoot } from "@/components/store-menu-panel";
@@ -21,6 +22,7 @@ export function VoiceExperience() {
   const [gradientColor, setGradientColor] = useState("");
   const setMenuCache = useSessionStore((s) => s.setMenuCache);
   const setAssistantName = useSessionStore((s) => s.setAssistantName);
+  const setAvatarUrl = useSessionStore((s) => s.setAvatarUrl);
   const hydrateLanguageFromStorage = useSessionStore((s) => s.hydrateLanguageFromStorage);
   const {
     status,
@@ -32,7 +34,7 @@ export function VoiceExperience() {
     stopTalking,
   } = useVoiceSession();
 
-  const { error, checkoutPanelOpen, freshOrderRequest, language, setLanguage } =
+  const { error, checkoutPanelOpen, freshOrderRequest, language, orderingEnabled, menuEnabled, bookingEnabled, setLanguage } =
     useSessionStore();
   const isLive = status === "connected" || status === "connecting";
   const canTalk = status !== "connecting";
@@ -64,6 +66,7 @@ export function VoiceExperience() {
           setAssistantName(data.assistant_name);
         }
 
+        setAvatarUrl(data.avatar_url ?? "");
         setBackgroundUrl(data.background_url ?? "");
         setGradientColor(data.gradient_color ?? "");
       } catch {
@@ -83,7 +86,7 @@ export function VoiceExperience() {
       cancelled = true;
       window.removeEventListener("focus", handleFocus);
     };
-  }, [businessSlug, setAssistantName, setMenuCache]);
+  }, [businessSlug, setAssistantName, setAvatarUrl, setMenuCache]);
 
   const handleStartTalking = () => {
     void startTalking();
@@ -94,7 +97,7 @@ export function VoiceExperience() {
       <ExperienceBackground backgroundUrl={backgroundUrl} />
 
       <div key={freshOrderRequest} className="absolute inset-0">
-        <EvaHero isTalking={isTalking} />
+        <LorescaleHero isTalking={isTalking} />
       </div>
 
       <div
@@ -105,11 +108,20 @@ export function VoiceExperience() {
         }}
       />
 
-      <ExperienceHeader onDisconnect={disconnect} />
+      <ExperienceHeader
+        onDisconnect={disconnect}
+        orderingEnabled={orderingEnabled}
+        bookingEnabled={bookingEnabled}
+      />
 
-      <FlyToBasketLayer />
-      <CheckoutPanel />
-      <StoreMenuPanelRoot />
+      {menuEnabled ? <StoreMenuPanelRoot /> : null}
+      {bookingEnabled ? <AppointmentBookingPanelRoot /> : null}
+      {orderingEnabled ? (
+        <>
+          <FlyToBasketLayer />
+          <CheckoutPanel />
+        </>
+      ) : null}
 
       {!checkoutPanelOpen ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 top-[14%] z-30 flex items-end justify-start px-6 pb-[calc(2rem+4.5rem+1.5rem)]">
@@ -132,7 +144,7 @@ export function VoiceExperience() {
               boxShadow: "rgba(255, 255, 255, 0.35) 0px 2.5px 5px 0px inset",
             }}
           >
-            Order Now
+            {orderingEnabled ? "Order Now" : bookingEnabled ? "Book appointment" : "Start conversation"}
           </button>
           {error ? (
             <p className="max-w-sm rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-center text-xs font-medium text-red-700">
@@ -148,6 +160,9 @@ export function VoiceExperience() {
           isTalking={isTalking}
           onStart={handleStartTalking}
           onStop={stopTalking}
+          orderingEnabled={orderingEnabled}
+          menuEnabled={menuEnabled}
+          bookingEnabled={bookingEnabled}
         />
       ) : null}
     </main>

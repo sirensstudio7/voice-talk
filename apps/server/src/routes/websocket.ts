@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
+import { getBusinessCapabilities } from "@voicetalk/shared";
 import { env } from "../env.js";
 import {
   buildSessionGreetingPrompt,
@@ -73,17 +74,27 @@ async function handleSession(
     return;
   }
 
+  const capabilities = getBusinessCapabilities(
+    tenant.primaryUseCase,
+    tenant.businessType,
+  );
+  const orderingEnabled = capabilities.ordering_enabled;
+  const bookingEnabled = capabilities.booking_enabled;
+
   const voiceSession = await createVoiceSession(tenant.id);
   const voiceSessionId = voiceSession.id;
-  const productList: ProductInfo[] = getActiveProducts(tenant).map((p) => ({
-    id: p.productId,
-    name: p.name,
-    price: p.price,
-    discount_percent: p.discountPercent,
-    category: p.category,
-    description: p.description,
-    image_url: p.imageUrl,
-  }));
+  const productList: ProductInfo[] = capabilities.menu_enabled
+    ? getActiveProducts(tenant).map((p) => ({
+        id: p.productId,
+        name: p.name,
+        price: p.price,
+        discount_percent: p.discountPercent,
+        category: p.category,
+        description: p.description,
+        image_url: p.imageUrl,
+        duration_min: p.durationMin,
+      }))
+    : [];
 
   const orderStore = new OrderStore();
   const audioQueue = createAudioQueue();
@@ -143,13 +154,15 @@ async function handleSession(
               resolvedLanguage,
               tenant.name,
               resolveAssistantName(tenant.aiRules),
+              orderingEnabled,
             ),
           ),
         );
       } else if (
-        msgType === "order.add_item" ||
-        msgType === "order.decrement_item" ||
-        msgType === "order.remove_item"
+        orderingEnabled &&
+        (msgType === "order.add_item" ||
+          msgType === "order.decrement_item" ||
+          msgType === "order.remove_item")
       ) {
         void handleClientOrderMessage(
           msgType,
@@ -186,7 +199,9 @@ async function handleSession(
     systemInstruction += buildTranscriptContext(transcript, resolvedLanguage);
   }
 
-  if (!safeSendJson(socket, { type: "order.updated", order: orderStore.snapshot() })) return;
+  if (orderingEnabled) {
+    if (!safeSendJson(socket, { type: "order.updated", order: orderStore.snapshot() })) return;
+  }
 
   try {
     if (!safeSendJson(socket, { type: "session.status", status: "connected" })) return;
@@ -198,6 +213,10 @@ async function handleSession(
         systemInstruction,
         orderStore,
         products: productList,
+        orderingEnabled,
+        bookingEnabled,
+        businessId: tenant.id,
+        voiceSessionId,
         onConfirm,
         onSetCustomerName,
       },

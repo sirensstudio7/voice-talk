@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { adminLoginUrl } from "@/lib/site-links";
+import { adminLoginUrl, adminSignupUrl } from "@/lib/site-links";
 
 const NAV_LINKS = [
   { href: "#features", label: "Features" },
@@ -34,9 +34,17 @@ export function Navbar() {
             href={adminLoginUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center rounded-full bg-[#181818] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2a2a2a]"
+            className="text-sm font-medium text-[#46484d] transition hover:text-[#181818]"
           >
-            Get started
+            Sign in
+          </a>
+          <a
+            href={adminSignupUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center rounded-full border border-black/[0.12] px-4 py-2 text-sm font-semibold text-[#181818] transition hover:bg-black/[0.04]"
+          >
+            Sign up
           </a>
         </div>
       </div>

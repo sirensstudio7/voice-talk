@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Brain,
@@ -7,6 +8,7 @@ import {
   ChevronDown,
   ClipboardCopy,
   Globe,
+  ImageIcon,
   ListChecks,
   MessageCircle,
   RotateCcw,
@@ -22,6 +24,15 @@ import { api, type AiLanguage, type AiRules, type AiTone } from "@/lib/api";
 import { useAssistantTemplate } from "@/lib/assistant-template-context";
 import { templateToAiRules } from "@/lib/assistant-templates";
 import { useAuth } from "@/lib/auth";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const DEFAULT_ASSISTANT_AVATAR = "/lorescale-cashier-nobg.png";
+
+function resolveMediaUrl(path: string): string {
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  return `${API_URL}${path}`;
+}
 
 type RuleField = "personality" | "behavioral_rules" | "tool_instructions";
 
@@ -260,10 +271,141 @@ function AssistantNameField({
         type="text"
         maxLength={50}
         className="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm text-slate-900 shadow-sm outline-none transition-colors focus-visible:border-orange-300 focus-visible:ring-2 focus-visible:ring-orange-500/20"
-        placeholder="Eva"
+        placeholder="Lorescale"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
+    </section>
+  );
+}
+
+function AssistantAvatarField({
+  avatarUrl,
+  localPreview,
+  cacheBust,
+  uploading,
+  onUpload,
+  onRemove,
+}: {
+  avatarUrl: string;
+  localPreview: string | null;
+  cacheBust: number;
+  uploading: boolean;
+  onUpload: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const resolvedAvatarUrl = avatarUrl ? resolveMediaUrl(avatarUrl) : "";
+  const previewSrc =
+    localPreview ??
+    (resolvedAvatarUrl
+      ? `${resolvedAvatarUrl}${resolvedAvatarUrl.includes("?") ? "&" : "?"}v=${cacheBust || 0}`
+      : DEFAULT_ASSISTANT_AVATAR);
+  const useNativeImage =
+    previewSrc.startsWith("http://") ||
+    previewSrc.startsWith("https://") ||
+    previewSrc.startsWith("blob:");
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-500">
+          <ImageIcon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-slate-900">Assistant avatar</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
+            Shown in the customer voice page header and conversation bubbles. Use a square portrait
+            with a transparent or plain background for best results.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+        <div className="flex items-center gap-4">
+          <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+            {useNativeImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={previewSrc}
+                src={previewSrc}
+                alt="Assistant avatar preview"
+                width={64}
+                height={64}
+                className="h-full w-full object-cover object-center"
+              />
+            ) : (
+              <Image
+                src={previewSrc}
+                alt="Assistant avatar preview"
+                width={64}
+                height={64}
+                unoptimized
+                className="h-full w-full object-cover object-center"
+              />
+            )}
+          </div>
+          <div className="hidden rounded-full border border-slate-200 bg-white py-1 pl-1 pr-2 shadow-sm sm:flex sm:items-center sm:gap-1.5">
+            <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
+              {useNativeImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={`${previewSrc}-header`}
+                  src={previewSrc}
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="h-full w-full object-cover object-center"
+                  aria-hidden
+                />
+              ) : (
+                <Image
+                  src={previewSrc}
+                  alt=""
+                  width={32}
+                  height={32}
+                  unoptimized
+                  className="h-full w-full object-cover object-center"
+                  aria-hidden
+                />
+              )}
+            </div>
+            <span className="text-[11px] font-semibold text-slate-700">Header preview</span>
+          </div>
+        </div>
+
+        <div className="flex flex-1 flex-wrap gap-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onUpload(file);
+              if (fileInputRef.current) fileInputRef.current.value = "";
+            }}
+          />
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+            className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {uploading ? "Uploading…" : avatarUrl ? "Replace avatar" : "Upload avatar"}
+          </button>
+          {avatarUrl ? (
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={onRemove}
+              className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Remove
+            </button>
+          ) : null}
+        </div>
+      </div>
     </section>
   );
 }
@@ -448,6 +590,9 @@ export function AiRulesPageClient() {
   const [preview, setPreview] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [localAvatarPreview, setLocalAvatarPreview] = useState<string | null>(null);
+  const [avatarCacheBust, setAvatarCacheBust] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -462,6 +607,7 @@ export function AiRulesPageClient() {
       ]);
       setRules(rulesData);
       setSavedRules(rulesData);
+      setAvatarCacheBust(rulesData.avatar_url ? Date.now() : 0);
       setPreview(previewData.system_instruction);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load AI rules.");
@@ -534,6 +680,53 @@ export function AiRulesPageClient() {
     setRules(templateToAiRules(selectedTemplate, rules));
     setMessage(null);
     setError(null);
+  };
+
+  const uploadAvatar = async (file: File) => {
+    if (!token || !business) return;
+
+    const objectUrl = URL.createObjectURL(file);
+    setLocalAvatarPreview(objectUrl);
+    setUploadingAvatar(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const updated = await api.uploadAssistantAvatar(token, business.id, file);
+      setRules((current) => (current ? { ...current, avatar_url: updated.avatar_url } : current));
+      setSavedRules((current) =>
+        current ? { ...current, avatar_url: updated.avatar_url } : current,
+      );
+      setAvatarCacheBust(Date.now());
+      setMessage("Assistant avatar uploaded.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Avatar upload failed.");
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+      setLocalAvatarPreview(null);
+      setUploadingAvatar(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    if (!token || !business) return;
+
+    setUploadingAvatar(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const updated = await api.deleteAssistantAvatar(token, business.id);
+      setRules((current) => (current ? { ...current, avatar_url: updated.avatar_url } : current));
+      setSavedRules((current) =>
+        current ? { ...current, avatar_url: updated.avatar_url } : current,
+      );
+      setMessage("Assistant avatar removed. Customers will see the default avatar.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to remove avatar.");
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   if (loading) {
@@ -627,8 +820,20 @@ export function AiRulesPageClient() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
         <div className="space-y-4">
           <AssistantNameField
-            value={rules.assistant_name ?? "Eva"}
+            value={rules.assistant_name ?? "Lorescale"}
             onChange={updateAssistantName}
+          />
+          <AssistantAvatarField
+            avatarUrl={rules.avatar_url ?? ""}
+            localPreview={localAvatarPreview}
+            cacheBust={avatarCacheBust}
+            uploading={uploadingAvatar}
+            onUpload={(file) => {
+              void uploadAvatar(file);
+            }}
+            onRemove={() => {
+              void removeAvatar();
+            }}
           />
           <div className="grid gap-4 lg:grid-cols-2">
             <LanguageSelector value={rules.language ?? "id"} onChange={updateLanguage} />

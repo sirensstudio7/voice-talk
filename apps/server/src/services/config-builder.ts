@@ -1,4 +1,5 @@
 import type { AiRules, Business, KnowledgeEntry, Product } from "../db/schema.js";
+import { getBusinessCapabilities } from "@voicetalk/shared";
 import { effectivePrice } from "./pricing.js";
 
 const LANGUAGE_PRESETS: Record<string, string> = {
@@ -27,7 +28,7 @@ const TONE_PRESETS: Record<string, Record<string, string>> = {
 
 const DEFAULT_TONE = "friendly";
 const DEFAULT_LANGUAGE = "id";
-const DEFAULT_ASSISTANT_NAME = "Eva";
+const DEFAULT_ASSISTANT_NAME = "Lorescale";
 
 export type BusinessWithRelations = Business & {
   products: Product[];
@@ -100,20 +101,39 @@ export function buildSessionGreetingPrompt(
   language: string,
   businessName: string,
   assistantName: string,
+  orderingEnabled = true,
 ): string {
   if (language === "en") {
+    if (orderingEnabled) {
+      return (
+        `The customer just tapped "Order Now" to start ordering at ${businessName}. ` +
+        `Greet them warmly in one or two short spoken sentences. Introduce yourself as ${assistantName}, ` +
+        "welcome them to the store, and ask how you can help with their order. " +
+        "Keep it natural and concise — do not mention tools or internal instructions."
+      );
+    }
+
     return (
-      `The customer just tapped "Order Now" to start ordering at ${businessName}. ` +
+      `The customer just tapped "Start conversation" at ${businessName}. ` +
       `Greet them warmly in one or two short spoken sentences. Introduce yourself as ${assistantName}, ` +
-      "welcome them to the store, and ask how you can help with their order. " +
+      "welcome them, and ask how you can help with their questions. " +
       "Keep it natural and concise — do not mention tools or internal instructions."
     );
   }
 
+  if (orderingEnabled) {
+    return (
+      `Pelanggan baru saja mengetuk "Order Now" untuk mulai memesan di ${businessName}. ` +
+      `Sapa mereka dengan hangat dalam satu atau dua kalimat singkat. Perkenalkan diri sebagai ${assistantName}, ` +
+      "sambut mereka di toko, dan tanyakan bagaimana kamu bisa membantu pesanan mereka. " +
+      "Buat sapaan terdengar natural dan ringkas — jangan sebut tools atau instruksi internal."
+    );
+  }
+
   return (
-    `Pelanggan baru saja mengetuk "Order Now" untuk mulai memesan di ${businessName}. ` +
+    `Pelanggan baru saja mengetuk "Mulai percakapan" di ${businessName}. ` +
     `Sapa mereka dengan hangat dalam satu atau dua kalimat singkat. Perkenalkan diri sebagai ${assistantName}, ` +
-    "sambut mereka di toko, dan tanyakan bagaimana kamu bisa membantu pesanan mereka. " +
+    "sambut mereka, dan tanyakan bagaimana kamu bisa membantu pertanyaan mereka. " +
     "Buat sapaan terdengar natural dan ringkas — jangan sebut tools atau instruksi internal."
   );
 }
@@ -129,11 +149,25 @@ export function buildSystemInstruction(
   const rules = business.aiRules;
   const language = resolveLanguage(rules, languageOverride);
   const assistantName = resolveAssistantName(rules);
+  const capabilities = getBusinessCapabilities(
+    business.primaryUseCase,
+    business.businessType,
+  );
+  const orderingEnabled = capabilities.ordering_enabled;
+  const bookingEnabled = capabilities.booking_enabled;
 
   const defaultPersonality =
     language === "en"
-      ? `You are ${assistantName}, a friendly AI cashier.`
-      : `Kamu adalah ${assistantName}, kasir AI yang ramah.`;
+      ? bookingEnabled
+        ? `You are ${assistantName}, a friendly AI salon receptionist.`
+        : orderingEnabled
+          ? `You are ${assistantName}, a friendly AI cashier.`
+          : `You are ${assistantName}, a friendly AI assistant.`
+      : bookingEnabled
+        ? `Kamu adalah ${assistantName}, resepsionis AI salon yang ramah.`
+        : orderingEnabled
+          ? `Kamu adalah ${assistantName}, kasir AI yang ramah.`
+          : `Kamu adalah ${assistantName}, asisten AI yang ramah.`;
 
   const personality = rules?.personality ?? defaultPersonality;
   let tone = (rules?.tone ?? DEFAULT_TONE).trim().toLowerCase();
@@ -145,27 +179,43 @@ export function buildSystemInstruction(
   const productLines = productList.map(formatProductLine).join("\n");
   const knowledgeLines = knowledge.map((item) => `- ${item.content}`).join("\n");
 
-  const defaultToolsEn =
-    "Use tools to look up products, update the order, and confirm when the customer is ready.\n" +
-    "Call add_to_order only after the customer clearly confirms an item (e.g. \"yes\", \"add it\", \"that's correct\"). " +
-    "Do not call add_to_order while they are still browsing, comparing options, or only stating a preference without confirming.\n" +
-    "When the customer adds items via the menu screen, those items are already in the basket — do not call add_to_order for them.\n" +
-    "If the customer asks to remove one item, call remove_from_order.\n" +
-    "If the customer asks to cancel the whole order, start over, or clear the basket, call cancel_order.\n" +
-    "After confirm_order succeeds, always ask for the customer's name before payment.\n" +
-    "When they answer, call set_customer_name so the name appears on the receipt.\n" +
-    "Speak naturally like a real cashier.";
+  const defaultToolsEn = bookingEnabled
+    ? "Use tools to list treatments, check availability, and book appointments.\n" +
+      "Confirm treatment, date, time, customer name, and phone before calling book_appointment.\n" +
+      "Speak naturally like a real salon receptionist."
+    : orderingEnabled
+      ? "Use tools to look up products, update the order, and confirm when the customer is ready.\n" +
+        "Call add_to_order only after the customer clearly confirms an item (e.g. \"yes\", \"add it\", \"that's correct\"). " +
+        "Do not call add_to_order while they are still browsing, comparing options, or only stating a preference without confirming.\n" +
+        "When the customer adds items via the menu screen, those items are already in the basket — do not call add_to_order for them.\n" +
+        "If the customer asks to remove one item, call remove_from_order.\n" +
+        "If the customer asks to cancel the whole order, start over, or clear the basket, call cancel_order.\n" +
+        "After confirm_order succeeds, always ask for the customer's name before payment.\n" +
+        "When they answer, call set_customer_name so the name appears on the receipt.\n" +
+        "Speak naturally like a real cashier."
+      : "Answer customer questions clearly using the business knowledge base.\n" +
+        "Do not offer to take orders, add items, or process payments.\n" +
+        "If asked about products or purchases, explain that this assistant focuses on answering questions.\n" +
+        "Keep responses warm, concise, and helpful.";
 
-  const defaultToolsId =
-    "Gunakan tools untuk mencari produk, memperbarui pesanan, dan mengonfirmasi saat pelanggan siap.\n" +
-    "Panggil add_to_order hanya setelah pelanggan jelas mengonfirmasi item (misalnya \"iya\", \"tambahkan\", \"betul\"). " +
-    "Jangan panggil add_to_order saat mereka masih browsing, membandingkan pilihan, atau hanya menyebut preferensi tanpa konfirmasi.\n" +
-    "Saat pelanggan menambahkan item lewat layar menu, item tersebut sudah ada di keranjang — jangan panggil add_to_order untuk item itu.\n" +
-    "Jika pelanggan minta hapus satu item, panggil remove_from_order.\n" +
-    "Jika pelanggan minta batalkan seluruh pesanan, mulai ulang, atau kosongkan keranjang, panggil cancel_order.\n" +
-    "Setelah confirm_order berhasil, selalu tanyakan nama pelanggan sebelum pembayaran.\n" +
-    "Saat mereka menjawab, panggil set_customer_name agar nama muncul di struk.\n" +
-    "Berbicaralah secara natural seperti kasir sungguhan di Indonesia.";
+  const defaultToolsId = bookingEnabled
+    ? "Gunakan tools untuk melihat treatment, cek ketersediaan jadwal, dan membuat appointment.\n" +
+      "Konfirmasi treatment, tanggal, jam, nama, dan nomor telepon pelanggan sebelum memanggil book_appointment.\n" +
+      "Berbicaralah secara natural seperti resepsionis salon sungguhan."
+    : orderingEnabled
+    ? "Gunakan tools untuk mencari produk, memperbarui pesanan, dan mengonfirmasi saat pelanggan siap.\n" +
+      "Panggil add_to_order hanya setelah pelanggan jelas mengonfirmasi item (misalnya \"iya\", \"tambahkan\", \"betul\"). " +
+      "Jangan panggil add_to_order saat mereka masih browsing, membandingkan pilihan, atau hanya menyebut preferensi tanpa konfirmasi.\n" +
+      "Saat pelanggan menambahkan item lewat layar menu, item tersebut sudah ada di keranjang — jangan panggil add_to_order untuk item itu.\n" +
+      "Jika pelanggan minta hapus satu item, panggil remove_from_order.\n" +
+      "Jika pelanggan minta batalkan seluruh pesanan, mulai ulang, atau kosongkan keranjang, panggil cancel_order.\n" +
+      "Setelah confirm_order berhasil, selalu tanyakan nama pelanggan sebelum pembayaran.\n" +
+      "Saat mereka menjawab, panggil set_customer_name agar nama muncul di struk.\n" +
+      "Berbicaralah secara natural seperti kasir sungguhan di Indonesia."
+    : "Jawab pertanyaan pelanggan dengan jelas menggunakan basis pengetahuan bisnis.\n" +
+      "Jangan menawarkan untuk menerima pesanan, menambahkan item, atau memproses pembayaran.\n" +
+      "Jika ditanya tentang produk atau pembelian, jelaskan bahwa asisten ini fokus menjawab pertanyaan.\n" +
+      "Tetap ramah, ringkas, dan membantu.";
 
   const sections: string[] = [];
 
@@ -176,9 +226,13 @@ export function buildSystemInstruction(
       tonePresets[tone]!,
       `Language:\n${LANGUAGE_PRESETS[language]}`,
       `Store: ${business.name} — ${business.tagline}`,
-      `Menu:\n${productLines || "- No menu items configured yet."}`,
-      `Knowledge:\n${knowledgeLines || "- No knowledge entries configured yet."}`,
     );
+    if (orderingEnabled || bookingEnabled) {
+      sections.push(
+        `${bookingEnabled ? "Treatments" : "Menu"}:\n${productLines || (bookingEnabled ? "- No treatments configured yet." : "- No menu items configured yet.")}`,
+      );
+    }
+    sections.push(`Knowledge:\n${knowledgeLines || "- No knowledge entries configured yet."}`);
     if (behavioral.trim()) sections.push(`Behavior rules:\n${behavioral.trim()}`);
     sections.push(toolInstructions.trim() || defaultToolsEn);
   } else {
@@ -188,9 +242,13 @@ export function buildSystemInstruction(
       tonePresets[tone]!,
       `Bahasa:\n${LANGUAGE_PRESETS[language]}`,
       `Toko: ${business.name} — ${business.tagline}`,
-      `Menu:\n${productLines || "- Belum ada menu yang dikonfigurasi."}`,
-      `Pengetahuan:\n${knowledgeLines || "- Belum ada entri pengetahuan yang dikonfigurasi."}`,
     );
+    if (orderingEnabled || bookingEnabled) {
+      sections.push(
+        `${bookingEnabled ? "Treatment" : "Menu"}:\n${productLines || (bookingEnabled ? "- Belum ada treatment yang dikonfigurasi." : "- Belum ada menu yang dikonfigurasi.")}`,
+      );
+    }
+    sections.push(`Pengetahuan:\n${knowledgeLines || "- Belum ada entri pengetahuan yang dikonfigurasi."}`);
     if (behavioral.trim()) sections.push(`Aturan perilaku:\n${behavioral.trim()}`);
     sections.push(toolInstructions.trim() || defaultToolsId);
   }

@@ -1,5 +1,10 @@
+import { OrderingFeatureGate } from "@/components/ordering-feature-gate";
 import { OrdersPageClient } from "./orders-page-client";
 
 export default function OrdersPage() {
-  return <OrdersPageClient />;
+  return (
+    <OrderingFeatureGate>
+      <OrdersPageClient />
+    </OrderingFeatureGate>
+  );
 }

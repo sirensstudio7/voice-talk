@@ -8,7 +8,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "EVA Admin",
+  title: "Lorescale Admin",
   description: "Manage AI cashier businesses, menu, knowledge, and orders.",
 };
 

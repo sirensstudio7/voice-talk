@@ -1,6 +1,7 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import { formatConnectionError, withDirectConnectionAsync } from "./networking.js";
 import { buildToolDeclarations, buildToolMapping, type ProductInfo } from "./tools.js";
+import { buildBookingToolMapping } from "./booking-tools.js";
 import type { OrderStore } from "./order-store.js";
 
 export const ACTIVITY_START = Symbol("ACTIVITY_START");
@@ -35,6 +36,10 @@ export interface GeminiLiveOptions {
   systemInstruction: string;
   orderStore: OrderStore;
   products: ProductInfo[];
+  orderingEnabled?: boolean;
+  bookingEnabled?: boolean;
+  businessId?: string;
+  voiceSessionId?: string;
   onConfirm?: (order: Record<string, unknown>) => void;
   onSetCustomerName?: (name: string) => void;
   inputSampleRate?: number;
@@ -49,10 +54,17 @@ export async function* startGeminiSession(
     orderUpdate?: (order: Record<string, unknown>) => Promise<void>;
   },
 ): AsyncGenerator<Record<string, unknown>> {
-  const toolMapping = buildToolMapping(options.orderStore, options.products, {
-    onConfirm: options.onConfirm,
-    onSetCustomerName: options.onSetCustomerName,
-  });
+  const toolMapping = options.bookingEnabled
+    ? buildBookingToolMapping({
+        businessId: options.businessId ?? "",
+        products: options.products,
+        voiceSessionId: options.voiceSessionId,
+      })
+    : buildToolMapping(options.orderStore, options.products, {
+        onConfirm: options.onConfirm,
+        onSetCustomerName: options.onSetCustomerName,
+        orderingEnabled: options.orderingEnabled ?? true,
+      });
 
   let reconnects = 0;
   while (reconnects <= MAX_SESSION_RECONNECTS) {
@@ -81,6 +93,9 @@ export async function* startGeminiSession(
   }
 }
 
+type ToolHandlerResult = Record<string, unknown> | Promise<Record<string, unknown>>;
+type ToolMapping = Record<string, (args: Record<string, unknown>) => ToolHandlerResult>;
+
 async function* runSingleSession(
   options: GeminiLiveOptions,
   audioInputQueue: AsyncIterable<unknown>,
@@ -89,7 +104,7 @@ async function* runSingleSession(
     audioInterrupt?: () => Promise<void>;
     orderUpdate?: (order: Record<string, unknown>) => Promise<void>;
   },
-  toolMapping: Record<string, (args: Record<string, unknown>) => Record<string, unknown>>,
+  toolMapping: ToolMapping,
 ): AsyncGenerator<Record<string, unknown>> {
   const sampleRate = options.inputSampleRate ?? 16000;
   const eventQueue: SessionEvent[] = [];
@@ -160,7 +175,10 @@ async function* runSingleSession(
         systemInstruction: options.systemInstruction,
         inputAudioTranscription: {},
         outputAudioTranscription: {},
-        tools: buildToolDeclarations() as never,
+        tools: buildToolDeclarations({
+          orderingEnabled: options.orderingEnabled ?? true,
+          bookingEnabled: options.bookingEnabled ?? false,
+        }) as never,
       },
       callbacks: {
         onmessage: async (message) => {
@@ -217,7 +235,9 @@ async function* runSingleSession(
 
               if (toolMapping[funcName]) {
                 try {
-                  result = toolMapping[funcName](args);
+                  const rawResult = toolMapping[funcName](args);
+                  result =
+                    rawResult instanceof Promise ? await rawResult : (rawResult as Record<string, unknown>);
                 } catch (exc) {
                   result = { error: String(exc) };
                 }

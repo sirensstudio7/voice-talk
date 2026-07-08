@@ -61,7 +61,7 @@ function BasketEmptyState({ onBrowseMenu }: { onBrowseMenu: () => void }) {
       <div className="mt-5 text-center">
         <p className="text-[22px] font-semibold tracking-tight text-slate-900">Start your order</p>
         <p className="mx-auto mt-2 max-w-[320px] text-[15px] leading-relaxed text-slate-500">
-          Browse the menu or tell Eva what you want. Items you add show up here.
+          Browse the menu or tell Lorescale what you want. Items you add show up here.
         </p>
       </div>
 

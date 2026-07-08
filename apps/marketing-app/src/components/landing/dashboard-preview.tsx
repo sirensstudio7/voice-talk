@@ -81,12 +81,12 @@ export function DashboardPreview() {
   return (
     <div
       className="flex min-h-[420px] bg-slate-50 sm:min-h-[520px] lg:min-h-[580px]"
-      aria-label="EVA Admin dashboard preview"
+      aria-label="Lorescale Admin dashboard preview"
       role="img"
     >
       <aside className="hidden w-44 shrink-0 border-r border-gray-200 bg-white/90 backdrop-blur-md sm:block lg:w-56">
         <div className="flex h-12 items-center px-4 lg:h-14">
-          <span className="text-base font-bold tracking-tight text-orange-500 lg:text-lg">EVA Admin</span>
+          <span className="text-base font-bold tracking-tight text-orange-500 lg:text-lg">Lorescale Admin</span>
         </div>
 
         <div className="px-3">

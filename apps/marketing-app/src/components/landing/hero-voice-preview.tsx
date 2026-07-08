@@ -1,6 +1,6 @@
 "use client";
 
-import { HeroEvaAvatar } from "@/components/landing/hero-eva-avatar";
+import { HeroLorescaleAvatar } from "@/components/landing/hero-lorescale-avatar";
 import {
   BookOpen,
   Home,
@@ -22,7 +22,7 @@ export function HeroVoicePreview() {
       aria-hidden
     >
       <div className="absolute inset-0">
-        <HeroEvaAvatar />
+        <HeroLorescaleAvatar />
       </div>
 
       <div
@@ -39,7 +39,7 @@ export function HeroVoicePreview() {
           <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-2 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)]">
             <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
               <Image
-                src="/eva-cashier-nobg.png"
+                src="/lorescale-cashier-nobg.png"
                 alt=""
                 width={32}
                 height={32}
@@ -48,7 +48,7 @@ export function HeroVoicePreview() {
               <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-white bg-slate-400" />
             </div>
             <p className="flex items-center gap-0.5 whitespace-nowrap pr-0.5 text-[11px] font-semibold leading-none text-slate-900">
-              Eva
+              Lorescale
               <span className="font-normal text-slate-400">·</span>
               <span className="font-medium text-slate-600">Ready</span>
             </p>

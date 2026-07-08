@@ -34,6 +34,9 @@ export const businesses = pgTable("businesses", {
   paymentQrUrl: text("payment_qr_url").notNull().default(""),
   backgroundUrl: text("background_url").notNull().default(""),
   gradientColor: varchar("gradient_color", { length: 7 }).notNull().default(""),
+  businessType: varchar("business_type", { length: 50 }).notNull().default(""),
+  primaryUseCase: varchar("primary_use_case", { length: 20 }).notNull().default("both"),
+  onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -73,9 +76,45 @@ export const products = pgTable(
     imageUrl: text("image_url").notNull().default(""),
     isActive: boolean("is_active").notNull().default(true),
     sortOrder: integer("sort_order").notNull().default(0),
+    durationMin: integer("duration_min").notNull().default(30),
   },
   (table) => [unique("uq_product_slug").on(table.businessId, table.productId)],
 );
+
+export const businessHours = pgTable(
+  "business_hours",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    businessId: varchar("business_id", { length: 36 })
+      .notNull()
+      .references(() => businesses.id),
+    dayOfWeek: integer("day_of_week").notNull(),
+    openTime: varchar("open_time", { length: 5 }).notNull().default("09:00"),
+    closeTime: varchar("close_time", { length: 5 }).notNull().default("18:00"),
+    isClosed: boolean("is_closed").notNull().default(false),
+  },
+  (table) => [unique("uq_business_hours_day").on(table.businessId, table.dayOfWeek)],
+);
+
+export const appointments = pgTable("appointments", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  businessId: varchar("business_id", { length: 36 })
+    .notNull()
+    .references(() => businesses.id),
+  productId: varchar("product_id", { length: 100 }).notNull(),
+  treatmentName: varchar("treatment_name", { length: 255 }).notNull(),
+  customerName: varchar("customer_name", { length: 255 }).notNull(),
+  customerPhone: varchar("customer_phone", { length: 50 }).notNull().default(""),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("scheduled"),
+  voiceSessionId: varchar("voice_session_id", { length: 36 }).references(() => voiceSessions.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const knowledgeEntries = pgTable("knowledge_entries", {
   id: varchar("id", { length: 36 })
@@ -97,7 +136,8 @@ export const aiRules = pgTable("ai_rules", {
     .notNull()
     .unique()
     .references(() => businesses.id),
-  assistantName: varchar("assistant_name", { length: 50 }).notNull().default("Eva"),
+  assistantName: varchar("assistant_name", { length: 50 }).notNull().default("Lorescale"),
+  avatarUrl: text("avatar_url").notNull().default(""),
   personality: text("personality").notNull(),
   tone: varchar("tone", { length: 20 }).notNull().default("friendly"),
   language: varchar("language", { length: 5 }).notNull().default("id"),
@@ -166,6 +206,8 @@ export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type VoiceSession = typeof voiceSessions.$inferSelect;
 export type TranscriptMessage = typeof transcriptMessages.$inferSelect;
+export type BusinessHours = typeof businessHours.$inferSelect;
+export type Appointment = typeof appointments.$inferSelect;
 
 export type BusinessWithRelations = Business & {
   products: Product[];

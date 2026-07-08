@@ -18,13 +18,13 @@ export function AvatarPlaceholder() {
               isTalking ? "ring-orange-400" : ""
             }`}
           >
-            <span className="text-[5.5rem] leading-none" role="img" aria-label="Eva">
+            <span className="text-[5.5rem] leading-none" role="img" aria-label="Lorescale">
               👩‍🍳
             </span>
           </div>
 
           <div className="mt-4 text-center">
-            <p className="text-2xl font-bold tracking-tight text-slate-900">Eva</p>
+            <p className="text-2xl font-bold tracking-tight text-slate-900">Lorescale</p>
             <p className="text-sm font-medium text-slate-600">Sunrise Coffee</p>
           </div>
         </div>

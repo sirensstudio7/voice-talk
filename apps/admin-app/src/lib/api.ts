@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import type { BusinessCapabilities, PrimaryUseCase } from "@voicetalk/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -10,6 +11,10 @@ export type Business = {
   voice_name: string;
   gemini_model: string;
   is_active: boolean;
+  business_type?: string;
+  primary_use_case?: PrimaryUseCase;
+  onboarding_completed?: boolean;
+  capabilities?: BusinessCapabilities;
 };
 
 export type Product = {
@@ -23,6 +28,26 @@ export type Product = {
   image_url: string;
   is_active: boolean;
   sort_order: number;
+  duration_min?: number;
+};
+
+export type Appointment = {
+  id: string;
+  product_id: string;
+  treatment_name: string;
+  customer_name: string;
+  customer_phone: string;
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  created_at: string;
+};
+
+export type BusinessHour = {
+  day_of_week: number;
+  open_time: string;
+  close_time: string;
+  is_closed: boolean;
 };
 
 export type KnowledgeEntry = {
@@ -38,6 +63,7 @@ export type AiLanguage = "id" | "en";
 export type AiRules = {
   id: string;
   assistant_name: string;
+  avatar_url: string;
   personality: string;
   tone: AiTone;
   language: AiLanguage;
@@ -221,13 +247,55 @@ export async function login(email: string, password: string) {
     body: JSON.stringify({ email, password }),
   });
   if (!response.ok) {
-    throw new Error("Invalid credentials");
+    const text = await response.text();
+    throw new ApiRequestError(parseErrorMessage(text, "Invalid credentials"), response.status);
   }
   return response.json() as Promise<{ access_token: string; user: { id: string; email: string; name: string } }>;
 }
 
+export async function signup(email: string, password: string, name?: string) {
+  const response = await fetch(`${API_URL}/admin/auth/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, name }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiRequestError(parseErrorMessage(text, "Sign up failed"), response.status);
+  }
+  return response.json() as Promise<{ access_token: string; user: { id: string; email: string; name: string } }>;
+}
+
+export type SlugCheckResult =
+  | { available: true }
+  | { available: false; suggestions: string[] };
+
 export const api = {
   listBusinesses: (token: string) => request<Business[]>("/admin/businesses", token),
+  checkSlug: (token: string, slug: string) =>
+    request<SlugCheckResult>(`/admin/businesses/check-slug?slug=${encodeURIComponent(slug)}`, token),
+  createBusiness: (token: string, body: { name: string; slug: string }) =>
+    request<Business>("/admin/businesses", token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  completeOnboarding: (
+    token: string,
+    businessId: string,
+    body: {
+      business_type: string;
+      primary_use_case: "orders" | "faqs" | "both" | "appointments";
+      language?: "id" | "en";
+    },
+  ) =>
+    request<{ business: Business; ai_rules: AiRules }>(
+      `/admin/businesses/${businessId}/onboarding`,
+      token,
+      {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      },
+    ),
   listProducts: (token: string, businessId: string) =>
     request<Product[]>(`/admin/businesses/${businessId}/products`, token),
   createProduct: (token: string, businessId: string, body: Partial<Product>) =>
@@ -264,6 +332,12 @@ export const api = {
     request<AiRules>(`/admin/businesses/${businessId}/ai-rules`, token, {
       method: "PATCH",
       body: JSON.stringify(body),
+    }),
+  uploadAssistantAvatar: (token: string, businessId: string, file: File) =>
+    uploadRequest<AiRules>(`/admin/businesses/${businessId}/ai-rules/avatar`, token, file),
+  deleteAssistantAvatar: (token: string, businessId: string) =>
+    request<AiRules>(`/admin/businesses/${businessId}/ai-rules/avatar`, token, {
+      method: "DELETE",
     }),
   getPromptPreview: (token: string, businessId: string) =>
     request<{ system_instruction: string }>(`/admin/businesses/${businessId}/prompt-preview`, token),
@@ -321,5 +395,22 @@ export const api = {
   deleteBackground: (token: string, businessId: string) =>
     request<AppearanceSettings>(`/admin/businesses/${businessId}/appearance/background`, token, {
       method: "DELETE",
+    }),
+  listAppointments: (token: string, businessId: string, date?: string) => {
+    const query = date ? `?date=${encodeURIComponent(date)}` : "";
+    return request<Appointment[]>(`/admin/businesses/${businessId}/appointments${query}`, token);
+  },
+  cancelAppointment: (token: string, businessId: string, appointmentId: string) =>
+    request<Appointment>(
+      `/admin/businesses/${businessId}/appointments/${appointmentId}/cancel`,
+      token,
+      { method: "PATCH" },
+    ),
+  getSchedule: (token: string, businessId: string) =>
+    request<BusinessHour[]>(`/admin/businesses/${businessId}/schedule`, token),
+  saveSchedule: (token: string, businessId: string, hours: BusinessHour[]) =>
+    request<BusinessHour[]>(`/admin/businesses/${businessId}/schedule`, token, {
+      method: "PUT",
+      body: JSON.stringify({ hours }),
     }),
 };

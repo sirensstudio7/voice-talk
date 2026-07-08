@@ -1,6 +1,7 @@
 import { Type } from "@google/genai";
 import type { OrderStore } from "./order-store.js";
 import { effectivePrice } from "./pricing.js";
+import { buildBookingToolDeclarations } from "./booking-tools.js";
 
 export interface ProductInfo {
   id: string;
@@ -10,6 +11,7 @@ export interface ProductInfo {
   category: string;
   description: string;
   image_url: string;
+  duration_min?: number;
 }
 
 function salePrice(product: ProductInfo): number {
@@ -37,7 +39,17 @@ function findProduct(query: string, productList: ProductInfo[]) {
     }));
 }
 
-export function buildToolDeclarations() {
+export function buildToolDeclarations(
+  options: { orderingEnabled?: boolean; bookingEnabled?: boolean } = {},
+) {
+  if (options.bookingEnabled) {
+    return buildBookingToolDeclarations();
+  }
+
+  if (!options.orderingEnabled) {
+    return [];
+  }
+
   return [
     {
       functionDeclarations: [
@@ -120,8 +132,13 @@ export function buildToolMapping(
   callbacks: {
     onConfirm?: (order: Record<string, unknown>) => void;
     onSetCustomerName?: (name: string) => void;
+    orderingEnabled?: boolean;
   } = {},
 ): Record<string, (args: Record<string, unknown>) => Record<string, unknown>> {
+  if (!callbacks.orderingEnabled) {
+    return {};
+  }
+
   return {
     search_products: (args) => {
       const results = findProduct(String(args.query ?? ""), productList);

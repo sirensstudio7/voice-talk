@@ -317,7 +317,7 @@ export function ConversationsPageClient() {
           <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-500">
             {selectedDate
               ? `There are no voice sessions for ${formatSelectedDateLabel(selectedDate)}. Try another date or view all dates.`
-              : "When a customer talks to Eva, the conversation transcript will appear here automatically."}
+              : "When a customer talks to Lorescale, the conversation transcript will appear here automatically."}
           </p>
         </div>
       ) : (

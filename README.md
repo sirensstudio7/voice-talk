@@ -1,4 +1,4 @@
-# EVA Voice MVP
+# Lorescale Voice MVP
 
 Phase 1 voice vertical slice for the AI Cashier demo.
 

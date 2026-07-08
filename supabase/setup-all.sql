@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS businesses (
   payment_qr_url TEXT NOT NULL DEFAULT '',
   background_url TEXT NOT NULL DEFAULT '',
   gradient_color VARCHAR(7) NOT NULL DEFAULT '',
+  business_type VARCHAR(50) NOT NULL DEFAULT '',
+  primary_use_case VARCHAR(20) NOT NULL DEFAULT 'both',
+  onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -70,7 +73,8 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_business ON knowledge_entries(business_
 CREATE TABLE IF NOT EXISTS ai_rules (
   id VARCHAR(36) PRIMARY KEY,
   business_id VARCHAR(36) NOT NULL UNIQUE REFERENCES businesses(id),
-  assistant_name VARCHAR(50) NOT NULL DEFAULT 'Eva',
+  assistant_name VARCHAR(50) NOT NULL DEFAULT 'Lorescale',
+  avatar_url TEXT NOT NULL DEFAULT '',
   personality TEXT NOT NULL,
   tone VARCHAR(20) NOT NULL DEFAULT 'friendly',
   language VARCHAR(5) NOT NULL DEFAULT 'id',
@@ -132,7 +136,8 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES
   ('payment-qr', 'payment-qr', true),
   ('backgrounds', 'backgrounds', true),
-  ('product-images', 'product-images', true)
+  ('product-images', 'product-images', true),
+  ('assistant-avatars', 'assistant-avatars', true)
 ON CONFLICT (id) DO NOTHING;
 
 DROP POLICY IF EXISTS "Public read payment-qr" ON storage.objects;
@@ -150,6 +155,11 @@ CREATE POLICY "Public read product-images"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'product-images');
 
+DROP POLICY IF EXISTS "Public read assistant-avatars" ON storage.objects;
+CREATE POLICY "Public read assistant-avatars"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'assistant-avatars');
+
 DROP POLICY IF EXISTS "Service upload payment-qr" ON storage.objects;
 CREATE POLICY "Service upload payment-qr"
   ON storage.objects FOR INSERT
@@ -164,6 +174,11 @@ DROP POLICY IF EXISTS "Service upload product-images" ON storage.objects;
 CREATE POLICY "Service upload product-images"
   ON storage.objects FOR INSERT
   WITH CHECK (bucket_id = 'product-images');
+
+DROP POLICY IF EXISTS "Service upload assistant-avatars" ON storage.objects;
+CREATE POLICY "Service upload assistant-avatars"
+  ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'assistant-avatars');
 
 DROP POLICY IF EXISTS "Service update payment-qr" ON storage.objects;
 CREATE POLICY "Service update payment-qr"
@@ -180,6 +195,11 @@ CREATE POLICY "Service update product-images"
   ON storage.objects FOR UPDATE
   USING (bucket_id = 'product-images');
 
+DROP POLICY IF EXISTS "Service update assistant-avatars" ON storage.objects;
+CREATE POLICY "Service update assistant-avatars"
+  ON storage.objects FOR UPDATE
+  USING (bucket_id = 'assistant-avatars');
+
 DROP POLICY IF EXISTS "Service delete payment-qr" ON storage.objects;
 CREATE POLICY "Service delete payment-qr"
   ON storage.objects FOR DELETE
@@ -194,3 +214,8 @@ DROP POLICY IF EXISTS "Service delete product-images" ON storage.objects;
 CREATE POLICY "Service delete product-images"
   ON storage.objects FOR DELETE
   USING (bucket_id = 'product-images');
+
+DROP POLICY IF EXISTS "Service delete assistant-avatars" ON storage.objects;
+CREATE POLICY "Service delete assistant-avatars"
+  ON storage.objects FOR DELETE
+  USING (bucket_id = 'assistant-avatars');

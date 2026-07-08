@@ -12,6 +12,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { BasketButton } from "@/components/basket-panel";
+import { DEFAULT_ASSISTANT_AVATAR, resolveMediaUrl } from "@/lib/menu-api";
 import { useSessionStore } from "@/store/session-store";
 import { StoreMenuButton } from "@/components/store-menu-panel";
 import { AiLanguage } from "@/types/voice";
@@ -85,6 +86,8 @@ function AnimatedStatusLabel({ label }: { label: string }) {
 
 interface ExperienceHeaderProps {
   onDisconnect: () => void;
+  orderingEnabled?: boolean;
+  bookingEnabled?: boolean;
 }
 
 const languageOptions = [
@@ -181,10 +184,18 @@ export function LanguageToggle({
   );
 }
 
-export function ExperienceHeader({ onDisconnect }: ExperienceHeaderProps) {
-  const { status, error, assistantName } = useSessionStore();
+export function ExperienceHeader({
+  onDisconnect,
+  orderingEnabled = true,
+  bookingEnabled = false,
+}: ExperienceHeaderProps) {
+  const { status, error, assistantName, avatarUrl, avatarCacheBust } = useSessionStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const isLive = status === "connected" || status === "connecting";
+  const resolvedAvatarUrl = avatarUrl ? resolveMediaUrl(avatarUrl) : "";
+  const assistantAvatarSrc = resolvedAvatarUrl
+    ? `${resolvedAvatarUrl}${resolvedAvatarUrl.includes("?") ? "&" : "?"}v=${avatarCacheBust || 0}`
+    : DEFAULT_ASSISTANT_AVATAR;
 
   const statusDot =
     status === "connecting"
@@ -204,17 +215,35 @@ export function ExperienceHeader({ onDisconnect }: ExperienceHeaderProps) {
       <div className="flex items-center gap-2.5">
         <div
           className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-2 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)]"
-          aria-label={`AI Cashier ${assistantName}, ${statusLabel[status]}`}
+          aria-label={`AI ${
+            orderingEnabled ? "Cashier" : bookingEnabled ? "Receptionist" : "Assistant"
+          } ${assistantName}, ${statusLabel[status]}`}
         >
           <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
-            <Image
-              src="/eva-cashier-nobg.png"
-              alt=""
-              width={32}
-              height={32}
-              className="h-full w-full object-cover object-top"
-              aria-hidden
-            />
+            {assistantAvatarSrc.startsWith("http") ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={assistantAvatarSrc}
+                src={assistantAvatarSrc}
+                alt=""
+                width={32}
+                height={32}
+                loading="eager"
+                decoding="async"
+                referrerPolicy="no-referrer"
+                className="h-full w-full object-cover object-center"
+                aria-hidden
+              />
+            ) : (
+              <Image
+                src={assistantAvatarSrc}
+                alt=""
+                width={32}
+                height={32}
+                className="h-full w-full object-cover object-center"
+                aria-hidden
+              />
+            )}
             <span
               className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-white transition-colors duration-300 ease-out ${statusDot}`}
             />
@@ -228,7 +257,7 @@ export function ExperienceHeader({ onDisconnect }: ExperienceHeaderProps) {
           </p>
         </div>
 
-        <BasketButton />
+        {orderingEnabled ? <BasketButton /> : null}
 
         <div className="relative">
           <button
@@ -281,6 +310,9 @@ interface BottomControlsProps {
   isTalking: boolean;
   onStart: () => void;
   onStop: () => void;
+  orderingEnabled?: boolean;
+  menuEnabled?: boolean;
+  bookingEnabled?: boolean;
 }
 
 export function BottomControls({
@@ -288,10 +320,13 @@ export function BottomControls({
   isTalking,
   onStart,
   onStop,
+  orderingEnabled = true,
+  menuEnabled = true,
+  bookingEnabled = false,
 }: BottomControlsProps) {
   return (
     <footer className="absolute inset-x-0 bottom-0 z-20 flex items-end justify-center gap-6 px-6 pb-8 pt-16">
-      <StoreMenuButton />
+      {menuEnabled ? <StoreMenuButton /> : <span className="h-12 w-12" aria-hidden />}
 
       <button
         type="button"

@@ -17,14 +17,14 @@ export type AssistantTemplate = {
 
 export const ASSISTANT_TEMPLATES: AssistantTemplate[] = [
   {
-    id: "eva-friendly-id",
-    label: "Eva",
+    id: "lorescale-friendly-id",
+    label: "Lorescale",
     description: "Friendly · Bahasa Indonesia",
     modelPath: DEFAULT_MODEL_PATH,
-    assistant_name: "Eva",
+    assistant_name: "Lorescale",
     tone: "friendly",
     language: "id",
-    personality: `Kamu adalah Eva, kasir AI yang ramah di toko kopi.
+    personality: `Kamu adalah Lorescale, kasir AI yang ramah di toko kopi.
 Bersikaplah hangat, ringkas, dan membantu. Tawarkan tambahan dengan sopan jika relevan.
 Konfirmasikan pesanan dengan jelas sebelum menyelesaikan.`,
     behavioral_rules: `Selalu sapa pelanggan dengan hangat.

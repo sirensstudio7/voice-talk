@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { getBusinessCapabilities } from "@voicetalk/shared";
 import { db } from "../db/client.js";
 import {
   aiRules,
@@ -50,6 +51,7 @@ export async function getBusinessWithRelations(businessId: string): Promise<Busi
 }
 
 export function mapBusinessRow(business: Business) {
+  const capabilities = getBusinessCapabilities(business.primaryUseCase, business.businessType);
   return {
     id: business.id,
     slug: business.slug,
@@ -58,5 +60,8 @@ export function mapBusinessRow(business: Business) {
     voice_name: business.voiceName,
     gemini_model: business.geminiModel,
     is_active: business.isActive,
+    business_type: business.businessType,
+    primary_use_case: capabilities.primary_use_case,
+    capabilities,
   };
 }

@@ -273,8 +273,8 @@ function KnowledgeFormModal({
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">
               {editingId
-                ? "Update what Eva knows about your business."
-                : "A short fact Eva can reference in conversation."}
+                ? "Update what Lorescale knows about your business."
+                : "A short fact Lorescale can reference in conversation."}
             </p>
           </div>
           <button
@@ -465,7 +465,7 @@ export function KnowledgePageClient() {
 
   const handleDelete = async (entry: KnowledgeEntry) => {
     if (!token || !business) return;
-    if (!window.confirm("Delete this knowledge entry? Eva will no longer use it in conversation.")) {
+    if (!window.confirm("Delete this knowledge entry? Lorescale will no longer use it in conversation.")) {
       return;
     }
     await api.deleteKnowledge(token, business.id, entry.id);
@@ -475,7 +475,7 @@ export function KnowledgePageClient() {
 
   const subtitle = useMemo(() => {
     if (loading) return "Loading knowledge base…";
-    if (entries.length === 0) return "Teach Eva facts about your business — hours, policies, and more.";
+    if (entries.length === 0) return "Teach Lorescale facts about your business — hours, policies, and more.";
     const categoryLabel =
       categories.length === 1 ? "1 category" : `${categories.length} categories`;
     return `${entries.length} ${entries.length === 1 ? "entry" : "entries"} across ${categoryLabel}`;
@@ -532,7 +532,7 @@ export function KnowledgePageClient() {
             </div>
             <p className="text-lg font-semibold text-slate-900">No knowledge entries yet</p>
             <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-500">
-              Add facts about your hours, substitutions, payment methods, and policies. Eva will
+              Add facts about your hours, substitutions, payment methods, and policies. Lorescale will
               use these to answer customer questions accurately.
             </p>
             <button

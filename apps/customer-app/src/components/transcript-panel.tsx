@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useRef } from "react";
 
 import { LanguageToggle } from "@/components/voice-controls";
+import { DEFAULT_ASSISTANT_AVATAR, resolveMediaUrl } from "@/lib/menu-api";
 import { useSessionStore } from "@/store/session-store";
 import { AiLanguage } from "@/types/voice";
 
@@ -13,7 +14,11 @@ type TranscriptPanelProps = {
 
 export function TranscriptPanel({ onLanguageChange }: TranscriptPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { transcript, language } = useSessionStore();
+  const { transcript, language, avatarUrl, avatarCacheBust } = useSessionStore();
+  const resolvedAvatarUrl = avatarUrl ? resolveMediaUrl(avatarUrl) : "";
+  const assistantAvatarSrc = resolvedAvatarUrl
+    ? `${resolvedAvatarUrl}${resolvedAvatarUrl.includes("?") ? "&" : "?"}v=${avatarCacheBust || 0}`
+    : DEFAULT_ASSISTANT_AVATAR;
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -54,13 +59,25 @@ export function TranscriptPanel({ onLanguageChange }: TranscriptPanelProps) {
               >
                 {!isUser && showAvatar ? (
                   <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
-                    <Image
-                      src="/eva-cashier-nobg.png"
-                      alt="Eva"
-                      width={28}
-                      height={28}
-                      className="h-full w-full object-cover object-top"
-                    />
+                    {assistantAvatarSrc.startsWith("http") ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={assistantAvatarSrc}
+                        src={assistantAvatarSrc}
+                        alt="Lorescale"
+                        width={28}
+                        height={28}
+                        className="h-full w-full object-cover object-center"
+                      />
+                    ) : (
+                      <Image
+                        src={assistantAvatarSrc}
+                        alt="Lorescale"
+                        width={28}
+                        height={28}
+                        className="h-full w-full object-cover object-center"
+                      />
+                    )}
                   </div>
                 ) : !isUser ? (
                   <div className="w-7 shrink-0" />

@@ -15,6 +15,8 @@ function GradientCtaButton({ href, children }: { href: string; children: React.R
   return (
     <a
       href={href}
+      target="_blank"
+      rel="noopener noreferrer"
       className="group relative inline-flex rounded-full p-[2px] transition-transform hover:scale-[1.02] active:scale-[0.98]"
       style={{ background: GRADIENT_CTA }}
     >
@@ -58,7 +60,7 @@ export function HeroSection() {
             </p>
 
             <div className="mt-10 flex flex-col items-center gap-3">
-              <GradientCtaButton href={adminLoginUrl}>Get 14 Days Free Trial</GradientCtaButton>
+              <GradientCtaButton href={adminLoginUrl}>Get started</GradientCtaButton>
               <p className="text-sm text-[#46484d]">No Credit Card Required</p>
             </div>
           </div>

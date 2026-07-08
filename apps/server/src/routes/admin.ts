@@ -5,6 +5,7 @@ import {
   businessOut,
   createAccessToken,
   getCurrentUser,
+  hashPassword,
   requireBusinessAccess,
   sendAuthError,
   userOut,
@@ -24,6 +25,21 @@ import {
   voiceSessions,
 } from "../db/schema.js";
 import { buildSystemInstruction } from "../services/config-builder.js";
+import {
+  buildOnboardingAiRules,
+  isValidSlug,
+  slugSuggestions,
+  type BusinessType,
+  type OnboardingLanguage,
+  type PrimaryUseCase,
+} from "../services/onboarding.js";
+import {
+  cancelAppointment,
+  listAppointments,
+  listBusinessHours,
+  saveBusinessHours,
+  type BusinessHourInput,
+} from "../services/appointments.js";
 import { serializeUtcDatetime } from "../services/pricing.js";
 import { getBusinessWithRelations } from "../services/tenant.js";
 import {
@@ -65,6 +81,7 @@ function productOut(p: typeof products.$inferSelect) {
     image_url: p.imageUrl,
     is_active: p.isActive,
     sort_order: p.sortOrder,
+    duration_min: p.durationMin,
   };
 }
 
@@ -76,6 +93,7 @@ function aiRulesOut(r: typeof aiRules.$inferSelect) {
   return {
     id: r.id,
     assistant_name: r.assistantName,
+    avatar_url: r.avatarUrl || "",
     personality: r.personality,
     tone: r.tone,
     language: r.language,
@@ -113,6 +131,43 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  app.post("/admin/auth/signup", async (request, reply) => {
+    const body = request.body as { email?: string; password?: string; name?: string };
+    const email = body.email?.toLowerCase().trim() ?? "";
+    const password = body.password ?? "";
+
+    if (!email || !password) {
+      return reply.status(400).send({ detail: "Email and password are required." });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return reply.status(400).send({ detail: "Enter a valid email address." });
+    }
+    if (password.length < 8) {
+      return reply.status(400).send({ detail: "Password must be at least 8 characters." });
+    }
+
+    const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
+    if (existing) {
+      return reply.status(400).send({ detail: "Email already exists." });
+    }
+
+    const name = body.name?.trim() || email.split("@")[0] || "User";
+    const [user] = await db
+      .insert(users)
+      .values({
+        email,
+        passwordHash: await hashPassword(password),
+        name,
+      })
+      .returning();
+
+    return reply.status(201).send({
+      access_token: createAccessToken(user!.id),
+      token_type: "bearer",
+      user: userOut(user!),
+    });
+  });
+
   app.get("/admin/auth/me", async (request, reply) => {
     try {
       return userOut(await getCurrentUser(request));
@@ -136,6 +191,26 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  app.get("/admin/businesses/check-slug", async (request, reply) => {
+    try {
+      await getCurrentUser(request);
+      const { slug: rawSlug } = request.query as { slug?: string };
+      const slug = rawSlug?.toLowerCase().trim() ?? "";
+
+      if (!isValidSlug(slug)) {
+        return reply.status(400).send({ detail: "Invalid slug format." });
+      }
+
+      const existing = await db.query.businesses.findFirst({ where: eq(businesses.slug, slug) });
+      if (existing) {
+        return { available: false, suggestions: slugSuggestions(slug) };
+      }
+      return { available: true };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
   app.post("/admin/businesses", async (request, reply) => {
     try {
       const user = await getCurrentUser(request);
@@ -147,6 +222,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         gemini_model?: string;
       };
       const slug = body.slug.toLowerCase().trim();
+      if (!isValidSlug(slug)) {
+        return reply.status(400).send({ detail: "Invalid slug format." });
+      }
       const existing = await db.query.businesses.findFirst({ where: eq(businesses.slug, slug) });
       if (existing) return reply.status(400).send({ detail: "Slug already exists" });
 
@@ -168,12 +246,81 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       });
       await db.insert(aiRules).values({
         businessId: business!.id,
-        assistantName: "Eva",
+        assistantName: "Lorescale",
         personality: `Kamu adalah kasir AI yang ramah di ${body.name}. Selalu berbicara dalam Bahasa Indonesia.`,
         tone: "friendly",
       });
 
       return reply.status(201).send(businessOut(business!));
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.patch("/admin/businesses/:businessId/onboarding", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      const business = await requireBusinessAccess(request, businessId);
+      const body = request.body as {
+        business_type?: BusinessType;
+        primary_use_case?: PrimaryUseCase;
+        language?: OnboardingLanguage;
+      };
+
+      if (!body.business_type || !body.primary_use_case) {
+        return reply.status(400).send({
+          detail: "Business type and primary use case are required to complete onboarding.",
+        });
+      }
+
+      const businessUpdates: Partial<typeof businesses.$inferInsert> = {
+        businessType: body.business_type,
+        primaryUseCase: body.primary_use_case,
+        onboardingCompleted: true,
+      };
+
+      const aiConfig = buildOnboardingAiRules({
+        businessName: business.name,
+        businessType: body.business_type,
+        primaryUseCase: body.primary_use_case,
+        language: body.language,
+      });
+
+      await db.update(businesses).set(businessUpdates).where(eq(businesses.id, businessId));
+
+      let rules = await db.query.aiRules.findFirst({ where: eq(aiRules.businessId, businessId) });
+      if (!rules) {
+        [rules] = await db
+          .insert(aiRules)
+          .values({
+            businessId,
+            assistantName: "Lorescale",
+            personality: aiConfig.personality,
+            tone: "friendly",
+            language: aiConfig.language,
+            toolInstructions: aiConfig.toolInstructions,
+          })
+          .returning();
+      } else {
+        [rules] = await db
+          .update(aiRules)
+          .set({
+            personality: aiConfig.personality,
+            language: aiConfig.language,
+            toolInstructions: aiConfig.toolInstructions,
+          })
+          .where(eq(aiRules.businessId, businessId))
+          .returning();
+      }
+
+      const updatedBusiness = await db.query.businesses.findFirst({
+        where: eq(businesses.id, businessId),
+      });
+
+      return {
+        business: businessOut(updatedBusiness!),
+        ai_rules: aiRulesOut(rules!),
+      };
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -393,6 +540,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           imageUrl: String(body.image_url ?? ""),
           isActive: body.is_active !== false,
           sortOrder: Number(body.sort_order ?? 0),
+          durationMin: Number(body.duration_min ?? 30),
         })
         .returning();
       return reply.status(201).send(productOut(product!));
@@ -423,6 +571,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       if (body.image_url !== undefined) updates.imageUrl = String(body.image_url);
       if (body.is_active !== undefined) updates.isActive = Boolean(body.is_active);
       if (body.sort_order !== undefined) updates.sortOrder = Number(body.sort_order);
+      if (body.duration_min !== undefined) updates.durationMin = Number(body.duration_min);
 
       const [updated] = await db
         .update(products)
@@ -574,7 +723,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           .insert(aiRules)
           .values({
             businessId,
-            assistantName: "Eva",
+            assistantName: "Lorescale",
             personality: `Kamu adalah kasir AI yang ramah di ${business.name}. Selalu berbicara dalam Bahasa Indonesia.`,
             tone: "friendly",
           })
@@ -596,7 +745,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           .insert(aiRules)
           .values({
             businessId,
-            assistantName: "Eva",
+            assistantName: "Lorescale",
             personality: `Kamu adalah kasir AI yang ramah di ${business.name}. Selalu berbicara dalam Bahasa Indonesia.`,
             tone: "friendly",
           })
@@ -615,6 +764,80 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .update(aiRules)
         .set(updates)
         .where(eq(aiRules.id, rules!.id))
+        .returning();
+      return aiRulesOut(updated!);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/admin/businesses/:businessId/ai-rules/avatar", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      const business = await requireBusinessAccess(request, businessId);
+      const data = await request.file();
+      if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+
+      const contentType = (data.mimetype || "").toLowerCase();
+      const extension = ALLOWED_IMAGE_TYPES[contentType];
+      if (!extension) {
+        return reply.status(400).send({
+          detail: "Upload a PNG, JPG, WEBP, or GIF image for the assistant avatar.",
+        });
+      }
+
+      const buffer = await data.toBuffer();
+      if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+      if (buffer.length > MAX_UPLOAD_BYTES) {
+        return reply.status(400).send({ detail: "Avatar image must be 5 MB or smaller." });
+      }
+
+      let rules = await db.query.aiRules.findFirst({ where: eq(aiRules.businessId, businessId) });
+      if (!rules) {
+        [rules] = await db
+          .insert(aiRules)
+          .values({
+            businessId,
+            assistantName: "Lorescale",
+            personality: `Kamu adalah kasir AI yang ramah di ${business.name}. Selalu berbicara dalam Bahasa Indonesia.`,
+            tone: "friendly",
+          })
+          .returning();
+      }
+
+      await deleteFromStorage("assistant-avatars", business.id);
+      const url = await uploadToStorage(
+        "assistant-avatars",
+        `${business.id}/avatar-${Date.now()}${extension}`,
+        buffer,
+        contentType,
+      );
+
+      const [updated] = await db
+        .update(aiRules)
+        .set({ avatarUrl: url })
+        .where(eq(aiRules.id, rules!.id))
+        .returning();
+      return aiRulesOut(updated!);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.delete("/admin/businesses/:businessId/ai-rules/avatar", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      const business = await requireBusinessAccess(request, businessId);
+      const rules = await db.query.aiRules.findFirst({ where: eq(aiRules.businessId, businessId) });
+      if (!rules) {
+        return reply.status(404).send({ detail: "AI rules not found." });
+      }
+
+      await deleteFromStorage("assistant-avatars", business.id);
+      const [updated] = await db
+        .update(aiRules)
+        .set({ avatarUrl: "" })
+        .where(eq(aiRules.id, rules.id))
         .returning();
       return aiRulesOut(updated!);
     } catch (err) {
@@ -929,6 +1152,51 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         quantity: Number(row.qty ?? 0),
         revenue: Math.round(Number(row.rev ?? 0) * 100) / 100,
       }));
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/appointments", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      const { date } = request.query as { date?: string };
+      return listAppointments(businessId, date);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.patch("/admin/businesses/:businessId/appointments/:appointmentId/cancel", async (request, reply) => {
+    try {
+      const { businessId, appointmentId } = request.params as {
+        businessId: string;
+        appointmentId: string;
+      };
+      await requireBusinessAccess(request, businessId);
+      return cancelAppointment(businessId, appointmentId);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/schedule", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      return listBusinessHours(businessId);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.put("/admin/businesses/:businessId/schedule", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      const body = request.body as { hours: BusinessHourInput[] };
+      return saveBusinessHours(businessId, body.hours ?? []);
     } catch (err) {
       return sendAuthError(reply, err);
     }

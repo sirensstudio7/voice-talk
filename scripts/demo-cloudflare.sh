@@ -135,7 +135,7 @@ APP_PUBLIC_URL="$(wait_for_tunnel_url "$APP_TUNNEL_LOG")"
 
 echo
 echo "=========================================="
-echo "  EVA demo is live (no credit card)"
+echo "  Lorescale demo is live (no credit card)"
 echo "=========================================="
 echo
 echo "Share this link (open in Chrome or Safari):"

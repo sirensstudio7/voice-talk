@@ -10,7 +10,7 @@ const AvatarHero = dynamic(
       <div className="flex h-full w-full items-end justify-center pb-8">
         <div className="flex flex-col items-center gap-3">
           <div className="h-10 w-10 animate-spin rounded-full border-2 border-orange-200 border-t-orange-500" />
-          <p className="text-sm font-medium text-slate-500">Loading Eva 3D…</p>
+          <p className="text-sm font-medium text-slate-500">Loading Lorescale 3D…</p>
         </div>
       </div>
     ),
@@ -25,11 +25,11 @@ const HERO_PREVIEW_CANVAS_RESIZE = {
   offsetSize: true,
 } as const;
 
-export function HeroEvaAvatar() {
+export function HeroLorescaleAvatar() {
   return (
     <AvatarHero
       isTalking={false}
-      assistantName="Eva"
+      assistantName="Lorescale"
       frameClassName={HERO_PREVIEW_FRAME_CLASS}
       resize={HERO_PREVIEW_CANVAS_RESIZE}
     />

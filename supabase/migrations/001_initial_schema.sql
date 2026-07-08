@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS businesses (
   payment_qr_url TEXT NOT NULL DEFAULT '',
   background_url TEXT NOT NULL DEFAULT '',
   gradient_color VARCHAR(7) NOT NULL DEFAULT '',
+  business_type VARCHAR(50) NOT NULL DEFAULT '',
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -67,7 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_business ON knowledge_entries(business_
 CREATE TABLE IF NOT EXISTS ai_rules (
   id VARCHAR(36) PRIMARY KEY,
   business_id VARCHAR(36) NOT NULL UNIQUE REFERENCES businesses(id),
-  assistant_name VARCHAR(50) NOT NULL DEFAULT 'Eva',
+  assistant_name VARCHAR(50) NOT NULL DEFAULT 'Lorescale',
   personality TEXT NOT NULL,
   tone VARCHAR(20) NOT NULL DEFAULT 'friendly',
   language VARCHAR(5) NOT NULL DEFAULT 'id',

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
+import { getBusinessCapabilities } from "@voicetalk/shared";
 import { db } from "../db/client.js";
 import { orderItems } from "../db/schema.js";
 import { env } from "../env.js";
@@ -14,6 +15,11 @@ import {
   resolveAssistantName,
 } from "../services/config-builder.js";
 import { getBusinessBySlug, mapBusinessRow } from "../services/tenant.js";
+import {
+  createAppointment,
+  getAvailableSlots,
+  listAppointments,
+} from "../services/appointments.js";
 
 function orderToOut(order: {
   id: string;
@@ -69,6 +75,11 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
     const business = await getBusinessBySlug(slug);
     if (!business) return reply.status(404).send({ detail: "Business not found" });
 
+    const capabilities = getBusinessCapabilities(business.primaryUseCase, business.businessType);
+    if (!capabilities.ordering_enabled) {
+      return reply.status(403).send({ detail: "Ordering is not enabled for this business." });
+    }
+
     try {
       const snapshot = buildValidatedOrderSnapshot(
         getActiveProducts(business),
@@ -91,14 +102,17 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
     const tenant = await getBusinessBySlug(slug);
     if (!tenant) return reply.status(404).send({ detail: "Business not found" });
 
-    const productList = getActiveProducts(tenant);
+    const capabilities = getBusinessCapabilities(tenant.primaryUseCase, tenant.businessType);
+    const productList = capabilities.menu_enabled ? getActiveProducts(tenant) : [];
     return {
       business: tenant.name,
       slug: tenant.slug,
       tagline: tenant.tagline,
       assistant_name: resolveAssistantName(tenant.aiRules),
+      avatar_url: tenant.aiRules?.avatarUrl || "",
       background_url: tenant.backgroundUrl || "",
       gradient_color: tenant.gradientColor || "",
+      capabilities,
       products: productList.map((p) => ({
         id: p.productId,
         name: p.name,
@@ -108,7 +122,66 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
         category: p.category,
         description: p.description,
         image_url: p.imageUrl,
+        duration_min: p.durationMin,
       })),
     };
+  });
+
+  app.get("/businesses/:slug/availability", async (request, reply) => {
+    const { slug } = request.params as { slug: string };
+    const { product_id: productId, date } = request.query as {
+      product_id?: string;
+      date?: string;
+    };
+    const business = await getBusinessBySlug(slug);
+    if (!business) return reply.status(404).send({ detail: "Business not found" });
+    if (!productId || !date) {
+      return reply.status(400).send({ detail: "product_id and date are required." });
+    }
+
+    try {
+      const slots = await getAvailableSlots({
+        businessId: business.id,
+        productId,
+        date,
+      });
+      return { slots };
+    } catch (error) {
+      return reply.status(400).send({
+        detail: error instanceof Error ? error.message : "Could not load availability.",
+      });
+    }
+  });
+
+  app.post("/businesses/:slug/appointments", async (request, reply) => {
+    const { slug } = request.params as { slug: string };
+    const body = request.body as {
+      product_id?: string;
+      customer_name?: string;
+      customer_phone?: string;
+      starts_at?: string;
+    };
+    const business = await getBusinessBySlug(slug);
+    if (!business) return reply.status(404).send({ detail: "Business not found" });
+
+    const capabilities = getBusinessCapabilities(business.primaryUseCase, business.businessType);
+    if (!capabilities.booking_enabled) {
+      return reply.status(403).send({ detail: "Booking is not enabled for this business." });
+    }
+
+    try {
+      const appointment = await createAppointment({
+        businessId: business.id,
+        productId: String(body.product_id ?? ""),
+        customerName: String(body.customer_name ?? ""),
+        customerPhone: String(body.customer_phone ?? ""),
+        startsAt: String(body.starts_at ?? ""),
+      });
+      return reply.status(201).send(appointment);
+    } catch (error) {
+      return reply.status(400).send({
+        detail: error instanceof Error ? error.message : "Could not create appointment.",
+      });
+    }
   });
 }

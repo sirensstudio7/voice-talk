@@ -1,6 +1,15 @@
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import type { BusinessCapabilities } from "@voicetalk/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+export const DEFAULT_ASSISTANT_AVATAR = "/lorescale-cashier-nobg.png";
+
+export function resolveMediaUrl(path: string): string {
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  return `${API_URL}${path}`;
+}
 
 export interface MenuProduct {
   id: string;
@@ -11,14 +20,17 @@ export interface MenuProduct {
   category: string;
   description: string;
   image_url?: string;
+  duration_min?: number;
 }
 
 export interface MenuResponse {
   business: string;
   slug?: string;
   assistant_name?: string;
+  avatar_url?: string;
   background_url?: string;
   gradient_color?: string;
+  capabilities?: BusinessCapabilities;
   products: MenuProduct[];
 }
 

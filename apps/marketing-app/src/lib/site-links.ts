@@ -13,4 +13,5 @@ export const adminAppUrl = process.env.NEXT_PUBLIC_ADMIN_APP_URL ?? DEFAULT_ADMI
 export const demoSlug = process.env.NEXT_PUBLIC_DEFAULT_BUSINESS_SLUG ?? DEFAULT_DEMO_SLUG;
 
 export const demoUrl = `${customerAppUrl.replace(/\/$/, "")}/b/${demoSlug}`;
-export const adminLoginUrl = `${adminAppUrl.replace(/\/$/, "")}/login`;
+export const adminLoginUrl = `${adminAppUrl.replace(/\/$/, "")}/login?fresh=1`;
+export const adminSignupUrl = `${adminAppUrl.replace(/\/$/, "")}/signup`;

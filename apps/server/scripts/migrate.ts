@@ -11,10 +11,21 @@ const DATABASE_URL =
 
 async function migrate() {
   const sql = postgres(DATABASE_URL, { max: 1 });
-  const schemaPath = resolve(process.cwd(), "../../supabase/migrations/001_initial_schema.sql");
-  const schema = readFileSync(schemaPath, "utf8");
-  await sql.unsafe(schema);
-  console.log("Applied schema migration.");
+  const migrationsDir = resolve(process.cwd(), "../../supabase/migrations");
+  const migrationFiles = [
+    "001_initial_schema.sql",
+    "003_business_type.sql",
+    "004_primary_use_case.sql",
+    "005_onboarding_completed.sql",
+    "006_salon_appointments.sql",
+  ];
+
+  for (const file of migrationFiles) {
+    const schema = readFileSync(resolve(migrationsDir, file), "utf8");
+    await sql.unsafe(schema);
+    console.log(`Applied ${file}.`);
+  }
+
   await sql.end();
 }
 

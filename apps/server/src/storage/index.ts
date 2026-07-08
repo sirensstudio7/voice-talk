@@ -1,6 +1,8 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import ws from "ws";
+
 import { env, hasSupabaseStorage } from "../env.js";
 
 const UPLOAD_ROOT = join(process.cwd(), "uploads");
@@ -10,7 +12,10 @@ let supabase: ReturnType<typeof createClient> | null = null;
 function getSupabase() {
   if (!hasSupabaseStorage()) return null;
   if (!supabase) {
-    supabase = createClient(env.SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!);
+    supabase = createClient(env.SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      realtime: { transport: ws as unknown as typeof WebSocket },
+    });
   }
   return supabase;
 }

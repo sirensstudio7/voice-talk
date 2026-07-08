@@ -70,9 +70,9 @@ export type AvatarHeroProps = {
 export function AvatarHero({
   isTalking,
   modelPath = DEFAULT_MODEL_PATH,
-  assistantName = "Eva",
+  assistantName = "Lorescale",
   frameClassName = HERO_FRAME_CLASS,
-  pngSrc = "/eva-cashier-nobg.png",
+  pngSrc = "/lorescale-cashier-nobg.png",
   usePngFallback = false,
   resize,
 }: AvatarHeroProps) {

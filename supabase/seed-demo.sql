@@ -19,8 +19,16 @@ BEGIN
   SELECT id INTO v_user_id FROM users WHERE email = 'admin@sunrise.coffee';
 
   IF NOT EXISTS (SELECT 1 FROM businesses WHERE slug = 'sunrise-coffee') THEN
-    INSERT INTO businesses (id, slug, name, tagline)
-    VALUES (gen_random_uuid()::text, 'sunrise-coffee', 'Sunrise Coffee', 'Kopi segar, senyum hangat.')
+    INSERT INTO businesses (id, slug, name, tagline, business_type, primary_use_case, onboarding_completed)
+    VALUES (
+      gen_random_uuid()::text,
+      'sunrise-coffee',
+      'Sunrise Coffee',
+      'Kopi segar, senyum hangat.',
+      'cafe',
+      'both',
+      TRUE
+    )
     RETURNING id INTO v_business_id;
 
     INSERT INTO business_members (id, user_id, business_id, role)
@@ -30,7 +38,7 @@ BEGIN
     VALUES (
       gen_random_uuid()::text,
       v_business_id,
-      'Eva',
+      'Lorescale',
       $personality$Kamu adalah kasir AI yang ramah di Sunrise Coffee.
 Bersikaplah hangat, ringkas, dan membantu. Tawarkan tambahan dengan sopan jika relevan.
 Konfirmasikan pesanan dengan jelas sebelum menyelesaikan.

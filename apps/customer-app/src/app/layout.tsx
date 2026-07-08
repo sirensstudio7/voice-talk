@@ -9,7 +9,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "EVA · AI Cashier",
+  title: "Lorescale · AI Cashier",
   description: "Talk to your AI cashier in real time.",
 };
 

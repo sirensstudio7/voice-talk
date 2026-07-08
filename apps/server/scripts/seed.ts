@@ -62,7 +62,7 @@ async function seed() {
 
     await db.insert(aiRules).values({
       businessId: business!.id,
-      assistantName: "Eva",
+      assistantName: "Lorescale",
       personality: PERSONALITY.trim(),
       tone: "friendly",
     });

@@ -139,6 +139,13 @@ function mergeTranscriptChunk(existing: string, incoming: string): string {
   return needsSpace ? `${existing} ${incoming}` : `${existing}${incoming}`;
 }
 
+export interface SelectedTreatment {
+  productId: string;
+  name: string;
+  durationMin?: number;
+  price?: number;
+}
+
 interface SessionStore {
   status: ConnectionStatus;
   isTalking: boolean;
@@ -156,7 +163,14 @@ interface SessionStore {
   menuProductMeta: Record<string, MenuProductMeta>;
   menuCache: MenuResponse | null;
   menuCacheSlug: string | null;
+  orderingEnabled: boolean;
+  menuEnabled: boolean;
+  bookingEnabled: boolean;
+  bookingPanelOpen: boolean;
+  selectedTreatment: SelectedTreatment | null;
   assistantName: string;
+  avatarUrl: string;
+  avatarCacheBust: number;
   setStatus: (status: ConnectionStatus) => void;
   setCheckoutPanelOpen: (open: boolean) => void;
   openCheckoutPanel: () => void;
@@ -164,6 +178,9 @@ interface SessionStore {
   setMenuPanelOpen: (open: boolean) => void;
   openMenuPanel: () => void;
   closeMenuPanel: () => void;
+  setBookingPanelOpen: (open: boolean) => void;
+  openBookingPanel: (treatment: SelectedTreatment) => void;
+  closeBookingPanel: () => void;
   setTalking: (isTalking: boolean) => void;
   setError: (error: string | null) => void;
   setLanguage: (language: AiLanguage) => void;
@@ -186,6 +203,7 @@ interface SessionStore {
   setMenuCache: (slug: string, menu: MenuResponse) => void;
   refreshMenuCache: (slug: string) => Promise<boolean>;
   setAssistantName: (name: string) => void;
+  setAvatarUrl: (url: string) => void;
   hydrateLanguageFromStorage: () => void;
   decrementItemFromOrder: (productId: string) => void;
   removeItemFromOrder: (productId: string) => void;
@@ -210,7 +228,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   menuProductMeta: {},
   menuCache: null,
   menuCacheSlug: null,
-  assistantName: "Eva",
+  orderingEnabled: true,
+  menuEnabled: true,
+  bookingEnabled: false,
+  bookingPanelOpen: false,
+  selectedTreatment: null,
+  assistantName: "Lorescale",
+  avatarUrl: "",
+  avatarCacheBust: 0,
   setStatus: (status) => set({ status }),
   setCheckoutPanelOpen: (open) => set({ checkoutPanelOpen: open }),
   openCheckoutPanel: () => set({ checkoutPanelOpen: true }),
@@ -218,6 +243,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setMenuPanelOpen: (open) => set({ menuPanelOpen: open }),
   openMenuPanel: () => set({ menuPanelOpen: true }),
   closeMenuPanel: () => set({ menuPanelOpen: false }),
+  setBookingPanelOpen: (open) => set({ bookingPanelOpen: open }),
+  openBookingPanel: (treatment) =>
+    set({
+      selectedTreatment: treatment,
+      bookingPanelOpen: true,
+      menuPanelOpen: false,
+    }),
+  closeBookingPanel: () =>
+    set({
+      bookingPanelOpen: false,
+      selectedTreatment: null,
+    }),
   setTalking: (isTalking) => set({ isTalking }),
   setError: (error) => set({ error }),
   setLanguage: (language) => {
@@ -448,6 +485,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         menuCache: menu,
         menuCacheSlug: slug,
         menuProductMeta,
+        orderingEnabled: menu.capabilities?.ordering_enabled ?? true,
+        menuEnabled: menu.capabilities?.menu_enabled ?? (menu.capabilities?.ordering_enabled ?? true),
+        bookingEnabled: menu.capabilities?.booking_enabled ?? false,
       };
     }),
   refreshMenuCache: async (slug) => {
@@ -460,7 +500,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
   setAssistantName: (name) =>
-    set({ assistantName: name.trim() || "Eva" }),
+    set({ assistantName: name.trim() || "Lorescale" }),
+  setAvatarUrl: (url) =>
+    set({ avatarUrl: url, avatarCacheBust: url ? Date.now() : 0 }),
   hydrateLanguageFromStorage: () => {
     const stored = readStoredLanguage();
     if (stored) {
@@ -531,6 +573,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       checkoutOpenRequest: 0,
       checkoutPanelOpen: false,
       menuPanelOpen: false,
+      bookingPanelOpen: false,
+      selectedTreatment: null,
       pendingCheckoutReveal: false,
       flyAnimations: [],
       menuCache: null,

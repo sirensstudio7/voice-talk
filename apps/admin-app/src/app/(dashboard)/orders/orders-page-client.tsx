@@ -320,7 +320,7 @@ export function OrdersPageClient() {
           <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-500">
             {selectedDate
               ? `There are no confirmed orders for ${formatFilterDateLabel(selectedDate)}. Try another date or view all dates.`
-              : "When a customer confirms their order through Eva, it will show up here automatically."}
+              : "When a customer confirms their order through Lorescale, it will show up here automatically."}
           </p>
         </div>
       ) : (

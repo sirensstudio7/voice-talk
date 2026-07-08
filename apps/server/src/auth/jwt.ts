@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import jwt from "jsonwebtoken";
 import { eq } from "drizzle-orm";
+import { getBusinessCapabilities } from "@voicetalk/shared";
 import { db } from "../db/client.js";
 import { businessMembers, businesses, users, type User } from "../db/schema.js";
 import { env } from "../env.js";
@@ -95,6 +96,7 @@ export function userOut(user: User) {
 }
 
 export function businessOut(business: typeof businesses.$inferSelect) {
+  const capabilities = getBusinessCapabilities(business.primaryUseCase, business.businessType);
   return {
     id: business.id,
     slug: business.slug,
@@ -103,5 +105,9 @@ export function businessOut(business: typeof businesses.$inferSelect) {
     voice_name: business.voiceName,
     gemini_model: business.geminiModel,
     is_active: business.isActive,
+    business_type: business.businessType,
+    primary_use_case: capabilities.primary_use_case,
+    onboarding_completed: business.onboardingCompleted,
+    capabilities,
   };
 }

@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type SVGProps } from "react";
 import {
   ArrowRightStartOnRectangleIcon,
   ArrowTopRightOnSquareIcon,
   BookOpenIcon,
   BuildingStorefrontIcon,
+  CalendarDaysIcon,
+  ClockIcon,
   ChartBarIcon,
   ChatBubbleLeftRightIcon,
   CheckIcon,
@@ -90,15 +92,17 @@ function AiStatusBadge({ status }: { status: AiStatus }) {
 }
 
 const NAV = [
-  { href: "/", label: "Overview", icon: Squares2X2Icon },
-  { href: "/menu", label: "Menu", icon: QueueListIcon },
-  { href: "/knowledge", label: "AI Knowledge", icon: BookOpenIcon },
-  { href: "/ai-rules", label: "AI Rules", icon: SparklesIcon },
-  { href: "/orders", label: "Orders", icon: ReceiptPercentIcon },
-  { href: "/conversations", label: "Conversations", icon: ChatBubbleLeftRightIcon },
-  { href: "/payment", label: "Payment QR", icon: QrCodeIcon },
-  { href: "/appearance", label: "Appearance", icon: PhotoIcon },
-  { href: "/analytics", label: "Analytics", icon: ChartBarIcon },
+  { href: "/", label: "Overview", icon: Squares2X2Icon, requiresMenu: false, requiresOrdering: false, requiresBooking: false },
+  { href: "/menu", label: "Menu", icon: QueueListIcon, requiresMenu: true, requiresOrdering: false, requiresBooking: false, salonLabel: "Treatments" },
+  { href: "/appointments", label: "Appointments", icon: CalendarDaysIcon, requiresMenu: false, requiresOrdering: false, requiresBooking: true },
+  { href: "/schedule", label: "Schedule", icon: ClockIcon, requiresMenu: false, requiresOrdering: false, requiresBooking: true },
+  { href: "/knowledge", label: "AI Knowledge", icon: BookOpenIcon, requiresMenu: false, requiresOrdering: false, requiresBooking: false },
+  { href: "/ai-rules", label: "AI Rules", icon: SparklesIcon, requiresMenu: false, requiresOrdering: false, requiresBooking: false },
+  { href: "/orders", label: "Orders", icon: ReceiptPercentIcon, requiresMenu: false, requiresOrdering: true, requiresBooking: false },
+  { href: "/conversations", label: "Conversations", icon: ChatBubbleLeftRightIcon, requiresMenu: false, requiresOrdering: false, requiresBooking: false },
+  { href: "/payment", label: "Payment QR", icon: QrCodeIcon, requiresMenu: false, requiresOrdering: true, requiresBooking: false },
+  { href: "/appearance", label: "Appearance", icon: PhotoIcon, requiresMenu: false, requiresOrdering: false, requiresBooking: false },
+  { href: "/analytics", label: "Analytics", icon: ChartBarIcon, requiresMenu: false, requiresOrdering: false, requiresBooking: false },
 ];
 
 function NavItem({
@@ -325,6 +329,24 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, businesses, business, setBusinessId, logout } = useAuth();
+  const orderingEnabled = business?.capabilities?.ordering_enabled ?? true;
+  const menuEnabled = business?.capabilities?.menu_enabled ?? orderingEnabled;
+  const bookingEnabled = business?.capabilities?.booking_enabled ?? false;
+  const salonMode = business?.capabilities?.salon_mode ?? false;
+  const navItems = useMemo(
+    () =>
+      NAV.filter((item) => {
+        if (item.requiresOrdering && !orderingEnabled) return false;
+        if (item.requiresBooking && !bookingEnabled) return false;
+        if (item.requiresMenu && !menuEnabled) return false;
+        return true;
+      }).map((item) => ({
+        ...item,
+        label:
+          item.href === "/menu" && salonMode && item.salonLabel ? item.salonLabel : item.label,
+      })),
+    [orderingEnabled, menuEnabled, bookingEnabled, salonMode],
+  );
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -345,7 +367,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 <SparklesIcon className="h-4 w-4 text-white" />
               </div>
               <span className="text-base font-semibold tracking-tight text-slate-900">
-                EVA <span className="text-orange-500">Admin</span>
+                Lorescale <span className="text-orange-500">Admin</span>
               </span>
             </Link>
           </div>
@@ -367,7 +389,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               }}
             >
               <ul className="flex w-full shrink-0 flex-col gap-0.5 pb-2" aria-label="Dashboard navigation">
-                {NAV.map(({ href, label, icon }) => (
+                {navItems.map(({ href, label, icon }) => (
                   <NavItem key={href} href={href} label={label} icon={icon} active={pathname === href} />
                 ))}
               </ul>

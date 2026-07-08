@@ -12,6 +12,7 @@ import { CURRENCY_PREFIX, formatCurrency } from "@/lib/currency";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const CATEGORY_OPTIONS = ["Coffee", "Pastry", "Food", "Drinks"] as const;
+const SALON_CATEGORY_OPTIONS = ["Haircuts", "Color", "Styling", "Treatments", "Other"] as const;
 
 const emptyForm = {
   product_id: "",
@@ -21,6 +22,7 @@ const emptyForm = {
   category: "Coffee",
   description: "",
   image_url: "",
+  duration_min: "30",
 };
 
 function effectivePrice(price: number, discountPercent: number): number {
@@ -75,10 +77,12 @@ function groupByCategory(products: Product[]) {
 
 function ProductCard({
   product,
+  salonMode,
   onEdit,
   onDelete,
 }: {
   product: Product;
+  salonMode: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -120,7 +124,12 @@ function ProductCard({
         </div>
 
         <div className="mt-auto flex items-center justify-between gap-2 pt-0.5">
-          <ProductPrice price={product.price} discountPercent={product.discount_percent} />
+          <div>
+            <ProductPrice price={product.price} discountPercent={product.discount_percent} />
+            {salonMode && product.duration_min ? (
+              <p className="mt-0.5 text-xs font-medium text-slate-500">{product.duration_min} min</p>
+            ) : null}
+          </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
@@ -174,20 +183,22 @@ function CategorySelect({
   id,
   value,
   onChange,
+  options,
 }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
+  options: readonly string[];
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const options = useMemo(() => {
-    if (CATEGORY_OPTIONS.includes(value as (typeof CATEGORY_OPTIONS)[number])) {
-      return [...CATEGORY_OPTIONS];
+  const resolvedOptions = useMemo(() => {
+    if (options.includes(value)) {
+      return [...options];
     }
-    return [value, ...CATEGORY_OPTIONS];
-  }, [value]);
+    return [value, ...options];
+  }, [value, options]);
 
   useEffect(() => {
     if (!open) return;
@@ -236,7 +247,7 @@ function CategorySelect({
           aria-labelledby={id}
           className="absolute z-20 mt-1.5 max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-200/80"
         >
-          {options.map((option) => {
+          {resolvedOptions.map((option) => {
             const selected = option === value;
             return (
               <li key={option} role="option" aria-selected={selected}>
@@ -379,6 +390,8 @@ function ProductFormModal({
   isFormValid,
   uploadingImage,
   uploadImageError,
+  salonMode,
+  categoryOptions,
   onClose,
   onSubmit,
   onChange,
@@ -392,6 +405,8 @@ function ProductFormModal({
   isFormValid: boolean;
   uploadingImage: boolean;
   uploadImageError: string | null;
+  salonMode: boolean;
+  categoryOptions: readonly string[];
   onClose: () => void;
   onSubmit: (event: React.FormEvent) => void;
   onChange: (form: typeof emptyForm) => void;
@@ -433,12 +448,22 @@ function ProductFormModal({
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
           <div>
             <h2 id="product-form-title" className="text-base font-semibold text-slate-900">
-              {editingId ? "Edit product" : "Add product"}
+              {editingId
+                ? salonMode
+                  ? "Edit treatment"
+                  : "Edit product"
+                : salonMode
+                  ? "Add treatment"
+                  : "Add product"}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">
               {editingId
-                ? "Update details Eva uses when selling this item."
-                : "A new item Eva can recommend and add to orders."}
+                ? salonMode
+                  ? "Update details Lorescale uses when booking this service."
+                  : "Update details Lorescale uses when selling this item."
+                : salonMode
+                  ? "A new service customers can browse and book."
+                  : "A new item Lorescale can recommend and add to orders."}
             </p>
           </div>
           <button
@@ -464,7 +489,7 @@ function ProductFormModal({
             </FormField>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <FormField id="product-id" label="Product ID" hint="Used by Eva's tools.">
+              <FormField id="product-id" label="Product ID" hint="Used by Lorescale's tools.">
                 <input
                   id="product-id"
                   className={`${inputClassName} font-mono`}
@@ -529,9 +554,34 @@ function ProductFormModal({
               <CategorySelect
                 id="product-category"
                 value={form.category}
+                options={categoryOptions}
                 onChange={(category) => onChange({ ...form, category })}
               />
             </FormField>
+
+            {salonMode ? (
+              <FormField
+                id="product-duration"
+                label="Duration"
+                hint="How long this treatment takes. Used to block appointment slots."
+              >
+                <div className="relative">
+                  <input
+                    id="product-duration"
+                    type="number"
+                    min="15"
+                    step="15"
+                    className={`${inputClassName} pr-12 tabular-nums`}
+                    placeholder="30"
+                    value={form.duration_min}
+                    onChange={(event) => onChange({ ...form, duration_min: event.target.value })}
+                  />
+                  <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm text-slate-400">
+                    min
+                  </span>
+                </div>
+              </FormField>
+            ) : null}
 
             <FormField id="product-description" label="Description">
               <textarea
@@ -588,6 +638,9 @@ function ProductFormModal({
 
 export function MenuPageClient() {
   const { token, business } = useAuth();
+  const salonMode = business?.capabilities?.salon_mode ?? false;
+  const categoryOptions = salonMode ? SALON_CATEGORY_OPTIONS : CATEGORY_OPTIONS;
+  const defaultCategory = salonMode ? "Haircuts" : "Coffee";
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -635,14 +688,14 @@ export function MenuPageClient() {
   const groups = useMemo(() => groupByCategory(filteredProducts), [filteredProducts]);
 
   const closeForm = () => {
-    setForm(emptyForm);
+    setForm({ ...emptyForm, category: defaultCategory });
     setEditingId(null);
     setFormOpen(false);
     setUploadImageError(null);
   };
 
   const openAddForm = () => {
-    setForm(emptyForm);
+    setForm({ ...emptyForm, category: defaultCategory });
     setEditingId(null);
     setUploadImageError(null);
     setFormOpen(true);
@@ -672,7 +725,11 @@ export function MenuPageClient() {
     (form.discount_percent.trim().length === 0 ||
       (!Number.isNaN(Number(form.discount_percent)) &&
         Number(form.discount_percent) >= 0 &&
-        Number(form.discount_percent) <= 100));
+        Number(form.discount_percent) <= 100)) &&
+    (!salonMode ||
+      (form.duration_min.trim().length > 0 &&
+        !Number.isNaN(Number(form.duration_min)) &&
+        Number(form.duration_min) >= 15));
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -686,9 +743,10 @@ export function MenuPageClient() {
         price: Number(form.price),
         discount_percent:
           form.discount_percent.trim().length > 0 ? Number(form.discount_percent) : 0,
-        category: form.category.trim() || "Coffee",
+        category: form.category.trim() || defaultCategory,
         description: form.description.trim(),
         image_url: form.image_url.trim(),
+        ...(salonMode ? { duration_min: Number(form.duration_min) } : {}),
       };
 
       if (editingId) {
@@ -714,6 +772,7 @@ export function MenuPageClient() {
       category: product.category,
       description: product.description,
       image_url: product.image_url,
+      duration_min: String(product.duration_min ?? 30),
     });
     setFormOpen(true);
   };
@@ -722,7 +781,7 @@ export function MenuPageClient() {
     if (!token || !business) return;
     if (
       !window.confirm(
-        `Delete "${product.name}"? Eva will no longer be able to sell this product.`,
+        `Delete "${product.name}"? Lorescale will no longer be able to sell this product.`,
       )
     ) {
       return;
@@ -733,17 +792,28 @@ export function MenuPageClient() {
   };
 
   const subtitle = useMemo(() => {
-    if (loading) return "Loading menu…";
-    if (products.length === 0) return "Add products Eva can recommend and sell to customers.";
+    if (loading) return salonMode ? "Loading treatments…" : "Loading menu…";
+    if (products.length === 0) {
+      return salonMode
+        ? "Add treatments customers can browse and book."
+        : "Add products Lorescale can recommend and sell to customers.";
+    }
     const categoryLabel =
       categories.length === 1 ? "1 category" : `${categories.length} categories`;
-    return `${products.length} ${products.length === 1 ? "product" : "products"} across ${categoryLabel}`;
-  }, [loading, products.length, categories.length]);
+    const itemLabel = salonMode
+      ? products.length === 1
+        ? "treatment"
+        : "treatments"
+      : products.length === 1
+        ? "product"
+        : "products";
+    return `${products.length} ${itemLabel} across ${categoryLabel}`;
+  }, [loading, products.length, categories.length, salonMode]);
 
   return (
     <>
       <PageHeader
-        title="Menu"
+        title={salonMode ? "Treatments" : "Menu"}
         subtitle={subtitle}
         action={
           <button
@@ -752,7 +822,7 @@ export function MenuPageClient() {
             className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600"
           >
             <Plus className="h-4 w-4" />
-            Add product
+            {salonMode ? "Add treatment" : "Add product"}
           </button>
         }
       />
@@ -765,6 +835,8 @@ export function MenuPageClient() {
         isFormValid={isFormValid}
         uploadingImage={uploadingImage}
         uploadImageError={uploadImageError}
+        salonMode={salonMode}
+        categoryOptions={categoryOptions}
         onClose={closeForm}
         onSubmit={handleSubmit}
         onChange={setForm}
@@ -776,7 +848,10 @@ export function MenuPageClient() {
 
       {products.length > 0 ? (
         <div className="mb-6 grid gap-4 sm:grid-cols-2">
-          <StatCard label="Total products" value={String(products.length)} />
+          <StatCard
+            label={salonMode ? "Total treatments" : "Total products"}
+            value={String(products.length)}
+          />
           <StatCard label="Categories" value={String(categories.length)} />
         </div>
       ) : null}
@@ -811,10 +886,13 @@ export function MenuPageClient() {
               <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
                 <UtensilsCrossed className="h-7 w-7" />
               </div>
-              <p className="text-lg font-semibold text-slate-900">No products yet</p>
+              <p className="text-lg font-semibold text-slate-900">
+                {salonMode ? "No treatments yet" : "No products yet"}
+              </p>
               <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-500">
-                Add your coffee, food, and drinks here. Eva uses this menu to answer questions and
-                build customer orders.
+                {salonMode
+                  ? "Add your services here. Customers browse treatments and book appointment slots."
+                  : "Add your coffee, food, and drinks here. Lorescale uses this menu to answer questions and build customer orders."}
               </p>
               <button
                 type="button"
@@ -822,7 +900,7 @@ export function MenuPageClient() {
                 className="mt-6 inline-flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-600"
               >
                 <Plus className="h-4 w-4" />
-                Add product
+                {salonMode ? "Add treatment" : "Add product"}
               </button>
             </div>
           ) : (
@@ -897,6 +975,7 @@ export function MenuPageClient() {
                       <ProductCard
                         key={product.id}
                         product={product}
+                        salonMode={salonMode}
                         onEdit={() => handleEdit(product)}
                         onDelete={() => {
                           void handleDelete(product);

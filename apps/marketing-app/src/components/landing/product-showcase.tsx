@@ -21,7 +21,7 @@ function CustomerMockup() {
     <div className="relative aspect-[16/10] bg-gradient-to-b from-slate-100 to-slate-200">
       <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 py-3">
         <div className="rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm">
-          Eva · Live
+          Lorescale · Live
         </div>
         <div className="rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm">
           Basket · 2
@@ -33,7 +33,7 @@ function CustomerMockup() {
       </div>
 
       <div className="absolute bottom-24 left-4 max-w-[11rem] rounded-2xl bg-white/95 p-3 shadow-lg backdrop-blur-sm">
-        <p className="text-[10px] font-medium uppercase tracking-wide text-orange-500">Eva</p>
+        <p className="text-[10px] font-medium uppercase tracking-wide text-orange-500">Lorescale</p>
         <p className="mt-1 text-xs leading-relaxed text-slate-700">
           Hi! What can I get started for you today?
         </p>

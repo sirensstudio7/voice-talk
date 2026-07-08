@@ -9,7 +9,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Lorescale · AI Voice Cashier",
+  title: "Lorescale",
   description:
     "Run your store with AI voice ordering. Real-time voice cashier, 3D avatar, menu and checkout — no app install for customers.",
 };

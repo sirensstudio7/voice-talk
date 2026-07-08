@@ -29,14 +29,16 @@ function groupByCategory(products: MenuProduct[]) {
 
 interface MenuProductCardProps {
   item: MenuProduct;
+  bookingEnabled: boolean;
 }
 
-function MenuProductCard({ item }: MenuProductCardProps) {
+function MenuProductCard({ item, bookingEnabled }: MenuProductCardProps) {
   const [imageError, setImageError] = useState(false);
   const imageRef = useRef<HTMLDivElement>(null);
   const showImage = item.image_url && !imageError;
   const resolvedImageUrl = resolveMediaUrl(item.image_url ?? "");
   const addItemToOrder = useSessionStore((s) => s.addItemToOrder);
+  const openBookingPanel = useSessionStore((s) => s.openBookingPanel);
   const decrementItemFromOrder = useSessionStore((s) => s.decrementItemFromOrder);
   const removeItemFromOrder = useSessionStore((s) => s.removeItemFromOrder);
   const order = useSessionStore((s) => s.order);
@@ -67,6 +69,15 @@ function MenuProductCard({ item }: MenuProductCardProps) {
     } else {
       decrementItemFromOrder(item.id);
     }
+  };
+
+  const handleBook = () => {
+    openBookingPanel({
+      productId: item.id,
+      name: item.name,
+      durationMin: item.duration_min,
+      price: item.price,
+    });
   };
 
   return (
@@ -118,6 +129,9 @@ function MenuProductCard({ item }: MenuProductCardProps) {
           <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-slate-500">
             {item.description}
           </p>
+          {bookingEnabled && item.duration_min ? (
+            <p className="mt-1 text-[10px] font-medium text-slate-400">{item.duration_min} min</p>
+          ) : null}
         </div>
 
         <div className="mt-auto flex items-center justify-between gap-2 pt-0.5">
@@ -135,7 +149,15 @@ function MenuProductCard({ item }: MenuProductCardProps) {
               {formatCurrency(item.price)}
             </p>
           )}
-          {canAddItems ? (
+          {bookingEnabled ? (
+            <button
+              type="button"
+              onClick={handleBook}
+              className="ml-auto flex h-8 shrink-0 items-center justify-center rounded-full bg-orange-500 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-orange-600 active:scale-95"
+            >
+              Book
+            </button>
+          ) : canAddItems ? (
             <div className="flex shrink-0 items-center gap-1.5">
               {inBasket > 0 ? (
                 <button
@@ -175,6 +197,7 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
   const businessSlug = useBusinessSlug();
   const menuCache = useSessionStore((s) => s.menuCache);
   const menuCacheSlug = useSessionStore((s) => s.menuCacheSlug);
+  const bookingEnabled = useSessionStore((s) => s.bookingEnabled);
   const setMenuCache = useSessionStore((s) => s.setMenuCache);
   const order = useSessionStore((s) => s.order);
   const checkoutPhase = useSessionStore((s) => s.checkoutPhase);
@@ -259,7 +282,9 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
             <p className="text-xs font-semibold uppercase tracking-wide text-orange-500">
               {business}
             </p>
-            <h2 className="text-lg font-bold text-slate-900">Menu</h2>
+            <h2 className="text-lg font-bold text-slate-900">
+              {bookingEnabled ? "Treatments" : "Menu"}
+            </h2>
           </div>
           <button
             type="button"
@@ -320,7 +345,7 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
                   </h3>
                   <ul className="grid grid-cols-2 gap-3">
                     {items.map((item) => (
-                      <MenuProductCard key={item.id} item={item} />
+                      <MenuProductCard key={item.id} item={item} bookingEnabled={bookingEnabled} />
                     ))}
                   </ul>
                 </section>
@@ -363,6 +388,7 @@ export function StoreMenuPanelRoot() {
 
 export function StoreMenuButton() {
   const businessSlug = useBusinessSlug();
+  const bookingEnabled = useSessionStore((s) => s.bookingEnabled);
   const openMenuPanel = useSessionStore((s) => s.openMenuPanel);
   const refreshMenuCache = useSessionStore((s) => s.refreshMenuCache);
 
@@ -376,10 +402,10 @@ export function StoreMenuButton() {
       type="button"
       onClick={handleClick}
       className="absolute bottom-8 right-6 z-10 flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] backdrop-blur-sm transition hover:bg-white hover:scale-[1.02] active:scale-[0.98]"
-      aria-label="View menu"
+      aria-label={bookingEnabled ? "View treatments" : "View menu"}
     >
       <BookOpen className="h-4 w-4 text-orange-500" />
-      Menu
+      {bookingEnabled ? "Treatments" : "Menu"}
     </button>
   );
 }
