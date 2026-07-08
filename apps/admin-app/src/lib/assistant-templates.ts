@@ -80,11 +80,12 @@ export function getAssistantTemplate(id: string): AssistantTemplate | undefined 
 
 export function templateToAiRules(
   template: AssistantTemplate,
-  existing: Pick<AiRules, "id">,
+  existing: Pick<AiRules, "id" | "avatar_url">,
 ): AiRules {
   return {
     id: existing.id,
     assistant_name: template.assistant_name,
+    avatar_url: existing.avatar_url ?? "",
     tone: template.tone,
     language: template.language,
     personality: template.personality,
