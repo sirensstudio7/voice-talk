@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { adminLoginUrl, demoUrl } from "@/lib/site-links";
+import { adminLoginUrl } from "@/lib/site-links";
 
 const NAV_LINKS = [
   { href: "#features", label: "Features" },
@@ -30,12 +30,6 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          <a
-            href={demoUrl}
-            className="hidden rounded-full px-4 py-2 text-sm font-medium text-[#46484d] transition hover:text-[#181818] sm:inline-flex"
-          >
-            Live demo
-          </a>
           <a
             href={adminLoginUrl}
             className="inline-flex items-center rounded-full bg-[#181818] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2a2a2a]"
