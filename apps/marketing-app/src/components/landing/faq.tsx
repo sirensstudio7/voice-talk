@@ -53,7 +53,7 @@ export function FAQSection() {
   const [openIndex, setOpenIndex] = useState<number | null>(1);
 
   return (
-    <section id="faq" className="bg-white">
+    <section id="faq" className="border-b border-dashed border-black/[0.06] bg-white">
       <div className="landing-container border-x border-b border-dashed border-black/[0.06]">
         <div className="px-6 py-20 sm:px-8 sm:py-24 lg:px-10">
           <div className="grid grid-cols-1 gap-12 lg:grid-cols-2 lg:gap-16">
