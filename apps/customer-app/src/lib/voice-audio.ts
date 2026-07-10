@@ -42,6 +42,8 @@ export class VoiceAudioEngine {
   private sourceNode: MediaStreamAudioSourceNode | null = null;
   private onAudioData: ((chunk: ArrayBuffer) => void) | null = null;
   private nextStartTime = 0;
+  private playbackStartTime = 0;
+  private totalScheduledDuration = 0;
   private scheduledSources: AudioBufferSourceNode[] = [];
   private recording = false;
   private micReady = false;
@@ -133,14 +135,38 @@ export class VoiceAudioEngine {
     source.connect(this.audioContext.destination);
 
     const now = this.audioContext.currentTime;
+    const wasIdle = this.scheduledSources.length === 0;
     this.nextStartTime = Math.max(now, this.nextStartTime);
+
+    if (wasIdle) {
+      this.playbackStartTime = this.nextStartTime;
+      this.totalScheduledDuration = 0;
+    }
+
     source.start(this.nextStartTime);
     this.nextStartTime += buffer.duration;
+    this.totalScheduledDuration += buffer.duration;
 
     this.scheduledSources.push(source);
     source.onended = () => {
       this.scheduledSources = this.scheduledSources.filter((node) => node !== source);
     };
+  }
+
+  hasActivePlayback(): boolean {
+    return this.scheduledSources.length > 0;
+  }
+
+  getRevealProgress(): number {
+    if (this.totalScheduledDuration <= 0) return 0;
+    if (!this.audioContext) return 0;
+
+    if (!this.hasActivePlayback()) {
+      return 1;
+    }
+
+    const elapsed = this.audioContext.currentTime - this.playbackStartTime;
+    return Math.min(1, Math.max(0, elapsed / this.totalScheduledDuration));
   }
 
   stopPlayback(): void {
@@ -152,6 +178,8 @@ export class VoiceAudioEngine {
       }
     });
     this.scheduledSources = [];
+    this.totalScheduledDuration = 0;
+    this.playbackStartTime = 0;
     if (this.audioContext) {
       this.nextStartTime = this.audioContext.currentTime;
     }

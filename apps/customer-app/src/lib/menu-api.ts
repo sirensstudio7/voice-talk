@@ -26,6 +26,7 @@ export interface MenuProduct {
 export interface MenuResponse {
   business: string;
   slug?: string;
+  business_type?: string;
   assistant_name?: string;
   avatar_url?: string;
   background_url?: string;

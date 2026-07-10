@@ -10,3 +10,13 @@ export {
   mergeTranscriptMessages,
   type TranscriptMessageLike,
 } from "./transcript.js";
+export {
+  isAssistantClosingOffer,
+  isUserDecliningMoreHelp,
+  isUserThankingToEnd,
+  parseVerbalizedEndConversation,
+  shouldEndConversationAfterDecline,
+  shouldEndConversationAfterThanks,
+  shouldEndFaqConversation,
+  stripVerbalizedToolCalls,
+} from "./conversation-end.js";

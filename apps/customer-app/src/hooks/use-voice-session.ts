@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import { VoiceAudioEngine } from "@/lib/voice-audio";
+import { mergeTranscriptChunk, stripVerbalizedToolCalls } from "@voicetalk/shared";
 import {
   OrderSyncAction,
   registerOrderSyncHandler,
@@ -99,10 +100,25 @@ function micErrorMessage(error: unknown): string {
   return "Microphone access failed.";
 }
 
+function computeRevealLength(fullText: string, progress: number): number {
+  if (progress >= 1) return fullText.length;
+  if (progress <= 0) return 0;
+
+  const target = Math.ceil(fullText.length * progress);
+  if (target >= fullText.length) return fullText.length;
+
+  const slice = fullText.slice(0, target);
+  const lastSpace = slice.lastIndexOf(" ");
+  return lastSpace > 0 ? lastSpace : target;
+}
+
 type ConnectOptions = {
   preserveSession?: boolean;
   requestGreeting?: boolean;
 };
+
+const CHAT_FINISH_GRACE_MS = 400;
+const CHAT_RESET_TIMEOUT_MS = 15_000;
 
 export function useVoiceSession() {
   const businessSlug = useBusinessSlug();
@@ -111,9 +127,16 @@ export function useVoiceSession() {
   const sentAudioRef = useRef(false);
   const connectPromiseRef = useRef<Promise<void> | null>(null);
   const intentionalDisconnectRef = useRef(false);
+  const conversationCompletedRef = useRef(false);
   const preserveSessionRef = useRef(false);
+  const preserveTranscriptRef = useRef(false);
   const pendingGreetingRef = useRef(false);
   const connectGenerationRef = useRef(0);
+  const assistantFullTextRef = useRef("");
+  const assistantAudioStartedRef = useRef(false);
+  const revealLoopRef = useRef<number | null>(null);
+  const chatResetPendingRef = useRef(false);
+  const chatResetGenerationRef = useRef(0);
   const {
     status,
     isTalking,
@@ -122,13 +145,133 @@ export function useVoiceSession() {
     setTalking,
     setError,
     addTranscript,
+    setAssistantDisplayText,
     setOrder,
     reset,
     faqMode,
-    orderingEnabled,
     setConversationPhase,
+    clearTranscript,
     startNewConversation,
   } = useSessionStore();
+
+  const resetAssistantSync = useCallback(() => {
+    assistantFullTextRef.current = "";
+    assistantAudioStartedRef.current = false;
+    if (revealLoopRef.current !== null) {
+      cancelAnimationFrame(revealLoopRef.current);
+      revealLoopRef.current = null;
+    }
+  }, []);
+
+  const runRevealTick = useCallback(() => {
+    const fullText = assistantFullTextRef.current;
+    if (!fullText) {
+      revealLoopRef.current = null;
+      return;
+    }
+
+    const engine = audioRef.current;
+    const hasAudio = engine?.hasActivePlayback() ?? false;
+    const progress = engine?.getRevealProgress() ?? 1;
+
+    let visibleText: string;
+    if (!assistantAudioStartedRef.current && !hasAudio) {
+      visibleText = "";
+    } else if (!hasAudio || progress >= 1) {
+      visibleText = fullText;
+    } else {
+      visibleText = fullText.slice(0, computeRevealLength(fullText, progress));
+    }
+
+    setAssistantDisplayText(visibleText);
+
+    if (visibleText.length < fullText.length && hasAudio && progress < 1) {
+      revealLoopRef.current = requestAnimationFrame(runRevealTick);
+    } else {
+      if (visibleText.length < fullText.length) {
+        setAssistantDisplayText(fullText);
+      }
+      revealLoopRef.current = null;
+    }
+  }, [setAssistantDisplayText]);
+
+  const startRevealLoop = useCallback(() => {
+    if (revealLoopRef.current !== null) return;
+    revealLoopRef.current = requestAnimationFrame(runRevealTick);
+  }, [runRevealTick]);
+
+  const bufferAssistantTranscript = useCallback(
+    (incoming: string) => {
+      const lastRole = useSessionStore.getState().transcript.at(-1)?.role;
+      if (lastRole !== "assistant") {
+        assistantFullTextRef.current = incoming;
+      } else {
+        assistantFullTextRef.current = mergeTranscriptChunk(
+          assistantFullTextRef.current,
+          incoming,
+        );
+      }
+      startRevealLoop();
+    },
+    [startRevealLoop],
+  );
+
+  const deferChatReset = useCallback(() => {
+    if (chatResetPendingRef.current) return;
+    chatResetPendingRef.current = true;
+    const generation = ++chatResetGenerationRef.current;
+
+    const hasAudio = audioRef.current?.hasActivePlayback() ?? false;
+    const fullText = assistantFullTextRef.current;
+
+    if (fullText && !hasAudio) {
+      setAssistantDisplayText(fullText);
+    } else if (fullText && hasAudio && revealLoopRef.current === null) {
+      startRevealLoop();
+    }
+
+    const waitForChatFinish = (): Promise<void> =>
+      new Promise((resolve) => {
+        const startedAt = Date.now();
+
+        const tick = () => {
+          if (generation !== chatResetGenerationRef.current) {
+            resolve();
+            return;
+          }
+
+          const activeAudio = audioRef.current?.hasActivePlayback() ?? false;
+          const revealing = revealLoopRef.current !== null;
+          const timedOut = Date.now() - startedAt >= CHAT_RESET_TIMEOUT_MS;
+
+          if (timedOut || (!activeAudio && !revealing)) {
+            resolve();
+            return;
+          }
+
+          requestAnimationFrame(tick);
+        };
+
+        tick();
+      });
+
+    void (async () => {
+      await waitForChatFinish();
+      if (generation !== chatResetGenerationRef.current) return;
+
+      await new Promise((resolve) => setTimeout(resolve, CHAT_FINISH_GRACE_MS));
+      if (generation !== chatResetGenerationRef.current) return;
+
+      resetAssistantSync();
+      startNewConversation();
+      chatResetPendingRef.current = false;
+    })();
+  }, [
+    resetAssistantSync,
+    setAssistantDisplayText,
+    startNewConversation,
+    startRevealLoop,
+  ]);
 
   const teardownSocket = useCallback(() => {
     unregisterOrderSyncHandler();
@@ -149,7 +292,6 @@ export function useVoiceSession() {
     connectGenerationRef.current += 1;
     setTalking(false);
     audioRef.current?.stopCapture();
-    audioRef.current?.stopPlayback();
     sentAudioRef.current = false;
     connectPromiseRef.current = null;
 
@@ -158,8 +300,10 @@ export function useVoiceSession() {
     }
 
     teardownSocket();
+    setConversationPhase("wrapping_up");
     setStatus("disconnected");
-  }, [setStatus, setTalking, teardownSocket]);
+    deferChatReset();
+  }, [deferChatReset, setConversationPhase, setStatus, setTalking, teardownSocket]);
 
   const connect = useCallback(async (options?: ConnectOptions) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -168,6 +312,9 @@ export function useVoiceSession() {
     const preserveSession = options?.preserveSession ?? false;
     const requestGreeting = options?.requestGreeting ?? false;
     pendingGreetingRef.current = requestGreeting;
+    chatResetGenerationRef.current += 1;
+    chatResetPendingRef.current = false;
+
     const generation = ++connectGenerationRef.current;
     const hasExistingOrder = useSessionStore.getState().order.items.length > 0;
     const shouldPreserveSession = preserveSession || hasExistingOrder;
@@ -208,7 +355,9 @@ export function useVoiceSession() {
           return;
         }
         if (event.data instanceof ArrayBuffer) {
+          assistantAudioStartedRef.current = true;
           audioRef.current?.playPcm(event.data);
+          startRevealLoop();
           return;
         }
 
@@ -240,10 +389,16 @@ export function useVoiceSession() {
             if (payload.status === "disconnected") setStatus("disconnected");
             break;
           case "transcript.user":
-            if (payload.text) addTranscript("user", payload.text);
+            if (payload.text) {
+              resetAssistantSync();
+              addTranscript("user", payload.text);
+            }
             break;
           case "transcript.assistant":
-            if (payload.text) addTranscript("assistant", payload.text);
+            if (payload.text) {
+              const cleaned = stripVerbalizedToolCalls(payload.text);
+              if (cleaned) bufferAssistantTranscript(cleaned);
+            }
             break;
           case "order.updated":
             if (payload.order) {
@@ -263,12 +418,23 @@ export function useVoiceSession() {
           case "audio.interrupted":
           case "interrupted":
             audioRef.current?.stopPlayback();
+            if (assistantFullTextRef.current) {
+              setAssistantDisplayText(assistantFullTextRef.current);
+            }
+            if (revealLoopRef.current !== null) {
+              cancelAnimationFrame(revealLoopRef.current);
+              revealLoopRef.current = null;
+            }
             break;
           case "conversation.complete":
+            conversationCompletedRef.current = true;
             setConversationPhase("wrapping_up");
+            deferChatReset();
             break;
           case "error":
             preserveSessionRef.current = false;
+            resetAssistantSync();
+            clearTranscript();
             setError(payload.error ?? "Unknown error");
             setStatus("error");
             teardownSocket();
@@ -295,23 +461,28 @@ export function useVoiceSession() {
         setTalking(false);
         audioRef.current?.pauseRecording();
         wsRef.current = null;
-        const currentStatus = useSessionStore.getState().status;
-        const wasWrappingUp = useSessionStore.getState().conversationPhase === "wrapping_up";
-        if (wasWrappingUp && faqMode) {
+        const { status: currentStatus, faqMode, orderingEnabled, bookingEnabled } =
+          useSessionStore.getState();
+        if (!preserveTranscriptRef.current && !chatResetPendingRef.current) {
           startNewConversation();
-        } else if (
+        }
+        if (
           !intentionalDisconnectRef.current &&
+          !conversationCompletedRef.current &&
           (currentStatus === "connected" || currentStatus === "connecting")
         ) {
           if (faqMode) {
             setError("Voice session ended. Tap Start conversation to begin again.");
           } else if (orderingEnabled) {
             setError("Voice session ended. Tap Order Now to reconnect.");
-          } else {
+          } else if (bookingEnabled) {
             setError("Voice session ended. Tap Book appointment to reconnect.");
+          } else {
+            setError("Voice session ended. Tap Start conversation to begin again.");
           }
         }
         intentionalDisconnectRef.current = false;
+        conversationCompletedRef.current = false;
         setStatus("disconnected");
       };
 
@@ -358,12 +529,14 @@ export function useVoiceSession() {
     } finally {
       connectPromiseRef.current = null;
     }
-  }, [addTranscript, businessSlug, faqMode, orderingEnabled, reset, setConversationPhase, setError, setOrder, setStatus, setTalking, startNewConversation, teardownSocket]);
+  }, [addTranscript, bufferAssistantTranscript, businessSlug, clearTranscript, deferChatReset, faqMode, reset, resetAssistantSync, setAssistantDisplayText, setConversationPhase, setError, setOrder, setStatus, setTalking, startNewConversation, startRevealLoop, teardownSocket]);
 
   const reconnectForLanguageChange = useCallback(async () => {
     intentionalDisconnectRef.current = true;
+    preserveTranscriptRef.current = true;
     connectGenerationRef.current += 1;
     setTalking(false);
+    resetAssistantSync();
     audioRef.current?.stopCapture();
     audioRef.current?.stopPlayback();
     sentAudioRef.current = false;
@@ -375,8 +548,12 @@ export function useVoiceSession() {
 
     teardownSocket();
     intentionalDisconnectRef.current = true;
-    await connect({ preserveSession: true });
-  }, [connect, setTalking, teardownSocket]);
+    try {
+      await connect({ preserveSession: true });
+    } finally {
+      preserveTranscriptRef.current = false;
+    }
+  }, [connect, resetAssistantSync, setTalking, teardownSocket]);
 
   const startTalking = useCallback(async () => {
     try {
@@ -431,10 +608,11 @@ export function useVoiceSession() {
 
   useEffect(() => {
     return () => {
+      resetAssistantSync();
       teardownSocket();
       audioRef.current?.dispose();
     };
-  }, [teardownSocket]);
+  }, [resetAssistantSync, teardownSocket]);
 
   return {
     status,

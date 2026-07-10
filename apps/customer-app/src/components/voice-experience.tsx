@@ -34,10 +34,10 @@ export function VoiceExperience() {
     stopTalking,
   } = useVoiceSession();
 
-  const { error, checkoutPanelOpen, freshOrderRequest, language, orderingEnabled, menuEnabled, bookingEnabled, setLanguage } =
+  const { error, checkoutPanelOpen, conversationPhase, freshOrderRequest, language, orderingEnabled, menuEnabled, bookingEnabled, setLanguage } =
     useSessionStore();
   const isLive = status === "connected" || status === "connecting";
-  const canTalk = status !== "connecting";
+  const canTalk = status !== "connecting" && conversationPhase !== "wrapping_up";
 
   const handleLanguageChange = (nextLanguage: typeof language) => {
     if (nextLanguage === language) return;
@@ -131,7 +131,7 @@ export function VoiceExperience() {
         </div>
       ) : null}
 
-      {!isLive && !checkoutPanelOpen ? (
+      {!isLive && conversationPhase !== "wrapping_up" && !checkoutPanelOpen ? (
         <div className="absolute inset-x-0 bottom-[9.5rem] z-20 flex flex-col items-center gap-3 px-6">
           <button
             type="button"

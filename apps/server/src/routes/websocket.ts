@@ -1,6 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import { getBusinessCapabilities, mergeTranscriptChunk } from "@voicetalk/shared";
+import {
+  getBusinessCapabilities,
+  mergeTranscriptChunk,
+  parseVerbalizedEndConversation,
+  shouldEndFaqConversation,
+  stripVerbalizedToolCalls,
+} from "@voicetalk/shared";
 import { env } from "../env.js";
 import {
   buildSessionGreetingPrompt,
@@ -48,6 +54,9 @@ function createTranscriptTurnBuffer() {
     },
     has(role: TranscriptRole) {
       return pending[role].trim().length > 0;
+    },
+    peek(role: TranscriptRole) {
+      return pending[role].trim();
     },
     async flush(role: TranscriptRole, sessionId: string) {
       const text = pending[role].trim();
@@ -136,7 +145,17 @@ async function handleSession(
   let endReason: string | null = null;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
   let completionScheduled = false;
+  let lastAssistantTurn = "";
   const transcriptBuffer = createTranscriptTurnBuffer();
+
+  const maybeCompleteAfterUserTurn = (userText: string) => {
+    if (!faqEnabled || completionScheduled || !lastAssistantTurn) return false;
+    const reason = shouldEndFaqConversation(lastAssistantTurn, userText);
+    if (!reason) return false;
+    void transcriptBuffer.flush("user", voiceSessionId);
+    completeConversation(reason);
+    return true;
+  };
 
   const clearIdleTimer = () => {
     if (idleTimer) {
@@ -319,21 +338,47 @@ async function handleSession(
       if (eventType === "transcript.user" || eventType === "transcript.assistant") {
         const role: TranscriptRole =
           eventType === "transcript.user" ? "user" : "assistant";
-        transcriptBuffer.append(role, String(event.text ?? ""));
+        let text = String(event.text ?? "");
 
-        if (role === "assistant" && transcriptBuffer.has("user")) {
-          void transcriptBuffer.flush("user", voiceSessionId);
+        if (role === "assistant") {
+          const verbalizedReason = parseVerbalizedEndConversation(text);
+          text = stripVerbalizedToolCalls(text);
+          if (verbalizedReason && faqEnabled) {
+            completeConversation(verbalizedReason);
+          }
+          if (!text) continue;
         }
 
-        if (!safeSendJson(socket, event)) break;
+        transcriptBuffer.append(role, text);
+
+        if (role === "assistant" && transcriptBuffer.has("user")) {
+          const userText = transcriptBuffer.peek("user");
+          if (!maybeCompleteAfterUserTurn(userText)) {
+            void transcriptBuffer.flush("user", voiceSessionId);
+          }
+        }
+
+        if (!safeSendJson(socket, { ...event, text })) break;
+
+        if (role === "user" && maybeCompleteAfterUserTurn(transcriptBuffer.peek("user"))) {
+          continue;
+        }
         continue;
       }
 
       if (event.type === "turn_complete") {
+        if (transcriptBuffer.has("assistant")) {
+          const assistantText = stripVerbalizedToolCalls(transcriptBuffer.peek("assistant"));
+          lastAssistantTurn = assistantText;
+        }
         void transcriptBuffer.flush("assistant", voiceSessionId);
+        if (maybeCompleteAfterUserTurn(transcriptBuffer.peek("user"))) {
+          continue;
+        }
         if (faqEnabled) {
           scheduleIdleTimeout();
         }
+        continue;
       }
 
       if (event.type === "interrupted") {

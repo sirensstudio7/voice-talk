@@ -167,12 +167,14 @@ interface SessionStore {
   setError: (error: string | null) => void;
   setLanguage: (language: AiLanguage) => void;
   addTranscript: (role: "user" | "assistant", text: string) => void;
+  setAssistantDisplayText: (text: string) => void;
   setOrder: (order: OrderState, options?: { source?: "server" | "local" }) => void;
   confirmOrder: () => void;
   markPaid: () => void;
   expirePayment: () => void;
   startNewOrder: () => void;
   startNewConversation: () => void;
+  clearTranscript: () => void;
   setConversationPhase: (phase: ConversationPhase) => void;
   addItemToOrder: (
     item: Pick<OrderItem, "product_id" | "name" | "price">,
@@ -274,6 +276,29 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         ],
       };
     }),
+  setAssistantDisplayText: (text) =>
+    set((state) => {
+      const last = state.transcript[state.transcript.length - 1];
+      if (last?.role === "assistant") {
+        if (last.text === text) return state;
+        return {
+          transcript: state.transcript.map((message, index) =>
+            index === state.transcript.length - 1
+              ? { ...message, text }
+              : message,
+          ),
+        };
+      }
+
+      if (!text) return state;
+
+      return {
+        transcript: [
+          ...state.transcript,
+          { id: crypto.randomUUID(), role: "assistant", text },
+        ],
+      };
+    }),
   setOrder: (order, options) =>
     set((state) => {
       const nextOrder =
@@ -365,6 +390,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       transcript: [],
       conversationPhase: "complete",
     }),
+  clearTranscript: () => set({ transcript: [] }),
   setConversationPhase: (conversationPhase) => set({ conversationPhase }),
   addItemToOrder: (item, quantity = 1, options) => {
     let applied = false;

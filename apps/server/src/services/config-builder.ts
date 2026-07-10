@@ -201,6 +201,8 @@ export function buildSystemInstruction(
         "1. Give a brief warm closing in one sentence.\n" +
         '2. Call end_conversation with reason "question_answered", "patient_goodbye", or "out_of_scope".\n' +
         'Do NOT call end_conversation if they only said "thank you" — ask if they have more questions first.\n' +
+        'If you asked whether they have more questions and they clearly decline ("no", "tidak", "cukup", "sudah") or thank you ("terima kasih", "thanks"), call end_conversation immediately.\n' +
+        "Never speak tool calls out loud. Do not say call.end_conversation or similar — invoke the tool silently.\n" +
         "Do NOT keep the conversation open after a clear goodbye.";
 
   const defaultToolsId = bookingEnabled
@@ -225,6 +227,8 @@ export function buildSystemInstruction(
       "1. Berikan penutup singkat yang hangat dalam satu kalimat.\n" +
       '2. Panggil end_conversation dengan reason "question_answered", "patient_goodbye", atau "out_of_scope".\n' +
       'Jangan panggil end_conversation jika mereka hanya bilang "terima kasih" — tanyakan dulu apakah ada pertanyaan lain.\n' +
+      'Jika kamu menanyakan apakah ada pertanyaan lain dan mereka menolak ("tidak", "cukup", "sudah") atau berterima kasih ("terima kasih", "makasih"), panggil end_conversation segera.\n' +
+      "Jangan ucapkan tool call secara lisan. Jangan bilang call.end_conversation — panggil tool secara diam-diam.\n" +
       "Jangan biarkan percakapan terbuka setelah salam perpisahan yang jelas.";
 
   const sections: string[] = [];

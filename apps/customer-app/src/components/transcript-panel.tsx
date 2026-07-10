@@ -4,7 +4,9 @@ import Image from "next/image";
 import { useEffect, useRef } from "react";
 
 import { LanguageToggle } from "@/components/voice-controls";
+import { useBusinessSlug } from "@/context/business-context";
 import { DEFAULT_ASSISTANT_AVATAR, resolveMediaUrl } from "@/lib/menu-api";
+import { getTranscriptPlaceholder } from "@/lib/transcript-placeholder";
 import { useSessionStore } from "@/store/session-store";
 import { AiLanguage } from "@/types/voice";
 
@@ -14,7 +16,27 @@ type TranscriptPanelProps = {
 
 export function TranscriptPanel({ onLanguageChange }: TranscriptPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { transcript, language, avatarUrl, avatarCacheBust } = useSessionStore();
+  const {
+    transcript,
+    language,
+    avatarUrl,
+    avatarCacheBust,
+    orderingEnabled,
+    bookingEnabled,
+    faqMode,
+    menuCache,
+    menuCacheSlug,
+  } = useSessionStore();
+  const businessSlug = useBusinessSlug();
+  const businessType =
+    menuCacheSlug === businessSlug ? menuCache?.business_type : undefined;
+  const placeholder = getTranscriptPlaceholder({
+    language,
+    orderingEnabled,
+    bookingEnabled,
+    faqMode,
+    businessType,
+  });
   const resolvedAvatarUrl = avatarUrl ? resolveMediaUrl(avatarUrl) : "";
   const assistantAvatarSrc = resolvedAvatarUrl
     ? `${resolvedAvatarUrl}${resolvedAvatarUrl.includes("?") ? "&" : "?"}v=${avatarCacheBust || 0}`
@@ -41,10 +63,7 @@ export function TranscriptPanel({ onLanguageChange }: TranscriptPanelProps) {
         className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-y-contain px-3 py-3"
       >
         {transcript.length === 0 ? (
-          <p className="px-1 text-sm leading-relaxed text-slate-600">
-            Hold the mic and say something like &quot;I&apos;d like a latte and a
-            croissant.&quot;
-          </p>
+          <p className="px-1 text-sm leading-relaxed text-slate-600">{placeholder}</p>
         ) : (
           transcript.map((message, index) => {
             const isUser = message.role === "user";

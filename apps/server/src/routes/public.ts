@@ -108,6 +108,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       business: tenant.name,
       slug: tenant.slug,
       tagline: tenant.tagline,
+      business_type: tenant.businessType,
       assistant_name: resolveAssistantName(tenant.aiRules),
       avatar_url: tenant.aiRules?.avatarUrl || "",
       background_url: tenant.backgroundUrl || "",
