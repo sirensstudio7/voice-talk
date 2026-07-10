@@ -401,7 +401,7 @@ export function StoreMenuButton() {
     <button
       type="button"
       onClick={handleClick}
-      className="absolute bottom-8 right-6 z-10 flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] backdrop-blur-sm transition hover:bg-white hover:scale-[1.02] active:scale-[0.98]"
+      className="relative z-10 flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] backdrop-blur-sm transition hover:bg-white hover:scale-[1.02] active:scale-[0.98]"
       aria-label={bookingEnabled ? "View treatments" : "View menu"}
     >
       <BookOpen className="h-4 w-4 text-orange-500" />

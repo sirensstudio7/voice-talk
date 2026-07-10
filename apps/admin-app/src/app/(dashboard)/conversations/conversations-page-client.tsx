@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Bot, ChevronDown, MessageSquare, User } from "lucide-react";
+import { mergeTranscriptMessages } from "@voicetalk/shared";
 
 import { PageHeader, StatCard } from "@/components/ui";
 import { api, type TranscriptMessage, type VoiceSession, type VoiceSessionDetail } from "@/lib/api";
@@ -99,6 +100,38 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function EndReasonBadge({ reason }: { reason: string | null }) {
+  if (!reason) return null;
+
+  const labels: Record<string, string> = {
+    question_answered: "Answered",
+    patient_goodbye: "Goodbye",
+    out_of_scope: "Out of scope",
+    idle_timeout: "Timed out",
+    manual: "Ended by patient",
+    disconnected: "Disconnected",
+  };
+
+  const styles: Record<string, string> = {
+    question_answered: "bg-blue-50 text-blue-700",
+    patient_goodbye: "bg-violet-50 text-violet-700",
+    out_of_scope: "bg-amber-50 text-amber-700",
+    idle_timeout: "bg-orange-50 text-orange-700",
+    manual: "bg-slate-100 text-slate-600",
+    disconnected: "bg-slate-100 text-slate-600",
+  };
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        styles[reason] ?? "bg-slate-100 text-slate-600"
+      }`}
+    >
+      {labels[reason] ?? reason}
+    </span>
+  );
+}
+
 function TranscriptBubble({ message }: { message: TranscriptMessage }) {
   const isUser = message.role === "user";
 
@@ -137,6 +170,11 @@ function ConversationRow({
   loadingDetail: boolean;
   onToggle: () => void;
 }) {
+  const messages = useMemo(
+    () => (detail ? mergeTranscriptMessages(detail.messages) : []),
+    [detail],
+  );
+
   return (
     <article
       className={`rounded-xl border bg-white shadow-sm transition-all ${
@@ -158,6 +196,9 @@ function ConversationRow({
                 {formatTimestamp(session.started_at)}
               </span>
               <StatusBadge status={session.status} />
+              {session.status === "ended" ? (
+                <EndReasonBadge reason={session.end_reason} />
+              ) : null}
               <span className="text-xs text-slate-500">
                 {formatDuration(session.duration_seconds)}
               </span>
@@ -189,9 +230,9 @@ function ConversationRow({
         <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-4 sm:px-5">
           {loadingDetail ? (
             <p className="text-sm text-slate-500">Loading transcript…</p>
-          ) : detail && detail.messages.length > 0 ? (
+          ) : detail && messages.length > 0 ? (
             <div className="space-y-3">
-              {detail.messages.map((message) => (
+              {messages.map((message) => (
                 <TranscriptBubble key={message.id} message={message} />
               ))}
             </div>

@@ -196,7 +196,12 @@ export function buildSystemInstruction(
       : "Answer customer questions clearly using the business knowledge base.\n" +
         "Do not offer to take orders, add items, or process payments.\n" +
         "If asked about products or purchases, explain that this assistant focuses on answering questions.\n" +
-        "Keep responses warm, concise, and helpful.";
+        "Keep responses warm, concise, and helpful.\n" +
+        "When the customer has no more questions or says goodbye:\n" +
+        "1. Give a brief warm closing in one sentence.\n" +
+        '2. Call end_conversation with reason "question_answered", "patient_goodbye", or "out_of_scope".\n' +
+        'Do NOT call end_conversation if they only said "thank you" — ask if they have more questions first.\n' +
+        "Do NOT keep the conversation open after a clear goodbye.";
 
   const defaultToolsId = bookingEnabled
     ? "Gunakan tools untuk melihat treatment, cek ketersediaan jadwal, dan membuat appointment.\n" +
@@ -215,7 +220,12 @@ export function buildSystemInstruction(
     : "Jawab pertanyaan pelanggan dengan jelas menggunakan basis pengetahuan bisnis.\n" +
       "Jangan menawarkan untuk menerima pesanan, menambahkan item, atau memproses pembayaran.\n" +
       "Jika ditanya tentang produk atau pembelian, jelaskan bahwa asisten ini fokus menjawab pertanyaan.\n" +
-      "Tetap ramah, ringkas, dan membantu.";
+      "Tetap ramah, ringkas, dan membantu.\n" +
+      "Saat pelanggan tidak ada pertanyaan lagi atau mengucapkan selamat tinggal:\n" +
+      "1. Berikan penutup singkat yang hangat dalam satu kalimat.\n" +
+      '2. Panggil end_conversation dengan reason "question_answered", "patient_goodbye", atau "out_of_scope".\n' +
+      'Jangan panggil end_conversation jika mereka hanya bilang "terima kasih" — tanyakan dulu apakah ada pertanyaan lain.\n' +
+      "Jangan biarkan percakapan terbuka setelah salam perpisahan yang jelas.";
 
   const sections: string[] = [];
 
@@ -254,4 +264,25 @@ export function buildSystemInstruction(
   }
 
   return sections.join("\n\n");
+}
+
+export const ALLOWED_IDLE_TIMEOUT_SECONDS = [0, 15, 30, 60, 90, 120] as const;
+export const DEFAULT_IDLE_TIMEOUT_SECONDS = 30;
+
+export function normalizeIdleTimeoutSeconds(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_IDLE_TIMEOUT_SECONDS;
+  const rounded = Math.round(parsed);
+  if ((ALLOWED_IDLE_TIMEOUT_SECONDS as readonly number[]).includes(rounded)) {
+    return rounded;
+  }
+  return DEFAULT_IDLE_TIMEOUT_SECONDS;
+}
+
+export function resolveIdleTimeoutMs(
+  aiRules: Pick<AiRules, "idleTimeoutSeconds"> | null | undefined,
+): number | null {
+  const seconds = aiRules?.idleTimeoutSeconds ?? DEFAULT_IDLE_TIMEOUT_SECONDS;
+  if (seconds <= 0) return null;
+  return seconds * 1000;
 }

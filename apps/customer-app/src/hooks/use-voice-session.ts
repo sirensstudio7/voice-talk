@@ -124,6 +124,10 @@ export function useVoiceSession() {
     addTranscript,
     setOrder,
     reset,
+    faqMode,
+    orderingEnabled,
+    setConversationPhase,
+    startNewConversation,
   } = useSessionStore();
 
   const teardownSocket = useCallback(() => {
@@ -214,12 +218,16 @@ export function useVoiceSession() {
           status?: string;
           order?: OrderState;
           error?: string;
+          reason?: string;
         };
 
         switch (payload.type) {
           case "session.status":
             if (payload.status === "connected" || payload.status === "reconnecting") {
               setStatus("connected");
+              if (faqMode) {
+                setConversationPhase("active");
+              }
               if (
                 pendingGreetingRef.current &&
                 payload.status === "connected" &&
@@ -256,6 +264,9 @@ export function useVoiceSession() {
           case "interrupted":
             audioRef.current?.stopPlayback();
             break;
+          case "conversation.complete":
+            setConversationPhase("wrapping_up");
+            break;
           case "error":
             preserveSessionRef.current = false;
             setError(payload.error ?? "Unknown error");
@@ -285,11 +296,20 @@ export function useVoiceSession() {
         audioRef.current?.pauseRecording();
         wsRef.current = null;
         const currentStatus = useSessionStore.getState().status;
-        if (
+        const wasWrappingUp = useSessionStore.getState().conversationPhase === "wrapping_up";
+        if (wasWrappingUp && faqMode) {
+          startNewConversation();
+        } else if (
           !intentionalDisconnectRef.current &&
           (currentStatus === "connected" || currentStatus === "connecting")
         ) {
-          setError("Voice session ended. Tap Order Now to reconnect.");
+          if (faqMode) {
+            setError("Voice session ended. Tap Start conversation to begin again.");
+          } else if (orderingEnabled) {
+            setError("Voice session ended. Tap Order Now to reconnect.");
+          } else {
+            setError("Voice session ended. Tap Book appointment to reconnect.");
+          }
         }
         intentionalDisconnectRef.current = false;
         setStatus("disconnected");
@@ -338,7 +358,7 @@ export function useVoiceSession() {
     } finally {
       connectPromiseRef.current = null;
     }
-  }, [addTranscript, businessSlug, reset, setError, setOrder, setStatus, setTalking, teardownSocket]);
+  }, [addTranscript, businessSlug, faqMode, orderingEnabled, reset, setConversationPhase, setError, setOrder, setStatus, setTalking, startNewConversation, teardownSocket]);
 
   const reconnectForLanguageChange = useCallback(async () => {
     intentionalDisconnectRef.current = true;

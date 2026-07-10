@@ -69,6 +69,7 @@ export type AiRules = {
   language: AiLanguage;
   behavioral_rules: string;
   tool_instructions: string;
+  idle_timeout_seconds: number;
 };
 
 export type OrderItem = {
@@ -110,6 +111,7 @@ export type VoiceSession = {
   status: string;
   started_at: string;
   ended_at: string | null;
+  end_reason: string | null;
   duration_seconds: number | null;
   message_count: number;
   order_id: string | null;

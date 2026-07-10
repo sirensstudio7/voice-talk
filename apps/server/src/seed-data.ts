@@ -7,6 +7,14 @@ Konfirmasikan pesanan dengan jelas sebelum menyelesaikan.
 Jika pelanggan bertanya tentang jam buka atau kebijakan, gunakan basis pengetahuanmu.
 Selalu berbicara dalam Bahasa Indonesia.`;
 
+export const BEHAVIORAL_RULES = `Selalu sapa pelanggan dengan hangat.
+Tawarkan upsell dengan sopan jika relevan dengan pesanan.
+Jika tidak yakin, tanyakan klarifikasi daripada menebak.`;
+
+export const TOOL_INSTRUCTIONS = `Panggil add_to_order segera setelah pelanggan memilih item.
+Setelah confirm_order, tanyakan nama pelanggan sebelum pembayaran.
+Gunakan set_customer_name saat mereka menjawab.`;
+
 export const KNOWLEDGE = [
   "Kami buka setiap hari pukul 07.00–21.00.",
   "Susu oat dan almond bisa diganti gratis.",

@@ -13,11 +13,13 @@ import {
 } from "../src/db/schema.js";
 import { env } from "../src/env.js";
 import {
+  BEHAVIORAL_RULES,
   BUSINESS_NAME,
   BUSINESS_TAGLINE,
   KNOWLEDGE,
   PERSONALITY,
   PRODUCTS,
+  TOOL_INSTRUCTIONS,
 } from "../src/seed-data.js";
 
 config({ path: resolve(process.cwd(), "../../.env") });
@@ -51,6 +53,9 @@ async function seed() {
         slug: "sunrise-coffee",
         name: BUSINESS_NAME,
         tagline: BUSINESS_TAGLINE,
+        businessType: "cafe",
+        primaryUseCase: "both",
+        onboardingCompleted: true,
       })
       .returning();
 
@@ -65,6 +70,9 @@ async function seed() {
       assistantName: "Lorescale",
       personality: PERSONALITY.trim(),
       tone: "friendly",
+      language: "id",
+      behavioralRules: BEHAVIORAL_RULES.trim(),
+      toolInstructions: TOOL_INSTRUCTIONS.trim(),
     });
 
     console.log("Created business: sunrise-coffee");

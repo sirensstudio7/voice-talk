@@ -80,7 +80,7 @@ export function getAssistantTemplate(id: string): AssistantTemplate | undefined 
 
 export function templateToAiRules(
   template: AssistantTemplate,
-  existing: Pick<AiRules, "id" | "avatar_url">,
+  existing: Pick<AiRules, "id" | "avatar_url" | "idle_timeout_seconds">,
 ): AiRules {
   return {
     id: existing.id,
@@ -91,5 +91,6 @@ export function templateToAiRules(
     personality: template.personality,
     behavioral_rules: template.behavioral_rules,
     tool_instructions: template.tool_instructions,
+    idle_timeout_seconds: existing.idle_timeout_seconds ?? 30,
   };
 }

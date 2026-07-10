@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   ClipboardCopy,
+  Clock,
   Globe,
   ImageIcon,
   ListChecks,
@@ -46,6 +47,39 @@ const LANGUAGE_OPTIONS: { value: AiLanguage; label: string; description: string 
     value: "en",
     label: "English",
     description: "Your assistant speaks English with customers by default.",
+  },
+];
+
+const IDLE_TIMEOUT_OPTIONS: { value: string; label: string; description: string }[] = [
+  {
+    value: "0",
+    label: "Disabled",
+    description: "Conversations only end when the AI or patient ends them manually.",
+  },
+  {
+    value: "15",
+    label: "15 seconds",
+    description: "End the conversation after 15 seconds of silence.",
+  },
+  {
+    value: "30",
+    label: "30 seconds",
+    description: "End the conversation after 30 seconds of silence.",
+  },
+  {
+    value: "60",
+    label: "60 seconds",
+    description: "End the conversation after 60 seconds of silence.",
+  },
+  {
+    value: "90",
+    label: "90 seconds",
+    description: "End the conversation after 90 seconds of silence.",
+  },
+  {
+    value: "120",
+    label: "2 minutes",
+    description: "End the conversation after 2 minutes of silence.",
   },
 ];
 
@@ -111,7 +145,8 @@ function rulesEqual(a: AiRules, b: AiRules) {
     a.tone === b.tone &&
     a.language === b.language &&
     a.behavioral_rules === b.behavioral_rules &&
-    a.tool_instructions === b.tool_instructions
+    a.tool_instructions === b.tool_instructions &&
+    a.idle_timeout_seconds === b.idle_timeout_seconds
   );
 }
 
@@ -450,6 +485,28 @@ function ToneSelector({
   );
 }
 
+function IdleTimeoutSelector({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (seconds: number) => void;
+}) {
+  const selectedValue = String(value ?? 30);
+
+  return (
+    <SettingsSelect
+      id="ai-idle-timeout"
+      label="Silence timeout"
+      description="How long to wait after the assistant finishes speaking before ending the conversation. Applies to FAQ-only sessions."
+      icon={Clock}
+      value={selectedValue}
+      options={IDLE_TIMEOUT_OPTIONS}
+      onChange={(next) => onChange(Number(next))}
+    />
+  );
+}
+
 function CopyButton({ text, disabled }: { text: string; disabled?: boolean }) {
   const [copied, setCopied] = useState(false);
 
@@ -649,6 +706,17 @@ export function AiRulesPageClient() {
     setMessage(null);
   };
 
+  const updateIdleTimeout = (idle_timeout_seconds: number) => {
+    if (!rules) return;
+    setRules({ ...rules, idle_timeout_seconds });
+    setMessage(null);
+  };
+
+  const faqOnlyMode =
+    business?.capabilities != null &&
+    !business.capabilities.ordering_enabled &&
+    !business.capabilities.booking_enabled;
+
   const save = async () => {
     if (!token || !business || !rules) return;
 
@@ -839,6 +907,12 @@ export function AiRulesPageClient() {
             <LanguageSelector value={rules.language ?? "id"} onChange={updateLanguage} />
             <ToneSelector value={rules.tone} onChange={updateTone} />
           </div>
+          {faqOnlyMode ? (
+            <IdleTimeoutSelector
+              value={rules.idle_timeout_seconds ?? 30}
+              onChange={updateIdleTimeout}
+            />
+          ) : null}
           {SECTIONS.map((section) => (
             <RuleSection
               key={section.key}

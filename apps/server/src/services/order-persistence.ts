@@ -1,3 +1,4 @@
+import { mergeTranscriptChunk } from "@voicetalk/shared";
 import { desc, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import {
@@ -30,6 +31,24 @@ export async function saveTranscriptMessage(
 ): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) return;
+
+  const [last] = await db
+    .select()
+    .from(transcriptMessages)
+    .where(eq(transcriptMessages.voiceSessionId, sessionId))
+    .orderBy(desc(transcriptMessages.createdAt))
+    .limit(1);
+
+  if (last?.role === role) {
+    const merged = mergeTranscriptChunk(last.text, trimmed);
+    if (merged === last.text) return;
+    await db
+      .update(transcriptMessages)
+      .set({ text: merged })
+      .where(eq(transcriptMessages.id, last.id));
+    return;
+  }
+
   await db.insert(transcriptMessages).values({
     voiceSessionId: sessionId,
     role,
@@ -37,10 +56,17 @@ export async function saveTranscriptMessage(
   });
 }
 
-export async function endVoiceSession(sessionId: string): Promise<void> {
+export async function endVoiceSession(
+  sessionId: string,
+  endReason?: string | null,
+): Promise<void> {
   await db
     .update(voiceSessions)
-    .set({ status: "ended", endedAt: new Date() })
+    .set({
+      status: "ended",
+      endedAt: new Date(),
+      ...(endReason ? { endReason } : {}),
+    })
     .where(eq(voiceSessions.id, sessionId));
 }
 

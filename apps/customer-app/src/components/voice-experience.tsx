@@ -160,9 +160,7 @@ export function VoiceExperience() {
           isTalking={isTalking}
           onStart={handleStartTalking}
           onStop={stopTalking}
-          orderingEnabled={orderingEnabled}
           menuEnabled={menuEnabled}
-          bookingEnabled={bookingEnabled}
         />
       ) : null}
     </main>

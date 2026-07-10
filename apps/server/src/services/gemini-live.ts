@@ -2,6 +2,7 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import { formatConnectionError, withDirectConnectionAsync } from "./networking.js";
 import { buildToolDeclarations, buildToolMapping, type ProductInfo } from "./tools.js";
 import { buildBookingToolMapping } from "./booking-tools.js";
+import { buildFaqToolMapping } from "./faq-tools.js";
 import type { OrderStore } from "./order-store.js";
 
 export const ACTIVITY_START = Symbol("ACTIVITY_START");
@@ -38,6 +39,7 @@ export interface GeminiLiveOptions {
   products: ProductInfo[];
   orderingEnabled?: boolean;
   bookingEnabled?: boolean;
+  faqEnabled?: boolean;
   businessId?: string;
   voiceSessionId?: string;
   onConfirm?: (order: Record<string, unknown>) => void;
@@ -60,11 +62,13 @@ export async function* startGeminiSession(
         products: options.products,
         voiceSessionId: options.voiceSessionId,
       })
-    : buildToolMapping(options.orderStore, options.products, {
-        onConfirm: options.onConfirm,
-        onSetCustomerName: options.onSetCustomerName,
-        orderingEnabled: options.orderingEnabled ?? true,
-      });
+    : options.faqEnabled
+      ? buildFaqToolMapping({})
+      : buildToolMapping(options.orderStore, options.products, {
+          onConfirm: options.onConfirm,
+          onSetCustomerName: options.onSetCustomerName,
+          orderingEnabled: options.orderingEnabled ?? true,
+        });
 
   let reconnects = 0;
   while (reconnects <= MAX_SESSION_RECONNECTS) {
@@ -178,6 +182,7 @@ async function* runSingleSession(
         tools: buildToolDeclarations({
           orderingEnabled: options.orderingEnabled ?? true,
           bookingEnabled: options.bookingEnabled ?? false,
+          faqEnabled: options.faqEnabled ?? false,
         }) as never,
       },
       callbacks: {

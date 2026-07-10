@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
+import { mergeTranscriptMessages } from "@voicetalk/shared";
 import { and, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import {
   businessOut,
@@ -24,7 +25,7 @@ import {
   users,
   voiceSessions,
 } from "../db/schema.js";
-import { buildSystemInstruction } from "../services/config-builder.js";
+import { buildSystemInstruction, normalizeIdleTimeoutSeconds } from "../services/config-builder.js";
 import {
   buildOnboardingAiRules,
   isValidSlug,
@@ -99,6 +100,7 @@ function aiRulesOut(r: typeof aiRules.$inferSelect) {
     language: r.language,
     behavioral_rules: r.behavioralRules,
     tool_instructions: r.toolInstructions,
+    idle_timeout_seconds: r.idleTimeoutSeconds,
   };
 }
 
@@ -759,6 +761,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       if (body.language !== undefined) updates.language = String(body.language);
       if (body.behavioral_rules !== undefined) updates.behavioralRules = String(body.behavioral_rules);
       if (body.tool_instructions !== undefined) updates.toolInstructions = String(body.tool_instructions);
+      if (body.idle_timeout_seconds !== undefined) {
+        updates.idleTimeoutSeconds = normalizeIdleTimeoutSeconds(body.idle_timeout_seconds);
+      }
 
       const [updated] = await db
         .update(aiRules)
@@ -956,6 +961,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           status: session.status,
           started_at: serializeUtcDatetime(session.startedAt),
           ended_at: session.endedAt ? serializeUtcDatetime(session.endedAt) : null,
+          end_reason: session.endReason ?? null,
           duration_seconds: duration,
           message_count: messageCounts.get(session.id) ?? 0,
           order_id: order?.id ?? null,
@@ -1002,21 +1008,25 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           ? Math.floor((session.endedAt.getTime() - session.startedAt.getTime()) / 1000)
           : null;
 
+      const mappedMessages = messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        text: m.text,
+        created_at: serializeUtcDatetime(m.createdAt),
+      }));
+      const mergedMessages = mergeTranscriptMessages(mappedMessages);
+
       return {
         id: session.id,
         status: session.status,
         started_at: serializeUtcDatetime(session.startedAt),
         ended_at: session.endedAt ? serializeUtcDatetime(session.endedAt) : null,
+        end_reason: session.endReason ?? null,
         duration_seconds: duration,
-        message_count: messages.length,
+        message_count: mergedMessages.length,
         order_id: order?.id ?? null,
         order_total: order?.total ?? null,
-        messages: messages.map((m) => ({
-          id: m.id,
-          role: m.role,
-          text: m.text,
-          created_at: serializeUtcDatetime(m.createdAt),
-        })),
+        messages: mergedMessages,
       };
     } catch (err) {
       return sendAuthError(reply, err);

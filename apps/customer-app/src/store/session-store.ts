@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { mergeTranscriptChunk } from "@voicetalk/shared";
 
 import { emitOrderSync } from "@/lib/order-sync";
 import { fetchMenu, type MenuResponse } from "@/lib/menu-api";
@@ -6,6 +7,7 @@ import {
   AiLanguage,
   CheckoutPhase,
   ConnectionStatus,
+  ConversationPhase,
   OrderItem,
   OrderState,
   TranscriptMessage,
@@ -117,28 +119,6 @@ function buildFlyEntries(
   }));
 }
 
-function mergeTranscriptChunk(existing: string, incoming: string): string {
-  if (!existing) return incoming;
-  if (!incoming) return existing;
-  if (incoming.startsWith(existing)) return incoming;
-  if (existing.startsWith(incoming)) return existing;
-  if (existing.endsWith(incoming)) return existing;
-
-  const maxOverlap = Math.min(existing.length, incoming.length);
-  for (let size = maxOverlap; size > 0; size -= 1) {
-    if (existing.slice(-size) === incoming.slice(0, size)) {
-      return existing + incoming.slice(size);
-    }
-  }
-
-  const needsSpace =
-    !/\s$/.test(existing) &&
-    !/^\s/.test(incoming) &&
-    !/^[.,!?;:'"')\]}>—-]/.test(incoming);
-
-  return needsSpace ? `${existing} ${incoming}` : `${existing}${incoming}`;
-}
-
 export interface SelectedTreatment {
   productId: string;
   name: string;
@@ -166,6 +146,8 @@ interface SessionStore {
   orderingEnabled: boolean;
   menuEnabled: boolean;
   bookingEnabled: boolean;
+  faqMode: boolean;
+  conversationPhase: ConversationPhase;
   bookingPanelOpen: boolean;
   selectedTreatment: SelectedTreatment | null;
   assistantName: string;
@@ -190,6 +172,8 @@ interface SessionStore {
   markPaid: () => void;
   expirePayment: () => void;
   startNewOrder: () => void;
+  startNewConversation: () => void;
+  setConversationPhase: (phase: ConversationPhase) => void;
   addItemToOrder: (
     item: Pick<OrderItem, "product_id" | "name" | "price">,
     quantity?: number,
@@ -231,6 +215,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   orderingEnabled: true,
   menuEnabled: true,
   bookingEnabled: false,
+  faqMode: false,
+  conversationPhase: "complete",
   bookingPanelOpen: false,
   selectedTreatment: null,
   assistantName: "Lorescale",
@@ -371,6 +357,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       flyAnimations: [],
       freshOrderRequest: state.freshOrderRequest + 1,
     })),
+  startNewConversation: () =>
+    set({
+      status: "idle",
+      isTalking: false,
+      error: null,
+      transcript: [],
+      conversationPhase: "complete",
+    }),
+  setConversationPhase: (conversationPhase) => set({ conversationPhase }),
   addItemToOrder: (item, quantity = 1, options) => {
     let applied = false;
     set((state) => {
@@ -488,6 +483,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         orderingEnabled: menu.capabilities?.ordering_enabled ?? true,
         menuEnabled: menu.capabilities?.menu_enabled ?? (menu.capabilities?.ordering_enabled ?? true),
         bookingEnabled: menu.capabilities?.booking_enabled ?? false,
+        faqMode:
+          !(menu.capabilities?.ordering_enabled ?? true) &&
+          !(menu.capabilities?.booking_enabled ?? false),
       };
     }),
   refreshMenuCache: async (slug) => {
@@ -579,5 +577,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       flyAnimations: [],
       menuCache: null,
       menuCacheSlug: null,
+      conversationPhase: state.faqMode ? "complete" : "active",
     })),
 }));

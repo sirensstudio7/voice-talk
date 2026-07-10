@@ -2,6 +2,7 @@ import { Type } from "@google/genai";
 import type { OrderStore } from "./order-store.js";
 import { effectivePrice } from "./pricing.js";
 import { buildBookingToolDeclarations } from "./booking-tools.js";
+import { buildFaqToolDeclarations } from "./faq-tools.js";
 
 export interface ProductInfo {
   id: string;
@@ -40,10 +41,18 @@ function findProduct(query: string, productList: ProductInfo[]) {
 }
 
 export function buildToolDeclarations(
-  options: { orderingEnabled?: boolean; bookingEnabled?: boolean } = {},
+  options: {
+    orderingEnabled?: boolean;
+    bookingEnabled?: boolean;
+    faqEnabled?: boolean;
+  } = {},
 ) {
   if (options.bookingEnabled) {
     return buildBookingToolDeclarations();
+  }
+
+  if (options.faqEnabled) {
+    return buildFaqToolDeclarations();
   }
 
   if (!options.orderingEnabled) {

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import { getBusinessCapabilities } from "@voicetalk/shared";
+import { getBusinessCapabilities, mergeTranscriptChunk } from "@voicetalk/shared";
 import { env } from "../env.js";
 import {
   buildSessionGreetingPrompt,
@@ -8,6 +8,7 @@ import {
   buildTranscriptContext,
   getActiveProducts,
   resolveAssistantName,
+  resolveIdleTimeoutMs,
   resolveLanguage,
 } from "../services/config-builder.js";
 import { handleClientOrderMessage } from "../services/client-order.js";
@@ -31,6 +32,35 @@ import {
 import { OrderStore } from "../services/order-store.js";
 import type { ProductInfo } from "../services/tools.js";
 import { getBusinessBySlug } from "../services/tenant.js";
+
+const CONVERSATION_COMPLETION_GRACE_MS = 5_000;
+
+type TranscriptRole = "user" | "assistant";
+
+function createTranscriptTurnBuffer() {
+  const pending: Record<TranscriptRole, string> = { user: "", assistant: "" };
+
+  return {
+    append(role: TranscriptRole, text: string) {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      pending[role] = mergeTranscriptChunk(pending[role], trimmed);
+    },
+    has(role: TranscriptRole) {
+      return pending[role].trim().length > 0;
+    },
+    async flush(role: TranscriptRole, sessionId: string) {
+      const text = pending[role].trim();
+      if (!text) return;
+      pending[role] = "";
+      await saveTranscriptMessage(sessionId, role, text);
+    },
+    async flushAll(sessionId: string) {
+      await this.flush("user", sessionId);
+      await this.flush("assistant", sessionId);
+    },
+  };
+}
 
 function safeSendJson(socket: WebSocket, payload: Record<string, unknown>): boolean {
   try {
@@ -80,6 +110,8 @@ async function handleSession(
   );
   const orderingEnabled = capabilities.ordering_enabled;
   const bookingEnabled = capabilities.booking_enabled;
+  const faqEnabled = !orderingEnabled && !bookingEnabled;
+  const idleTimeoutMs = resolveIdleTimeoutMs(tenant.aiRules);
 
   const voiceSession = await createVoiceSession(tenant.id);
   const voiceSessionId = voiceSession.id;
@@ -101,6 +133,34 @@ async function handleSession(
   const restorePayload: Record<string, unknown> = {};
   let restoreResolved = false;
   let restoreTimer: ReturnType<typeof setTimeout> | null = null;
+  let endReason: string | null = null;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  let completionScheduled = false;
+  const transcriptBuffer = createTranscriptTurnBuffer();
+
+  const clearIdleTimer = () => {
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+  };
+
+  const scheduleIdleTimeout = () => {
+    if (!faqEnabled || completionScheduled || idleTimeoutMs === null) return;
+    clearIdleTimer();
+    idleTimer = setTimeout(() => {
+      completeConversation("idle_timeout");
+    }, idleTimeoutMs);
+  };
+
+  const completeConversation = (reason: string) => {
+    if (completionScheduled) return;
+    completionScheduled = true;
+    clearIdleTimer();
+    endReason = reason;
+    safeSendJson(socket, { type: "conversation.complete", reason });
+    setTimeout(() => audioQueue.push(SHUTDOWN), CONVERSATION_COMPLETION_GRACE_MS);
+  };
 
   const resolvedLanguage = resolveLanguage(tenant.aiRules, query.language);
 
@@ -129,10 +189,12 @@ async function handleSession(
       const msgType = payload.type as string;
 
       if (msgType === "session.end") {
+        endReason = "manual";
         audioQueue.push(SHUTDOWN);
         return;
       }
       if (msgType === "audio.activity_start") {
+        clearIdleTimer();
         audioQueue.push(ACTIVITY_START);
       } else if (msgType === "audio.activity_end") {
         audioQueue.push(ACTIVITY_END);
@@ -215,6 +277,7 @@ async function handleSession(
         products: productList,
         orderingEnabled,
         bookingEnabled,
+        faqEnabled,
         businessId: tenant.id,
         voiceSessionId,
         onConfirm,
@@ -234,6 +297,13 @@ async function handleSession(
       },
     )) {
       if (event.type === "tool_call") {
+        if (event.name === "end_conversation") {
+          const result = event.result as Record<string, unknown> | undefined;
+          const reason = String(result?.reason ?? "question_answered");
+          completeConversation(reason);
+          continue;
+        }
+
         const result = event.result;
         if (result && typeof result === "object" && "order" in (result as object)) {
           safeSendJson(socket, {
@@ -245,9 +315,29 @@ async function handleSession(
       }
 
       const eventType = event.type as string;
+
       if (eventType === "transcript.user" || eventType === "transcript.assistant") {
-        const role = eventType === "transcript.user" ? "user" : "assistant";
-        void saveTranscriptMessage(voiceSessionId, role, String(event.text ?? ""));
+        const role: TranscriptRole =
+          eventType === "transcript.user" ? "user" : "assistant";
+        transcriptBuffer.append(role, String(event.text ?? ""));
+
+        if (role === "assistant" && transcriptBuffer.has("user")) {
+          void transcriptBuffer.flush("user", voiceSessionId);
+        }
+
+        if (!safeSendJson(socket, event)) break;
+        continue;
+      }
+
+      if (event.type === "turn_complete") {
+        void transcriptBuffer.flush("assistant", voiceSessionId);
+        if (faqEnabled) {
+          scheduleIdleTimeout();
+        }
+      }
+
+      if (event.type === "interrupted") {
+        void transcriptBuffer.flush("assistant", voiceSessionId);
       }
 
       if (!safeSendJson(socket, event)) break;
@@ -256,8 +346,10 @@ async function handleSession(
     console.error("Gemini session failed:", err);
     safeSendJson(socket, { type: "error", error: formatConnectionError(err) });
   } finally {
+    clearIdleTimer();
     audioQueue.push(SHUTDOWN);
-    await endVoiceSession(voiceSessionId);
+    await transcriptBuffer.flushAll(voiceSessionId);
+    await endVoiceSession(voiceSessionId, endReason ?? (faqEnabled ? "disconnected" : null));
     safeSendJson(socket, { type: "session.status", status: "disconnected" });
     try {
       socket.close();

@@ -5,3 +5,8 @@ export {
   type BusinessCapabilities,
   type PrimaryUseCase,
 } from "./business-capabilities.js";
+export {
+  mergeTranscriptChunk,
+  mergeTranscriptMessages,
+  type TranscriptMessageLike,
+} from "./transcript.js";

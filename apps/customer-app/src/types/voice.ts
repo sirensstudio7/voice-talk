@@ -1,5 +1,7 @@
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "error" | "disconnected";
 
+export type ConversationPhase = "active" | "wrapping_up" | "complete";
+
 export type AiLanguage = "id" | "en";
 
 export type CheckoutPhase = "shopping" | "awaiting_payment" | "paid";

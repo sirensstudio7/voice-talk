@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS ai_rules (
   tone VARCHAR(20) NOT NULL DEFAULT 'friendly',
   language VARCHAR(5) NOT NULL DEFAULT 'id',
   behavioral_rules TEXT NOT NULL DEFAULT '',
-  tool_instructions TEXT NOT NULL DEFAULT ''
+  tool_instructions TEXT NOT NULL DEFAULT '',
+  idle_timeout_seconds INTEGER NOT NULL DEFAULT 30
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_rules_business ON ai_rules(business_id);
@@ -88,6 +89,7 @@ CREATE TABLE IF NOT EXISTS voice_sessions (
   id VARCHAR(36) PRIMARY KEY,
   business_id VARCHAR(36) NOT NULL REFERENCES businesses(id),
   status VARCHAR(50) NOT NULL DEFAULT 'active',
+  end_reason VARCHAR(50),
   started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ended_at TIMESTAMPTZ
 );

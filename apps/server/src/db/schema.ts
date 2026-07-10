@@ -143,6 +143,7 @@ export const aiRules = pgTable("ai_rules", {
   language: varchar("language", { length: 5 }).notNull().default("id"),
   behavioralRules: text("behavioral_rules").notNull().default(""),
   toolInstructions: text("tool_instructions").notNull().default(""),
+  idleTimeoutSeconds: integer("idle_timeout_seconds").notNull().default(30),
 });
 
 export const voiceSessions = pgTable("voice_sessions", {
@@ -153,6 +154,7 @@ export const voiceSessions = pgTable("voice_sessions", {
     .notNull()
     .references(() => businesses.id),
   status: varchar("status", { length: 50 }).notNull().default("active"),
+  endReason: varchar("end_reason", { length: 50 }),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   endedAt: timestamp("ended_at", { withTimezone: true }),
 });
