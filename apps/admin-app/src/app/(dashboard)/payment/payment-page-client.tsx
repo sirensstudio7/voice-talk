@@ -111,7 +111,7 @@ export function PaymentPageClient() {
     }
   };
 
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+  const handleDrop = (event: DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
     setDragActive(false);
     void handleUpload(event.dataTransfer.files?.[0] ?? null);
