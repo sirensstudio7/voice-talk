@@ -7,6 +7,8 @@
     "build": "npm run build --prefix ../../packages/shared && tsc",
     "start": "node dist/src/index.js",
     "seed": "tsx scripts/seed.ts",
+    "seed:demo-analytics": "tsx scripts/seed-demo-analytics.ts",
+    "seed:demo-analytics:force": "tsx scripts/seed-demo-analytics.ts --force",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:push": "drizzle-kit push"
   },

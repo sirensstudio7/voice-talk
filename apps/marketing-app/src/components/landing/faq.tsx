@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 
-import { adminLoginUrl } from "@/lib/site-links";
-
 const FAQ_ITEMS = [
   {
     question: "What is Lore?",
@@ -55,9 +53,9 @@ export function FAQSection() {
   return (
     <section id="faq" className="border-b border-dashed border-black/[0.06] bg-white">
       <div className="landing-container border-x border-dashed border-black/[0.06]">
-        <div className="px-6 py-20 sm:px-8 sm:py-24 lg:px-10">
-          <div className="grid grid-cols-1 gap-12 lg:grid-cols-2 lg:gap-16">
-            <div className="lg:sticky lg:top-28 lg:self-start">
+        <div className="py-20 sm:px-8 sm:py-24 lg:px-10">
+          <div className="flex flex-col gap-12 lg:gap-16">
+            <div className="mx-auto flex max-w-xl flex-col items-center text-center">
               <div className="mb-6 text-sm uppercase tracking-wide text-[#737373]">FAQs</div>
               <h2 className="text-[clamp(1.75rem,4vw,2.75rem)] font-semibold leading-[1.15] tracking-tight text-[#181818]">
                 <span className="block">Have questions?</span>
@@ -70,16 +68,9 @@ export function FAQSection() {
                   Reach out to our friendly support team
                 </p>
               </div>
-
-              <a
-                href={adminLoginUrl}
-                className="mt-6 inline-flex items-center rounded-md border border-[#f0f0f0] bg-white px-5 py-3 text-sm font-medium text-[#181818] transition hover:border-black/20"
-              >
-                Get started
-              </a>
             </div>
 
-            <div className="border-t border-black/10">
+            <div className="mx-auto w-full max-w-xl border-t border-black/10">
               {FAQ_ITEMS.map(({ question, answer }, index) => {
                 const isOpen = openIndex === index;
                 const isFirst = index === 0;

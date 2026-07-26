@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SERVER_DIR="$ROOT/apps/server"
 API_LOG="$ROOT/.api.log"
 HEALTH_URL="http://127.0.0.1:${PORT}/health"
+HEALTH_DB_URL="http://127.0.0.1:${PORT}/health?db=1"
 
 kill_port() {
   local pids
@@ -25,19 +26,23 @@ kill_port() {
 
   pkill -f "tsx watch src/index.ts" 2>/dev/null || true
   pkill -f "node dist/index.js" 2>/dev/null || true
+  sleep 1
 }
 
 wait_for_health() {
-  local retries=40
+  local retries=30
   local i
   for ((i = 1; i <= retries; i++)); do
-    if curl -sf --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; then
-      echo "API healthy at ${HEALTH_URL}"
+    local health_json
+    health_json="$(curl -sf --max-time 10 "$HEALTH_DB_URL" 2>/dev/null || true)"
+    if [ -n "$health_json" ] && echo "$health_json" | grep -q '"db_online":true'; then
+      echo "API and database healthy at ${HEALTH_URL}"
       return 0
     fi
-    sleep 0.25
+    sleep 1
   done
   echo "API failed to become healthy at ${HEALTH_URL}" >&2
+  echo "Check DATABASE_URL in .env — for local dev, prefer Supabase Session pooler (port 5432)." >&2
   return 1
 }
 
@@ -72,6 +77,31 @@ start_api() {
   exec npm run dev
 }
 
+ensure_vision_sidecar() {
+  local vision_script="$ROOT/scripts/dev-vision.sh"
+  if [ ! -f "$vision_script" ]; then
+    return 0
+  fi
+  bash "$vision_script" ensure
+}
+
+restart_vision_sidecar_debug() {
+  local vision_script="$ROOT/scripts/dev-vision.sh"
+  if [ ! -f "$vision_script" ]; then
+    return 0
+  fi
+  echo "Restarting vision sidecar (debug preview)..."
+  VISION_DEBUG=1 bash "$vision_script" restart
+  sleep 2
+  if VISION_DEBUG=1 bash "$vision_script" status | grep -q '"running":true'; then
+    echo "Vision debug running ($(cat "$ROOT/.vision.slug" 2>/dev/null || echo unknown), log: .vision.log)"
+  else
+    echo "Vision failed to stay running — check .vision.log (often macOS camera permission)." >&2
+    tail -n 3 "$ROOT/.vision.log" 2>/dev/null >&2 || true
+    return 1
+  fi
+}
+
 case "${1:-start}" in
   start)
     start_api
@@ -80,6 +110,7 @@ case "${1:-start}" in
     kill_port
     start_api_daemon
     wait_for_health
+    restart_vision_sidecar_debug
     ;;
   stop)
     kill_port
@@ -90,13 +121,24 @@ case "${1:-start}" in
     echo ""
     ;;
   ensure)
-    if curl -sf --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; then
-      echo "API already running at ${HEALTH_URL}"
+    if curl -sf --max-time 10 "$HEALTH_DB_URL" 2>/dev/null | grep -q '"db_online":true'; then
+      echo "API and database already healthy at ${HEALTH_URL}"
+      ensure_vision_sidecar
       exit 0
     fi
-    echo "API not responding. Starting in background (log: .api.log)..."
+    if curl -sf --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; then
+      echo "API is running — waiting for database..."
+      if wait_for_health; then
+        ensure_vision_sidecar
+        exit 0
+      fi
+      echo "Database still unreachable — restarting API..."
+    else
+      echo "API not responding. Starting in background (log: .api.log)..."
+    fi
     start_api_daemon
     wait_for_health
+    ensure_vision_sidecar
     ;;
   *)
     echo "Usage: $0 {start|restart|stop|health|ensure}" >&2

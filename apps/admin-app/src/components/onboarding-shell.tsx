@@ -149,7 +149,7 @@ export function OnboardingLayout({
       {/* Header */}
       <header className="relative z-10 flex items-center justify-between px-6 py-5 md:px-10">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-500 shadow-md shadow-orange-500/20">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-500-orange-500/20">
             <SparklesIcon className="h-4 w-4 text-white" />
           </div>
           <span className="text-lg font-semibold tracking-tight text-slate-900">Lorescale Admin</span>

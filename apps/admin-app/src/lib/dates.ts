@@ -6,6 +6,11 @@ export function parseApiDate(iso: string): Date {
   return new Date(`${iso}Z`);
 }
 
+export function parseDateInputValue(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 export function toDateInputValue(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");

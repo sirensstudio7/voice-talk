@@ -3,23 +3,27 @@
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Brain,
-  Check,
-  ChevronDown,
-  ClipboardCopy,
-  Clock,
-  Globe,
-  ImageIcon,
-  ListChecks,
-  MessageCircle,
-  RotateCcw,
-  Sparkles,
-  Terminal,
-  UserRound,
-  Wrench,
-} from "lucide-react";
+  ArrowUpTrayIcon,
+  CameraIcon,
+  ChatBubbleOvalLeftIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  ClipboardDocumentCheckIcon,
+  ClipboardDocumentIcon,
+  ClockIcon,
+  CommandLineIcon,
+  GlobeAltIcon,
+  LightBulbIcon,
+  PhotoIcon,
+  SparklesIcon,
+  TrashIcon,
+  UserCircleIcon,
+  WrenchIcon,
+} from "@heroicons/react/24/outline";
 
 import { PageHeader } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { useSidebar } from "@/components/ui/sidebar";
 import { AssistantPreviewHero } from "@/components/assistant-preview-hero";
 import { api, type AiLanguage, type AiRules, type AiTone } from "@/lib/api";
 import { useAssistantTemplate } from "@/lib/assistant-template-context";
@@ -106,7 +110,7 @@ const SECTIONS: {
   label: string;
   description: string;
   placeholder: string;
-  icon: typeof Sparkles;
+  icon: typeof SparklesIcon;
   minHeight: string;
 }[] = [
   {
@@ -115,7 +119,7 @@ const SECTIONS: {
     description: "Your assistant's voice, tone, and character when talking to customers.",
     placeholder:
       "You are a friendly AI cashier. Be warm, concise, and helpful. Confirm orders clearly before completing them.",
-    icon: Sparkles,
+    icon: SparklesIcon,
     minHeight: "min-h-36",
   },
   {
@@ -124,7 +128,7 @@ const SECTIONS: {
     description: "Guidelines for how your assistant should handle specific situations.",
     placeholder:
       "Always greet customers warmly. Offer upsells politely when relevant. If unsure, ask a clarifying question instead of guessing.",
-    icon: ListChecks,
+    icon: ClipboardDocumentCheckIcon,
     minHeight: "min-h-28",
   },
   {
@@ -132,8 +136,8 @@ const SECTIONS: {
     label: "Tool instructions",
     description: "How your assistant should use ordering tools like add_to_order and confirm_order.",
     placeholder:
-      "Call add_to_order as soon as the customer picks an item. Ask for their name after confirming the order.",
-    icon: Wrench,
+      "Call add_to_order as soon as the customer picks an item. After confirm_order, ask loyalty or other checkout questions first (one topic per turn), then ask for their name last in a separate turn before payment. The name question must be the only question in that turn.",
+    icon: WrenchIcon,
     minHeight: "min-h-28",
   },
 ];
@@ -162,7 +166,7 @@ function SettingsSelect<T extends string>({
   id: string;
   label: string;
   description: string;
-  icon: typeof Globe;
+  icon: typeof GlobeAltIcon;
   value: T;
   options: { value: T; label: string; description: string }[];
   onChange: (value: T) => void;
@@ -193,7 +197,7 @@ function SettingsSelect<T extends string>({
   }, [open]);
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-slate-200 bg-white p-5">
       <div className="mb-4 flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-500">
           <Icon className="h-4 w-4" />
@@ -214,7 +218,7 @@ function SettingsSelect<T extends string>({
           aria-expanded={open}
           aria-labelledby={`${id}-label`}
           onClick={() => setOpen((current) => !current)}
-          className={`flex w-full items-center justify-between gap-3 rounded-xl border bg-white px-3.5 py-3 text-left shadow-sm transition-all ${
+          className={`flex w-full items-center justify-between gap-3 rounded-xl border bg-white px-3.5 py-3 text-left transition-all ${
             open
               ? "border-orange-300 ring-2 ring-orange-500/20"
               : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/80"
@@ -228,7 +232,7 @@ function SettingsSelect<T extends string>({
               <p className="mt-0.5 truncate text-xs text-slate-500">{selected.description}</p>
             ) : null}
           </div>
-          <ChevronDown
+          <ChevronDownIcon
             className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
           />
         </button>
@@ -237,7 +241,7 @@ function SettingsSelect<T extends string>({
           <ul
             role="listbox"
             aria-labelledby={`${id}-label`}
-            className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-xl ring-1 ring-slate-200/80"
+            className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 ring-1 ring-slate-200/80"
           >
             {options.map((option) => {
               const isSelected = option.value === value;
@@ -264,7 +268,7 @@ function SettingsSelect<T extends string>({
                       </p>
                     </div>
                     {isSelected ? (
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" aria-hidden />
+                      <CheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" aria-hidden />
                     ) : (
                       <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                     )}
@@ -287,10 +291,10 @@ function AssistantNameField({
   onChange: (value: string) => void;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-slate-200 bg-white p-5">
       <div className="mb-4 flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-500">
-          <UserRound className="h-4 w-4" />
+          <UserCircleIcon className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
           <label htmlFor="assistant-name" className="text-sm font-semibold text-slate-900">
@@ -305,7 +309,7 @@ function AssistantNameField({
         id="assistant-name"
         type="text"
         maxLength={50}
-        className="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm text-slate-900 shadow-sm outline-none transition-colors focus-visible:border-orange-300 focus-visible:ring-2 focus-visible:ring-orange-500/20"
+        className="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm text-slate-900 outline-none transition-colors focus-visible:border-orange-300 focus-visible:ring-2 focus-visible:ring-orange-500/20"
         placeholder="Lorescale"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -314,8 +318,49 @@ function AssistantNameField({
   );
 }
 
+function AvatarPreviewImage({
+  src,
+  size,
+  alt = "",
+  className = "",
+}: {
+  src: string;
+  size: number;
+  alt?: string;
+  className?: string;
+}) {
+  const useNativeImage =
+    src.startsWith("http://") || src.startsWith("https://") || src.startsWith("blob:");
+
+  if (useNativeImage) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        key={src}
+        src={src}
+        alt={alt}
+        width={size}
+        height={size}
+        className={className}
+      />
+    );
+  }
+
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={size}
+      height={size}
+      unoptimized
+      className={className}
+    />
+  );
+}
+
 function AssistantAvatarField({
   avatarUrl,
+  assistantName,
   localPreview,
   cacheBust,
   uploading,
@@ -323,6 +368,7 @@ function AssistantAvatarField({
   onRemove,
 }: {
   avatarUrl: string;
+  assistantName: string;
   localPreview: string | null;
   cacheBust: number;
   uploading: boolean;
@@ -336,80 +382,99 @@ function AssistantAvatarField({
     (resolvedAvatarUrl
       ? `${resolvedAvatarUrl}${resolvedAvatarUrl.includes("?") ? "&" : "?"}v=${cacheBust || 0}`
       : DEFAULT_ASSISTANT_AVATAR);
-  const useNativeImage =
-    previewSrc.startsWith("http://") ||
-    previewSrc.startsWith("https://") ||
-    previewSrc.startsWith("blob:");
+  const hasCustomAvatar = Boolean(avatarUrl);
+
+  const openFilePicker = () => {
+    if (!uploading) fileInputRef.current?.click();
+  };
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-start gap-3">
+    <section className="rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="mb-5 flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-500">
-          <ImageIcon className="h-4 w-4" />
+          <PhotoIcon className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-slate-900">Assistant avatar</p>
           <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
-            Shown in the customer voice page header and conversation bubbles. Use a square portrait
-            with a transparent or plain background for best results.
+            Appears in the voice page header and next to assistant messages. A square portrait with
+            a plain or transparent background works best.
           </p>
         </div>
       </div>
 
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-        <div className="flex items-center gap-4">
-          <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
-            {useNativeImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={previewSrc}
-                src={previewSrc}
-                alt="Assistant avatar preview"
-                width={64}
-                height={64}
-                className="h-full w-full object-cover object-center"
-              />
-            ) : (
-              <Image
-                src={previewSrc}
-                alt="Assistant avatar preview"
-                width={64}
-                height={64}
-                unoptimized
-                className="h-full w-full object-cover object-center"
-              />
-            )}
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <button
+          type="button"
+          disabled={uploading}
+          onClick={openFilePicker}
+          className="group relative mx-auto flex h-36 w-36 shrink-0 items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 transition-colors hover:border-orange-300 hover:bg-orange-50/40 disabled:cursor-not-allowed disabled:opacity-60 lg:mx-0"
+          aria-label={hasCustomAvatar ? "Replace assistant avatar" : "Upload assistant avatar"}
+        >
+          <div className="relative h-28 w-28 overflow-hidden rounded-full border-2 border-white bg-slate-100 shadow-md ring-1 ring-slate-200">
+            <AvatarPreviewImage
+              src={previewSrc}
+              size={112}
+              alt="Assistant avatar preview"
+              className="h-full w-full object-cover object-center"
+            />
           </div>
-          <div className="hidden rounded-full border border-slate-200 bg-white py-1 pl-1 pr-2 shadow-sm sm:flex sm:items-center sm:gap-1.5">
-            <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
-              {useNativeImage ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  key={`${previewSrc}-header`}
-                  src={previewSrc}
-                  alt=""
-                  width={32}
-                  height={32}
-                  className="h-full w-full object-cover object-center"
-                  aria-hidden
-                />
-              ) : (
-                <Image
-                  src={previewSrc}
-                  alt=""
-                  width={32}
-                  height={32}
-                  unoptimized
-                  className="h-full w-full object-cover object-center"
-                  aria-hidden
-                />
-              )}
-            </div>
-            <span className="text-[11px] font-semibold text-slate-700">Header preview</span>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 rounded-2xl bg-slate-900/0 opacity-0 transition-all group-hover:bg-slate-900/40 group-hover:opacity-100 group-disabled:opacity-0">
+            <CameraIcon className="h-5 w-5 text-white drop-shadow" />
+            <span className="text-xs font-semibold text-white drop-shadow">
+              {uploading ? "Uploading…" : hasCustomAvatar ? "Replace" : "Upload"}
+            </span>
           </div>
-        </div>
+        </button>
 
-        <div className="flex flex-1 flex-wrap gap-3">
+        <div className="min-w-0 flex-1 space-y-4">
+          <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-4">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              Customer preview
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <p className="mb-2 text-xs font-medium text-slate-500">Voice page header</p>
+                <div className="flex justify-center rounded-lg bg-gradient-to-b from-slate-200/60 to-slate-100/40 px-4 py-3">
+                  <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06)]">
+                    <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
+                      <AvatarPreviewImage
+                        src={previewSrc}
+                        size={32}
+                        alt=""
+                        className="h-full w-full object-cover object-center"
+                      />
+                      <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-white bg-emerald-500" />
+                    </div>
+                    <p className="flex items-center gap-0.5 whitespace-nowrap text-[11px] font-semibold leading-none text-slate-900">
+                      {assistantName}
+                      <span className="font-normal text-slate-400">·</span>
+                      <span className="font-normal text-slate-500">Live</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-medium text-slate-500">Conversation bubble</p>
+                <div className="flex items-end gap-2 px-1">
+                  <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+                    <AvatarPreviewImage
+                      src={previewSrc}
+                      size={28}
+                      alt=""
+                      className="h-full w-full object-cover object-center"
+                    />
+                  </div>
+                  <div className="max-w-[85%] rounded-2xl bg-slate-100 px-3.5 py-2 text-sm leading-relaxed text-slate-700">
+                    Hello! How can I help you today?
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <input
             ref={fileInputRef}
             type="file"
@@ -421,24 +486,33 @@ function AssistantAvatarField({
               if (fileInputRef.current) fileInputRef.current.value = "";
             }}
           />
-          <button
-            type="button"
-            disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
-            className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {uploading ? "Uploading…" : avatarUrl ? "Replace avatar" : "Upload avatar"}
-          </button>
-          {avatarUrl ? (
+
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               disabled={uploading}
-              onClick={onRemove}
-              className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={openFilePicker}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Remove
+              <ArrowUpTrayIcon className="h-4 w-4" />
+              {uploading ? "Uploading…" : hasCustomAvatar ? "Replace avatar" : "Upload avatar"}
             </button>
-          ) : null}
+            {hasCustomAvatar ? (
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={onRemove}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <TrashIcon className="h-4 w-4" />
+                Remove
+              </button>
+            ) : null}
+          </div>
+
+          <p className="text-xs text-slate-400">
+            PNG, JPG, WEBP, or GIF · square portrait recommended
+          </p>
         </div>
       </div>
     </section>
@@ -457,7 +531,7 @@ function LanguageSelector({
       id="ai-language"
       label="Language"
       description={"Default language your assistant uses when talking to customers.\nCustomers can still switch languages in the app."}
-      icon={Globe}
+      icon={GlobeAltIcon}
       value={value}
       options={LANGUAGE_OPTIONS}
       onChange={onChange}
@@ -477,7 +551,7 @@ function ToneSelector({
       id="ai-tone"
       label="Tone"
       description="Sets how your assistant phrases responses. Applies on the next customer session."
-      icon={MessageCircle}
+      icon={ChatBubbleOvalLeftIcon}
       value={value}
       options={TONE_OPTIONS}
       onChange={onChange}
@@ -499,7 +573,7 @@ function IdleTimeoutSelector({
       id="ai-idle-timeout"
       label="Silence timeout"
       description="How long to wait after the assistant finishes speaking before ending the conversation. Applies to FAQ-only sessions."
-      icon={Clock}
+      icon={ClockIcon}
       value={selectedValue}
       options={IDLE_TIMEOUT_OPTIONS}
       onChange={(next) => onChange(Number(next))}
@@ -528,12 +602,12 @@ function CopyButton({ text, disabled }: { text: string; disabled?: boolean }) {
     >
       {copied ? (
         <>
-          <Check className="h-3.5 w-3.5 text-emerald-600" />
+          <CheckIcon className="h-3.5 w-3.5 text-emerald-600" />
           Copied
         </>
       ) : (
         <>
-          <ClipboardCopy className="h-3.5 w-3.5" />
+          <ClipboardDocumentIcon className="h-3.5 w-3.5" />
           Copy
         </>
       )}
@@ -553,7 +627,7 @@ function RuleSection({
   label: string;
   description: string;
   placeholder: string;
-  icon: typeof Sparkles;
+  icon: typeof SparklesIcon;
   minHeight: string;
   value: string;
   onChange: (value: string) => void;
@@ -561,7 +635,7 @@ function RuleSection({
   const fieldId = label.toLowerCase().replace(/\s+/g, "-");
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-slate-200 bg-white p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-500">
@@ -579,7 +653,7 @@ function RuleSection({
 
       <textarea
         id={fieldId}
-        className={`${minHeight} w-full resize-y rounded-xl border border-slate-200 px-3.5 py-3 text-sm leading-relaxed text-slate-900 shadow-sm outline-none transition-colors focus-visible:border-orange-300 focus-visible:ring-2 focus-visible:ring-orange-500/20`}
+        className={`${minHeight} w-full resize-y rounded-xl border border-slate-200 px-3.5 py-3 text-sm leading-relaxed text-slate-900 outline-none transition-colors focus-visible:border-orange-300 focus-visible:ring-2 focus-visible:ring-orange-500/20`}
         placeholder={placeholder}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -596,11 +670,11 @@ function PreviewPanel({ preview }: { preview: string }) {
   const lineCount = preview ? preview.split("\n").length : 0;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-slate-100">
-            <Terminal className="h-4 w-4" />
+            <CommandLineIcon className="h-4 w-4" />
           </div>
           <div>
             <p className="text-sm font-semibold text-slate-900">Prompt preview</p>
@@ -627,7 +701,7 @@ function PreviewPanel({ preview }: { preview: string }) {
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
           <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-            <Brain className="h-6 w-6" />
+            <LightBulbIcon className="h-6 w-6" />
           </div>
           <p className="text-sm font-medium text-slate-700">Preview will appear here</p>
           <p className="mt-1 max-w-xs text-xs text-slate-500">
@@ -641,6 +715,7 @@ function PreviewPanel({ preview }: { preview: string }) {
 
 export function AiRulesPageClient() {
   const { token, business } = useAuth();
+  const { state: sidebarState, isMobile } = useSidebar();
   const { selectedTemplate } = useAssistantTemplate();
   const [rules, setRules] = useState<AiRules | null>(null);
   const [savedRules, setSavedRules] = useState<AiRules | null>(null);
@@ -681,6 +756,14 @@ export function AiRulesPageClient() {
     () => rules !== null && savedRules !== null && !rulesEqual(rules, savedRules),
     [rules, savedRules],
   );
+
+  const footerStyle = {
+    left: isMobile
+      ? "0px"
+      : sidebarState === "collapsed"
+        ? "var(--sidebar-width-icon)"
+        : "var(--sidebar-width)",
+  } as const;
 
   const updateField = (field: RuleField, value: string) => {
     if (!rules) return;
@@ -829,56 +912,23 @@ export function AiRulesPageClient() {
 
   return (
     <>
-      <PageHeader
-        title="AI Rules"
-        subtitle={
-          isDirty
-            ? "You have unsaved changes — save to update the assistant prompt."
-            : "Control your assistant's personality, behavior, and tool usage."
-        }
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={applySelectedTemplate}
-              disabled={saving}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-medium text-orange-700 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Sparkles className="h-4 w-4" />
-              Apply template
-            </button>
-            {isDirty ? (
-              <button
-                type="button"
-                onClick={discard}
-                disabled={saving}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Discard
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => {
-                void save();
-              }}
-              disabled={saving || !isDirty}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {saving ? "Saving…" : "Save changes"}
-            </button>
-          </div>
-        }
-      />
+      <div className="space-y-6 pb-24">
+        <PageHeader
+          title="AI Rules"
+          subtitle={
+            isDirty
+              ? "You have unsaved changes — save to update the assistant prompt."
+              : "Control your assistant's personality, behavior, and tool usage."
+          }
+        />
 
       {message ? (
-        <p className="mb-6 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 ring-1 ring-emerald-600/10">
+        <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 ring-1 ring-emerald-600/10">
           {message}
         </p>
       ) : null}
       {error ? (
-        <p className="mb-6 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-600/10">
+        <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-600/10">
           {error}
         </p>
       ) : null}
@@ -893,6 +943,7 @@ export function AiRulesPageClient() {
           />
           <AssistantAvatarField
             avatarUrl={rules.avatar_url ?? ""}
+            assistantName={rules.assistant_name ?? "Lorescale"}
             localPreview={localAvatarPreview}
             cacheBust={avatarCacheBust}
             uploading={uploadingAvatar}
@@ -931,6 +982,32 @@ export function AiRulesPageClient() {
           <PreviewPanel preview={preview} />
         </aside>
       </div>
+      </div>
+
+      <footer
+        style={footerStyle}
+        className="fixed bottom-0 right-0 z-20 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+      >
+        <div className="flex w-full items-center justify-between gap-3 px-4 py-3 lg:px-6">
+          <Button type="button" variant="outline" disabled={saving || !isDirty} onClick={discard}>
+            Cancel
+          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={saving}
+              onClick={applySelectedTemplate}
+            >
+              <SparklesIcon />
+              Apply template
+            </Button>
+            <Button type="button" disabled={saving || !isDirty} onClick={() => void save()}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </div>
+      </footer>
     </>
   );
 }

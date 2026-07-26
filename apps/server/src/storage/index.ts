@@ -47,11 +47,31 @@ export async function uploadToStorage(
 export async function deleteFromStorage(bucket: string, prefix: string): Promise<void> {
   const client = getSupabase();
   if (client) {
-    const { data: files } = await client.storage.from(bucket).list(prefix);
-    if (files?.length) {
-      await client.storage
-        .from(bucket)
-        .remove(files.map((f) => `${prefix}/${f.name}`));
+    const paths = new Set<string>();
+
+    const { data: files, error: listError } = await client.storage.from(bucket).list(prefix, {
+      limit: 100,
+    });
+    if (listError) {
+      throw new Error(listError.message);
+    }
+
+    for (const file of files ?? []) {
+      if (file.name) {
+        paths.add(`${prefix}/${file.name}`);
+      }
+    }
+
+    // Fallback for uploads that used the standard background filename convention.
+    for (const extension of Object.values(ALLOWED_IMAGE_TYPES)) {
+      paths.add(`${prefix}/background${extension}`);
+    }
+
+    if (paths.size > 0) {
+      const { error: removeError } = await client.storage.from(bucket).remove([...paths]);
+      if (removeError) {
+        throw new Error(removeError.message);
+      }
     }
     return;
   }
@@ -66,6 +86,7 @@ export function getUploadRoot(): string {
 export const ALLOWED_IMAGE_TYPES: Record<string, string> = {
   "image/png": ".png",
   "image/jpeg": ".jpg",
+  "image/jpg": ".jpg",
   "image/webp": ".webp",
   "image/gif": ".gif",
 };

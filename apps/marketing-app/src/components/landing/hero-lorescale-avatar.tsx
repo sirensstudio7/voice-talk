@@ -17,8 +17,8 @@ const AvatarHero = dynamic(
   },
 );
 
-const HERO_PREVIEW_FRAME_CLASS =
-  "absolute bottom-8 left-1/2 aspect-[2/3] w-[72%] max-w-[540px] -translate-x-1/2 [mask-image:linear-gradient(to_bottom,black_0%,black_78%,transparent_94%)] [-webkit-mask-image:linear-gradient(to_bottom,black_0%,black_78%,transparent_94%)]";
+const RESPONSIVE_PREVIEW_FRAME_CLASS =
+  "absolute left-1/2 aspect-[2/3] -translate-x-1/2 top-[10%] w-[85%] max-w-[96%] sm:bottom-8 sm:top-auto sm:w-[72%] sm:max-w-[540px] [mask-image:linear-gradient(to_bottom,black_0%,black_78%,transparent_94%)] [-webkit-mask-image:linear-gradient(to_bottom,black_0%,black_78%,transparent_94%)]";
 
 const HERO_PREVIEW_CANVAS_RESIZE = {
   scroll: false,
@@ -30,8 +30,9 @@ export function HeroLorescaleAvatar() {
     <AvatarHero
       isTalking={false}
       assistantName="Lorescale"
-      frameClassName={HERO_PREVIEW_FRAME_CLASS}
+      frameClassName={RESPONSIVE_PREVIEW_FRAME_CLASS}
       resize={HERO_PREVIEW_CANVAS_RESIZE}
+      pauseWhenOffscreen
     />
   );
 }

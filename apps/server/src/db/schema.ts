@@ -34,6 +34,7 @@ export const businesses = pgTable("businesses", {
   paymentQrUrl: text("payment_qr_url").notNull().default(""),
   backgroundUrl: text("background_url").notNull().default(""),
   gradientColor: varchar("gradient_color", { length: 7 }).notNull().default(""),
+  displayOrientation: varchar("display_orientation", { length: 10 }).notNull().default("landscape"),
   businessType: varchar("business_type", { length: 50 }).notNull().default(""),
   primaryUseCase: varchar("primary_use_case", { length: 20 }).notNull().default("both"),
   onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
@@ -124,8 +125,52 @@ export const knowledgeEntries = pgTable("knowledge_entries", {
     .notNull()
     .references(() => businesses.id),
   category: varchar("category", { length: 100 }).notNull().default("General"),
+  title: varchar("title", { length: 200 }),
   content: text("content").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const visionSettings = pgTable("vision_settings", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  businessId: varchar("business_id", { length: 36 })
+    .notNull()
+    .unique()
+    .references(() => businesses.id),
+  cameraTriggerEnabled: boolean("camera_trigger_enabled").notNull().default(false),
+  visionSource: varchar("vision_source", { length: 20 }).notNull().default("auto"),
+  greetingTriggerMode: varchar("greeting_trigger_mode", { length: 20 })
+    .notNull()
+    .default("presence"),
+  greetingDelaySeconds: integer("greeting_delay_seconds").notNull().default(3),
+  detectionDistanceM: doublePrecision("detection_distance_m").notNull().default(2),
+  cooldownSeconds: integer("cooldown_seconds").notNull().default(30),
+  lostTimeoutSeconds: integer("lost_timeout_seconds").notNull().default(5),
+  silenceTimeoutSeconds: integer("silence_timeout_seconds").notNull().default(15),
+  autoGoodbyeTimeoutSeconds: integer("auto_goodbye_timeout_seconds").notNull().default(10),
+  greetingScript: text("greeting_script")
+    .notNull()
+    .default("Hello, welcome. How may I assist you today?"),
+  goodbyeScript: text("goodbye_script")
+    .notNull()
+    .default("Thank you. Have a wonderful day."),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const visionEvents = pgTable("vision_events", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  businessId: varchar("business_id", { length: 36 })
+    .notNull()
+    .references(() => businesses.id),
+  kioskId: varchar("kiosk_id", { length: 100 }).notNull().default("default"),
+  eventType: varchar("event_type", { length: 50 }).notNull(),
+  trackId: integer("track_id"),
+  metadata: text("metadata").notNull().default("{}"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const aiRules = pgTable("ai_rules", {
@@ -204,6 +249,8 @@ export type Business = typeof businesses.$inferSelect;
 export type Product = typeof products.$inferSelect;
 export type KnowledgeEntry = typeof knowledgeEntries.$inferSelect;
 export type AiRules = typeof aiRules.$inferSelect;
+export type VisionSettings = typeof visionSettings.$inferSelect;
+export type VisionEvent = typeof visionEvents.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type VoiceSession = typeof voiceSessions.$inferSelect;

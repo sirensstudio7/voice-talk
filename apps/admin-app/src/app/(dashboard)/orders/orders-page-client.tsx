@@ -1,14 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, Receipt, User } from "lucide-react";
+import {
+  ArrowDownTrayIcon,
+  ChevronDownIcon,
+  ReceiptPercentIcon,
+  TableCellsIcon,
+  UserIcon,
+} from "@heroicons/react/24/outline";
 
 import { PageHeader, StatCard } from "@/components/ui";
 import { DateFilter } from "@/components/date-filter";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { api, type Order } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatFilterDateLabel, parseApiDate } from "@/lib/dates";
 import { formatCurrency } from "@/lib/currency";
+import { exportOrdersCsv, exportOrdersXls } from "@/lib/export-orders";
 
 function formatOrderTime(iso: string) {
   return parseApiDate(iso).toLocaleTimeString(undefined, {
@@ -143,10 +157,10 @@ function OrderRow({
 
   return (
     <article
-      className={`rounded-xl border bg-white shadow-sm transition-all ${
+      className={`rounded-xl border bg-white transition-all ${
         expanded
-          ? "border-slate-300 shadow-md ring-1 ring-slate-200/80"
-          : "border-slate-200 hover:border-slate-300 hover:shadow"
+          ? "border-slate-300 ring-1 ring-slate-200/80"
+          : "border-slate-200 hover:border-slate-300"
       }`}
     >
       <button
@@ -175,7 +189,7 @@ function OrderRow({
             <p className="text-xl font-bold tabular-nums text-slate-900">{formatCurrency(order.total)}</p>
             <div className="flex items-center gap-2">
               <StatusBadge status={order.status} />
-              <ChevronDown
+              <ChevronDownIcon
                 className={`h-5 w-5 text-slate-400 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
                 aria-hidden
               />
@@ -187,7 +201,7 @@ function OrderRow({
       {expanded ? (
         <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-4 sm:px-5">
           <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            <Receipt className="h-3 w-3" />
+            <ReceiptPercentIcon className="h-3 w-3" />
             Order details
           </div>
           <ul className="divide-y divide-slate-200/80 overflow-hidden rounded-lg border border-slate-200/80 bg-white">
@@ -215,14 +229,14 @@ function OrderRow({
             <div className="min-w-0 text-slate-600">
               {customerName ? (
                 <p className="flex items-center gap-1.5">
-                  <User className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+                  <UserIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
                   <span>
                     Customer: <span className="font-medium text-slate-900">{customerName}</span>
                   </span>
                 </p>
               ) : (
                 <p className="flex items-center gap-1.5 text-amber-700">
-                  <User className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
+                  <UserIcon className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
                   Name not collected
                 </p>
               )}
@@ -293,12 +307,53 @@ export function OrdersPageClient() {
     return `${countLabel} · refreshes every 10s`;
   }, [orders.length, selectedDate]);
 
+  const exportData = business
+    ? {
+        businessSlug: business.slug,
+        orders,
+        filterDate: selectedDate,
+      }
+    : null;
+
   return (
     <>
       <PageHeader
         title="Orders"
         subtitle={subtitle}
-        action={<DateFilter id="orders-date-filter" value={selectedDate} onChange={setSelectedDate} />}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <DateFilter id="orders-date-filter" value={selectedDate} onChange={setSelectedDate} />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={!exportData || orders.length === 0}>
+                  <ArrowDownTrayIcon />
+                  Export
+                  <ChevronDownIcon />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={() => {
+                    if (!exportData) return;
+                    exportOrdersCsv(exportData);
+                  }}
+                >
+                  <TableCellsIcon />
+                  Export CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    if (!exportData) return;
+                    exportOrdersXls(exportData);
+                  }}
+                >
+                  <TableCellsIcon />
+                  Export Excel (.xls)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        }
       />
 
       {orders.length > 0 ? (
@@ -312,7 +367,7 @@ export function OrdersPageClient() {
       {orders.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-8 py-16 text-center">
           <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
-            <Receipt className="h-7 w-7" />
+            <ReceiptPercentIcon className="h-7 w-7" />
           </div>
           <p className="text-lg font-semibold text-slate-900">
             {selectedDate ? "No orders on this date" : "No orders yet"}

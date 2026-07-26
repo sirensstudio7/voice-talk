@@ -11,7 +11,9 @@ const DEFAULT_ADMIN_URL = isProduction
 export const customerAppUrl = process.env.NEXT_PUBLIC_CUSTOMER_APP_URL ?? DEFAULT_CUSTOMER_URL;
 export const adminAppUrl = process.env.NEXT_PUBLIC_ADMIN_APP_URL ?? DEFAULT_ADMIN_URL;
 export const demoSlug = process.env.NEXT_PUBLIC_DEFAULT_BUSINESS_SLUG ?? DEFAULT_DEMO_SLUG;
+export const heroDemoSlug = process.env.NEXT_PUBLIC_HERO_DEMO_SLUG ?? "lorescale";
 
 export const demoUrl = `${customerAppUrl.replace(/\/$/, "")}/b/${demoSlug}`;
+export const heroDemoUrl = `${customerAppUrl.replace(/\/$/, "")}/b/${heroDemoSlug}`;
 export const adminLoginUrl = `${adminAppUrl.replace(/\/$/, "")}/login?fresh=1`;
 export const adminSignupUrl = `${adminAppUrl.replace(/\/$/, "")}/signup`;

@@ -1,36 +1,36 @@
 import {
-  BarChart3,
-  BookOpen,
-  ChevronDown,
-  ExternalLink,
-  ImageIcon,
-  LayoutGrid,
-  List,
-  LogOut,
-  MessageSquare,
-  QrCode,
-  Receipt,
-  Search,
-  Sparkles,
-  Store,
-} from "lucide-react";
+  ArrowRightOnRectangleIcon,
+  ArrowTopRightOnSquareIcon,
+  BookOpenIcon,
+  BuildingStorefrontIcon,
+  ChartBarIcon,
+  ChatBubbleLeftRightIcon,
+  ChevronDownIcon,
+  ListBulletIcon,
+  MagnifyingGlassIcon,
+  PhotoIcon,
+  QrCodeIcon,
+  ReceiptPercentIcon,
+  SparklesIcon,
+  Squares2X2Icon,
+} from "@heroicons/react/24/outline";
 
 import { formatCurrency } from "@voicetalk/shared";
 
 const NAV: Array<{
   label: string;
-  icon: (typeof LayoutGrid);
+  icon: (typeof Squares2X2Icon);
   active?: boolean;
 }> = [
-  { label: "Overview", icon: LayoutGrid, active: true },
-  { label: "Menu", icon: List },
-  { label: "AI Knowledge", icon: BookOpen },
-  { label: "AI Rules", icon: Sparkles },
-  { label: "Orders", icon: Receipt },
-  { label: "Conversations", icon: MessageSquare },
-  { label: "Payment QR", icon: QrCode },
-  { label: "Appearance", icon: ImageIcon },
-  { label: "Analytics", icon: BarChart3 },
+  { label: "Overview", icon: Squares2X2Icon, active: true },
+  { label: "Menu", icon: ListBulletIcon },
+  { label: "AI Knowledge", icon: BookOpenIcon },
+  { label: "AI Rules", icon: SparklesIcon },
+  { label: "Orders", icon: ReceiptPercentIcon },
+  { label: "Conversations", icon: ChatBubbleLeftRightIcon },
+  { label: "Payment QR", icon: QrCodeIcon },
+  { label: "Appearance", icon: PhotoIcon },
+  { label: "Analytics", icon: ChartBarIcon },
 ];
 
 const STATS: Array<{ label: string; value: string; hint?: string }> = [
@@ -58,7 +58,7 @@ function NavItem({
   active,
 }: {
   label: string;
-  icon: (typeof LayoutGrid);
+  icon: (typeof Squares2X2Icon);
   active?: boolean;
 }) {
   return (
@@ -92,13 +92,13 @@ export function DashboardPreview() {
         <div className="px-3">
           <div className="flex items-center gap-2 rounded-[10px] border border-gray-200 bg-white px-2 py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-gray-100">
-              <Store className="h-3.5 w-3.5 text-gray-600" />
+              <BuildingStorefrontIcon className="h-3.5 w-3.5 text-gray-600" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-medium text-gray-950 lg:text-sm">Sunrise Coffee</p>
               <p className="truncate text-[10px] text-gray-500">Your neighborhood cafe</p>
             </div>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+            <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-gray-400" />
           </div>
         </div>
 
@@ -111,7 +111,7 @@ export function DashboardPreview() {
         <div className="mt-auto border-t border-gray-100 px-2 py-3 lg:px-3">
           <div className="flex items-center gap-2 rounded-[10px] px-2 py-1 text-gray-600">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center lg:h-10 lg:w-10">
-              <LogOut className="h-4 w-4 lg:h-5 lg:w-5" />
+              <ArrowRightOnRectangleIcon className="h-4 w-4 lg:h-5 lg:w-5" />
             </div>
             <p className="text-xs font-medium lg:text-sm">Log out</p>
           </div>
@@ -121,7 +121,7 @@ export function DashboardPreview() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white/90 px-4 backdrop-blur-md lg:h-14 lg:px-8">
           <div className="hidden items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-500 md:flex lg:w-52">
-            <Search className="h-3.5 w-3.5 shrink-0" />
+            <MagnifyingGlassIcon className="h-3.5 w-3.5 shrink-0" />
             <span>Search</span>
           </div>
 
@@ -131,7 +131,7 @@ export function DashboardPreview() {
               AI Online
             </div>
             <div className="hidden items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-[10px] font-medium text-gray-700 sm:inline-flex lg:text-xs">
-              <ExternalLink className="h-3 w-3 shrink-0" />
+              <ArrowTopRightOnSquareIcon className="h-3 w-3 shrink-0" />
               Customer app
             </div>
             <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-[10px] font-semibold text-gray-600 ring-1 ring-gray-200">

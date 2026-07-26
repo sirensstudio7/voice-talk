@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarDays, CheckCircle2, Clock, X } from "lucide-react";
+import {
+  CalendarDaysIcon,
+  CheckCircleIcon,
+  ClockIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 
 import { slideOverBackdropClass, slideOverPanelClass, useSlideOver } from "@/components/slide-over";
 import { useBusinessSlug } from "@/context/business-context";
@@ -135,14 +140,14 @@ function AppointmentBookingPanel({ visible, onClose }: { visible: boolean; onClo
             className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-50"
             aria-label="Close booking panel"
           >
-            <X className="h-4 w-4" />
+            <XMarkIcon className="h-4 w-4" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {success ? (
             <div className="flex flex-col items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-12 text-center">
-              <CheckCircle2 className="h-12 w-12 text-emerald-500" />
+              <CheckCircleIcon className="h-12 w-12 text-emerald-500" />
               <p className="mt-4 text-lg font-semibold text-slate-900">Appointment booked</p>
               <p className="mt-2 text-sm text-slate-600">
                 {selectedTreatment.name} on{" "}
@@ -160,7 +165,7 @@ function AppointmentBookingPanel({ visible, onClose }: { visible: boolean; onClo
             <div className="space-y-6">
               <section>
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                  <CalendarDays className="h-4 w-4 text-slate-400" />
+                  <CalendarDaysIcon className="h-4 w-4 text-slate-400" />
                   Choose a date
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-1">
@@ -183,7 +188,7 @@ function AppointmentBookingPanel({ visible, onClose }: { visible: boolean; onClo
 
               <section>
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                  <Clock className="h-4 w-4 text-slate-400" />
+                  <ClockIcon className="h-4 w-4 text-slate-400" />
                   Available times
                 </div>
                 {loadingSlots ? (

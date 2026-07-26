@@ -1,8 +1,15 @@
 import { create } from "zustand";
 import { mergeTranscriptChunk } from "@voicetalk/shared";
 
-import { emitOrderSync } from "@/lib/order-sync";
+import {
+  acknowledgeServerOrder,
+  clearPendingLocalAdds,
+  emitOrderSync,
+  isPendingLocalAdd,
+} from "@/lib/order-sync";
 import { fetchMenu, type MenuResponse } from "@/lib/menu-api";
+import { useKioskStore } from "@/store/kiosk-store";
+import { DEFAULT_VISION_CONFIG } from "@/types/kiosk";
 import {
   AiLanguage,
   CheckoutPhase,
@@ -71,7 +78,10 @@ function mergeServerOrder(server: OrderState, client: OrderState): OrderState {
   for (const clientItem of client.items) {
     const serverItem = byId.get(clientItem.product_id);
     if (!serverItem) {
-      byId.set(clientItem.product_id, { ...clientItem });
+      // Keep menu taps that haven't synced yet, but don't undo voice/UI removals.
+      if (isPendingLocalAdd(clientItem.product_id)) {
+        byId.set(clientItem.product_id, { ...clientItem });
+      }
       continue;
     }
 
@@ -119,6 +129,87 @@ function buildFlyEntries(
   }));
 }
 
+
+function tryRevealPaymentModal(state: {
+  order: OrderState;
+  checkoutPhase: CheckoutPhase;
+  checkoutOpenRequest: number;
+  checkoutPanelOpen: boolean;
+  flyAnimations: FlyAnimationRequest[];
+}) {
+  if (state.order.status !== "confirmed") return null;
+  if (state.checkoutPhase === "paid") return null;
+
+  if (state.checkoutPhase === "awaiting_payment") {
+    if (state.checkoutPanelOpen) return null;
+    return {
+      checkoutPanelOpen: true,
+      checkoutOpenRequest: state.checkoutOpenRequest + 1,
+    };
+  }
+
+  if (state.flyAnimations.length > 0) {
+    return { pendingCheckoutReveal: true };
+  }
+
+  return {
+    checkoutPhase: "awaiting_payment" as const,
+    checkoutPanelOpen: true,
+    checkoutOpenRequest: state.checkoutOpenRequest + 1,
+    pendingCheckoutReveal: false,
+    pendingNamePaymentReveal: false,
+  };
+}
+
+function applyCustomerNamePaymentReveal(state: {
+  order: OrderState;
+  checkoutPhase: CheckoutPhase;
+  checkoutOpenRequest: number;
+  checkoutPanelOpen: boolean;
+  flyAnimations: FlyAnimationRequest[];
+  pendingCheckoutReveal: boolean;
+}) {
+  if (state.order.status !== "confirmed") return null;
+  if (!state.order.customer_name?.trim()) return null;
+  if (state.checkoutPhase === "paid") return null;
+
+  const paymentPatch = tryRevealPaymentModal(state);
+  if (!paymentPatch) {
+    return { pendingNamePaymentReveal: true };
+  }
+
+  return {
+    ...paymentPatch,
+    pendingNamePaymentReveal: false,
+  };
+}
+
+function paymentRevealPatch(state: {
+  order: OrderState;
+  checkoutPhase: CheckoutPhase;
+  checkoutOpenRequest: number;
+  checkoutPanelOpen: boolean;
+  flyAnimations: FlyAnimationRequest[];
+  pendingCheckoutReveal: boolean;
+}) {
+  return tryRevealPaymentModal(state);
+}
+
+function shouldRevealPaymentAfterAnimations(state: {
+  order: OrderState;
+  pendingCheckoutReveal: boolean;
+  pendingNamePaymentReveal: boolean;
+  flyAnimations: FlyAnimationRequest[];
+}) {
+  if (state.flyAnimations.length > 0 || state.order.status !== "confirmed") {
+    return false;
+  }
+  if (state.pendingCheckoutReveal) return true;
+  return (
+    state.pendingNamePaymentReveal && Boolean(state.order.customer_name?.trim())
+  );
+}
+
 export interface SelectedTreatment {
   productId: string;
   name: string;
@@ -138,7 +229,9 @@ interface SessionStore {
   checkoutPanelOpen: boolean;
   menuPanelOpen: boolean;
   freshOrderRequest: number;
+  paymentCompleteRequest: number;
   pendingCheckoutReveal: boolean;
+  pendingNamePaymentReveal: boolean;
   flyAnimations: FlyAnimationRequest[];
   menuProductMeta: Record<string, MenuProductMeta>;
   menuCache: MenuResponse | null;
@@ -169,6 +262,7 @@ interface SessionStore {
   addTranscript: (role: "user" | "assistant", text: string) => void;
   setAssistantDisplayText: (text: string) => void;
   setOrder: (order: OrderState, options?: { source?: "server" | "local" }) => void;
+  revealPaymentAfterNamePrompt: () => void;
   confirmOrder: () => void;
   markPaid: () => void;
   expirePayment: () => void;
@@ -209,13 +303,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   checkoutPanelOpen: false,
   menuPanelOpen: false,
   freshOrderRequest: 0,
+  paymentCompleteRequest: 0,
   pendingCheckoutReveal: false,
+  pendingNamePaymentReveal: false,
   flyAnimations: [],
   menuProductMeta: {},
   menuCache: null,
   menuCacheSlug: null,
-  orderingEnabled: true,
-  menuEnabled: true,
+  orderingEnabled: false,
+  menuEnabled: false,
   bookingEnabled: false,
   faqMode: false,
   conversationPhase: "complete",
@@ -279,32 +375,38 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setAssistantDisplayText: (text) =>
     set((state) => {
       const last = state.transcript[state.transcript.length - 1];
+      let nextTranscript: TranscriptMessage[];
+
       if (last?.role === "assistant") {
-        if (last.text === text) return state;
-        return {
-          transcript: state.transcript.map((message, index) =>
+        if (last.text === text) {
+          nextTranscript = state.transcript;
+        } else {
+          nextTranscript = state.transcript.map((message, index) =>
             index === state.transcript.length - 1
               ? { ...message, text }
               : message,
-          ),
-        };
-      }
-
-      if (!text) return state;
-
-      return {
-        transcript: [
+          );
+        }
+      } else if (!text) {
+        return state;
+      } else {
+        nextTranscript = [
           ...state.transcript,
           { id: crypto.randomUUID(), role: "assistant", text },
-        ],
+        ];
+      }
+
+      return {
+        transcript: nextTranscript,
       };
     }),
   setOrder: (order, options) =>
     set((state) => {
+      if (options?.source === "server") {
+        acknowledgeServerOrder(order.items.map((item) => item.product_id));
+      }
       const nextOrder =
         options?.source === "server" ? mergeServerOrder(order, state.order) : order;
-      const wasOpen = state.order.status !== "confirmed";
-      const isConfirmed = nextOrder.status === "confirmed";
       const orderEmptied =
         nextOrder.items.length === 0 &&
         nextOrder.status === "open" &&
@@ -314,42 +416,59 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const flyAnimations = shouldAnimate
         ? [...state.flyAnimations, ...buildFlyEntries(addedItems, state.menuProductMeta)]
         : state.flyAnimations;
-      const hasCustomerName = Boolean(nextOrder.customer_name?.trim());
-      const confirmJustHappened = isConfirmed && wasOpen;
-      const deferForAnimation = confirmJustHappened && shouldAnimate;
-
       let pendingCheckoutReveal = state.pendingCheckoutReveal;
       if (orderEmptied) {
         pendingCheckoutReveal = false;
-      } else if (confirmJustHappened) {
-        pendingCheckoutReveal = true;
       }
 
-      const canRevealPayment =
-        pendingCheckoutReveal &&
-        hasCustomerName &&
-        flyAnimations.length === 0 &&
-        !deferForAnimation;
+      const customerNameJustSet =
+        options?.source === "server" &&
+        nextOrder.status === "confirmed" &&
+        Boolean(nextOrder.customer_name?.trim()) &&
+        !Boolean(state.order.customer_name?.trim());
 
-      if (canRevealPayment) {
-        pendingCheckoutReveal = false;
+      const paymentPatch =
+        customerNameJustSet && state.checkoutPhase !== "paid"
+          ? applyCustomerNamePaymentReveal({
+              ...state,
+              order: nextOrder,
+              flyAnimations,
+              pendingCheckoutReveal,
+            })
+          : state.pendingNamePaymentReveal &&
+              nextOrder.customer_name?.trim() &&
+              state.checkoutPhase !== "paid"
+            ? applyCustomerNamePaymentReveal({
+                ...state,
+                order: nextOrder,
+                flyAnimations,
+                pendingCheckoutReveal,
+              })
+            : null;
+
+      if (
+        paymentPatch &&
+        "pendingCheckoutReveal" in paymentPatch &&
+        typeof paymentPatch.pendingCheckoutReveal === "boolean"
+      ) {
+        pendingCheckoutReveal = paymentPatch.pendingCheckoutReveal;
       }
 
       return {
         order: nextOrder,
         flyAnimations,
         pendingCheckoutReveal,
-        checkoutPhase:
-          hasCustomerName && isConfirmed && state.checkoutPhase === "shopping"
-            ? "awaiting_payment"
-            : orderEmptied
-              ? "shopping"
-              : state.checkoutPhase,
-        checkoutPanelOpen: canRevealPayment ? true : state.checkoutPanelOpen,
-        checkoutOpenRequest: canRevealPayment
-          ? state.checkoutOpenRequest + 1
-          : state.checkoutOpenRequest,
+        checkoutPhase: orderEmptied ? "shopping" : state.checkoutPhase,
+        ...(orderEmptied ? { pendingNamePaymentReveal: false } : {}),
+        ...paymentPatch,
       };
+    }),
+  revealPaymentAfterNamePrompt: () =>
+    set((state) => {
+      if (state.order.status !== "confirmed") return state;
+      if (state.checkoutPhase === "paid") return state;
+      const paymentPatch = tryRevealPaymentModal(state);
+      return paymentPatch ?? state;
     }),
   confirmOrder: () =>
     set((state) => {
@@ -357,11 +476,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
       return {
         order: { ...state.order, status: "confirmed" },
-        checkoutPhase: "awaiting_payment",
-        checkoutPanelOpen: true,
       };
     }),
-  markPaid: () => set({ checkoutPhase: "paid" }),
+  markPaid: () =>
+    set((state) => ({
+      checkoutPhase: "paid",
+      paymentCompleteRequest: state.paymentCompleteRequest + 1,
+    })),
   expirePayment: () =>
     set((state) => ({
       checkoutPhase: "shopping",
@@ -378,9 +499,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       checkoutPanelOpen: false,
       menuPanelOpen: false,
       pendingCheckoutReveal: false,
+      pendingNamePaymentReveal: false,
       checkoutOpenRequest: 0,
       flyAnimations: [],
       freshOrderRequest: state.freshOrderRequest + 1,
+      paymentCompleteRequest: 0,
     })),
   startNewConversation: () =>
     set({
@@ -474,25 +597,33 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   completeFlyAnimation: (id) =>
     set((state) => {
       const flyAnimations = state.flyAnimations.filter((animation) => animation.id !== id);
-      const shouldRevealCheckout =
-        state.pendingCheckoutReveal &&
-        flyAnimations.length === 0 &&
-        Boolean(state.order.customer_name?.trim());
+      const paymentPatch = shouldRevealPaymentAfterAnimations({ ...state, flyAnimations })
+        ? tryRevealPaymentModal({ ...state, flyAnimations })
+        : null;
 
       return {
         flyAnimations,
-        pendingCheckoutReveal: shouldRevealCheckout ? false : state.pendingCheckoutReveal,
-        checkoutPanelOpen: shouldRevealCheckout ? true : state.checkoutPanelOpen,
-        checkoutOpenRequest: shouldRevealCheckout
-          ? state.checkoutOpenRequest + 1
-          : state.checkoutOpenRequest,
+        pendingCheckoutReveal:
+          paymentPatch && "pendingCheckoutReveal" in paymentPatch
+            ? (paymentPatch.pendingCheckoutReveal ?? false)
+            : paymentPatch
+              ? false
+              : state.pendingCheckoutReveal,
+        pendingNamePaymentReveal:
+          paymentPatch && "pendingNamePaymentReveal" in paymentPatch
+            ? (paymentPatch.pendingNamePaymentReveal ?? false)
+            : paymentPatch
+              ? false
+              : state.pendingNamePaymentReveal,
+        ...paymentPatch,
       };
     }),
   setMenuProductMeta: (products) =>
     set((state) => ({
       menuProductMeta: { ...state.menuProductMeta, ...products },
     })),
-  setMenuCache: (slug, menu) =>
+  setMenuCache: (slug, menu) => {
+    useKioskStore.getState().setVisionConfig(menu.vision ?? DEFAULT_VISION_CONFIG);
     set((state) => {
       const menuProductMeta = menu.products.reduce<Record<string, MenuProductMeta>>(
         (meta, product) => {
@@ -507,13 +638,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         menuCacheSlug: slug,
         menuProductMeta,
         orderingEnabled: menu.capabilities?.ordering_enabled ?? true,
-        menuEnabled: menu.capabilities?.menu_enabled ?? (menu.capabilities?.ordering_enabled ?? true),
+        menuEnabled:
+          menu.capabilities?.menu_enabled ?? (menu.capabilities?.ordering_enabled ?? true),
         bookingEnabled: menu.capabilities?.booking_enabled ?? false,
         faqMode:
           !(menu.capabilities?.ordering_enabled ?? true) &&
           !(menu.capabilities?.booking_enabled ?? false),
       };
-    }),
+    });
+  },
   refreshMenuCache: async (slug) => {
     try {
       const menu = await fetchMenu(slug);
@@ -586,8 +719,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
       return { order: { ...state.order, items } };
     }),
-  reset: (options) =>
-    set((state) => ({
+  reset: (options) => {
+    clearPendingLocalAdds();
+    return set((state) => ({
       status: "idle",
       isTalking: false,
       error: null,
@@ -600,9 +734,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       bookingPanelOpen: false,
       selectedTreatment: null,
       pendingCheckoutReveal: false,
+      pendingNamePaymentReveal: false,
       flyAnimations: [],
+      paymentCompleteRequest: 0,
       menuCache: null,
       menuCacheSlug: null,
-      conversationPhase: state.faqMode ? "complete" : "active",
-    })),
+      conversationPhase: "active",
+    }));
+  },
 }));

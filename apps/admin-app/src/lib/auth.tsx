@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   api,
@@ -18,6 +18,7 @@ type AuthContextValue = {
   businesses: Business[];
   business: Business | null;
   businessesLoading: boolean;
+  businessesError: string | null;
   authReady: boolean;
   setBusinessId: (id: string) => void;
   login: (email: string, password: string) => Promise<Business[]>;
@@ -38,7 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [businessId, setBusinessIdState] = useState<string | null>(null);
   const [businessesLoading, setBusinessesLoading] = useState(true);
+  const [businessesError, setBusinessesError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const businessesRequestRef = useRef<Promise<Business[]> | null>(null);
 
   useEffect(() => {
     const savedToken = localStorage.getItem(TOKEN_KEY);
@@ -58,35 +61,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!token) {
       setBusinesses([]);
       setBusinessIdState(null);
+      setBusinessesError(null);
       setBusinessesLoading(false);
       return [];
+    }
+
+    if (businessesRequestRef.current) {
+      return businessesRequestRef.current;
     }
 
     setBusinessesLoading(true);
-    try {
-      const list = await api.listBusinesses(token);
-      setBusinesses(list);
+    setBusinessesError(null);
 
-      const savedId = businessId ?? localStorage.getItem(BUSINESS_KEY);
-      const matched = list.find((item) => item.id === savedId);
-      const nextId = matched?.id ?? list[0]?.id ?? null;
+    const request = (async () => {
+      try {
+        const list = await api.listBusinesses(token);
+        setBusinesses(list);
 
-      setBusinessIdState(nextId);
-      if (nextId) {
-        localStorage.setItem(BUSINESS_KEY, nextId);
-      } else {
-        localStorage.removeItem(BUSINESS_KEY);
+        const savedId = businessId ?? localStorage.getItem(BUSINESS_KEY);
+        const matched = list.find((item) => item.id === savedId);
+        const nextId = matched?.id ?? list[0]?.id ?? null;
+
+        setBusinessIdState(nextId);
+        if (nextId) {
+          localStorage.setItem(BUSINESS_KEY, nextId);
+        } else {
+          localStorage.removeItem(BUSINESS_KEY);
+        }
+
+        return list;
+      } catch (error) {
+        if (error instanceof ApiRequestError && error.status === 401) {
+          logout();
+          return [];
+        }
+
+        const message =
+          error instanceof ApiRequestError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : "Could not load your workspaces.";
+        setBusinessesError(message);
+        return [];
+      } finally {
+        setBusinessesLoading(false);
+        businessesRequestRef.current = null;
       }
+    })();
 
-      return list;
-    } catch (error) {
-      if (error instanceof ApiRequestError && error.status === 401) {
-        logout();
-      }
-      return [];
-    } finally {
-      setBusinessesLoading(false);
-    }
+    businessesRequestRef.current = request;
+    return request;
   };
 
   useEffect(() => {
@@ -106,8 +131,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     const result = await apiLogin(email, password);
     persistSession(result.access_token, result.user);
-    const list = await api.listBusinesses(result.access_token);
+    const list = result.businesses ?? [];
     setBusinesses(list);
+    setBusinessesError(null);
     setBusinessesLoading(false);
 
     const nextId = list[0]?.id ?? null;
@@ -127,6 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setBusinesses([]);
     setBusinessIdState(null);
     localStorage.removeItem(BUSINESS_KEY);
+    setBusinessesError(null);
     setBusinessesLoading(false);
     return 0;
   };
@@ -136,6 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setBusinesses([]);
     setBusinessIdState(null);
+    setBusinessesError(null);
     setBusinessesLoading(false);
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
@@ -162,6 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         businesses,
         business,
         businessesLoading,
+        businessesError,
         authReady,
         setBusinessId,
         login,

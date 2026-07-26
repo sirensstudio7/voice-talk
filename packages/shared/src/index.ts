@@ -20,3 +20,8 @@ export {
   shouldEndFaqConversation,
   stripVerbalizedToolCalls,
 } from "./conversation-end.js";
+export {
+  assistantAsksForCustomerName,
+  isCombinedCustomerNameAsk,
+  isStandaloneCustomerNameAsk,
+} from "./detect-name-prompt.js";

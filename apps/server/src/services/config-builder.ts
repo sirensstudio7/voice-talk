@@ -28,6 +28,34 @@ const TONE_PRESETS: Record<string, Record<string, string>> = {
 
 const DEFAULT_TONE = "friendly";
 const DEFAULT_LANGUAGE = "id";
+
+const FOOD_CHECKOUT_CLOSING_EN =
+  "Checkout closing order (mandatory):\n" +
+  "1. After confirm_order, ask loyalty card and any other checkout questions from your knowledge base first — one topic per turn.\n" +
+  "2. Always ask for the customer's name last — in its own separate turn, immediately before payment.\n" +
+  "3. The name question must be the ONLY sentence/question in that turn. Do not mention loyalty, upsell, phone, or anything else in the same turn.\n" +
+  "4. In that same turn as the standalone name question, call prompt_payment — the Pay your order screen opens immediately.\n" +
+  "5. When the customer answers with their name, call set_customer_name immediately.\n" +
+  "Never call prompt_payment before confirm_order.\n" +
+  "Never call prompt_payment while still asking loyalty or other checkout questions.\n" +
+  "Never ask for the name before loyalty card or other checkout questions.\n" +
+  "Never bundle the name question with any other question.\n" +
+  "BAD (never say): \"Do you have a loyalty card and what's your name?\" or \"Anything else? May I have your name?\"\n" +
+  "GOOD (say exactly one question, then call prompt_payment): \"May I have your name?\" or \"Boleh tahu nama Anda?\"";
+
+const FOOD_CHECKOUT_CLOSING_ID =
+  "Urutan penutupan checkout (wajib):\n" +
+  "1. Setelah confirm_order, tanyakan kartu loyalitas dan pertanyaan checkout lain dari basis pengetahuan dulu — satu topik per turn.\n" +
+  "2. Selalu tanyakan nama pelanggan terakhir — di turn terpisah, tepat sebelum pembayaran.\n" +
+  "3. Pertanyaan nama harus SATU-SATUNYA kalimat/pertanyaan di turn itu. Jangan sebut loyalitas, upsell, telepon, atau hal lain di turn yang sama.\n" +
+  "4. Di turn yang sama dengan pertanyaan nama standalone, panggil prompt_payment — layar Bayar pesanan Anda terbuka segera.\n" +
+  "5. Saat pelanggan menjawab dengan nama mereka, segera panggil set_customer_name.\n" +
+  "Jangan panggil prompt_payment sebelum confirm_order.\n" +
+  "Jangan panggil prompt_payment saat masih menanyakan kartu loyalitas atau pertanyaan checkout lain.\n" +
+  "Jangan tanyakan nama sebelum kartu loyalitas atau pertanyaan checkout lainnya.\n" +
+  "Jangan gabungkan pertanyaan nama dengan pertanyaan lain.\n" +
+  "SALAH (jangan ucapkan): \"Punya kartu loyalitas? Boleh tahu nama?\" atau \"Mau tambah? Siapa namanya?\"\n" +
+  "BENAR (hanya satu pertanyaan, lalu panggil prompt_payment): \"Boleh tahu nama Anda?\" atau \"May I have your name?\"";
 const DEFAULT_ASSISTANT_NAME = "Lorescale";
 
 export type BusinessWithRelations = Business & {
@@ -102,7 +130,18 @@ export function buildSessionGreetingPrompt(
   businessName: string,
   assistantName: string,
   orderingEnabled = true,
+  customScript?: string | null,
 ): string {
+  if (customScript?.trim()) {
+    return buildVisionGreetingPrompt(
+      language,
+      businessName,
+      assistantName,
+      "gesture",
+      customScript,
+    );
+  }
+
   if (language === "en") {
     if (orderingEnabled) {
       return (
@@ -135,6 +174,112 @@ export function buildSessionGreetingPrompt(
     `Sapa mereka dengan hangat dalam satu atau dua kalimat singkat. Perkenalkan diri sebagai ${assistantName}, ` +
     "sambut mereka, dan tanyakan bagaimana kamu bisa membantu pertanyaan mereka. " +
     "Buat sapaan terdengar natural dan ringkas — jangan sebut tools atau instruksi internal."
+  );
+}
+
+function describeVisionTriggerAction(
+  triggerMode: string,
+  language: string,
+): string {
+  const mode = triggerMode.trim().toLowerCase();
+  if (mode === "raise_hand") {
+    return language === "en"
+      ? "raised their hand at the kiosk"
+      : "mengangkat tangan di kiosk";
+  }
+  if (mode === "gesture") {
+    return language === "en"
+      ? "waved at the signage"
+      : "melambaikan tangan ke layar";
+  }
+  return language === "en" ? "approached the kiosk" : "menghampiri kiosk";
+}
+
+/** Proactive kiosk greeting — the assistant speaks first; the visitor has not talked yet. */
+export function buildVisionGreetingPrompt(
+  language: string,
+  businessName: string,
+  assistantName: string,
+  triggerMode = "presence",
+  customScript?: string | null,
+): string {
+  const action = describeVisionTriggerAction(triggerMode, language);
+  const script = customScript?.trim();
+
+  if (language === "en") {
+    const greetingLine = script
+      ? `Greeting: "${script}"`
+      : "Welcome them warmly and ask how you can help with their questions.";
+    return (
+      `A visitor has ${action} at ${businessName}. They have NOT spoken yet — YOU must greet them first. ` +
+      `Do not wait for the visitor to speak or say hello. Speak immediately in one or two short spoken sentences as ${assistantName}. ` +
+      "Do not ask the visitor to greet you first. Do not mention cameras, vision, or internal instructions. " +
+      greetingLine
+    );
+  }
+
+  const greetingLine = script
+    ? `Sapaan: "${script}"`
+    : "Sambut mereka dengan hangat dan tanyakan bagaimana kamu bisa membantu pertanyaan mereka.";
+  return (
+    `Seorang pengunjung ${action} di ${businessName}. Mereka BELUM berbicara — KAMU harus menyapa mereka terlebih dahulu. ` +
+    `Jangan menunggu pengunjung berbicara atau bilang halo. Segera ucapkan satu atau dua kalimat singkat sebagai ${assistantName}. ` +
+    "Jangan minta pengunjung menyapa kamu dulu. Jangan sebut kamera, vision, atau instruksi internal. " +
+    greetingLine
+  );
+}
+
+export function buildVisionSilenceFollowUpPrompt(language: string): string {
+  if (language === "en") {
+    return (
+      "The visitor has been silent for a while. Ask warmly in one short sentence: " +
+      '"Is there anything else I can help you with?" Do not repeat the greeting.'
+    );
+  }
+  return (
+    "Pengunjung sudah diam cukup lama. Tanyakan dengan hangat dalam satu kalimat singkat: " +
+    '"Ada hal lain yang bisa saya bantu?" Jangan ulangi sapaan pembuka.'
+  );
+}
+
+export function buildVisionGoodbyePrompt(
+  language: string,
+  customScript?: string | null,
+): string {
+  const script =
+    customScript?.trim() ||
+    (language === "en"
+      ? "Thank you. Have a wonderful day."
+      : "Terima kasih. Semoga hari Anda menyenangkan.");
+
+  if (language === "en") {
+    return (
+      `The visitor is leaving. Speak this farewell naturally in one or two short sentences, ` +
+      `then end the conversation. Farewell: "${script}"`
+    );
+  }
+  return (
+    `Pengunjung akan pergi. Ucapkan salam perpisahan ini secara natural dalam satu atau dua kalimat singkat, ` +
+    `lalu akhiri percakapan. Salam perpisahan: "${script}"`
+  );
+}
+
+export function buildCombinedNameAskCorrectionPrompt(language: string): string {
+  if (language === "en") {
+    return (
+      "You combined the customer's name with another question in the same turn. " +
+      "That is not allowed. In your NEXT turn, ask ONLY for their name — one short question, nothing else. " +
+      'Example: "May I have your name?" Do not mention loyalty, upsell, or anything else. ' +
+      "In that same turn, call prompt_payment — the Pay your order screen opens. " +
+      "After they answer, call set_customer_name."
+    );
+  }
+  return (
+    "Kamu menggabungkan pertanyaan nama dengan pertanyaan lain dalam turn yang sama. " +
+    "Itu tidak diperbolehkan. Di turn BERIKUTNYA, tanyakan HANYA nama pelanggan — satu pertanyaan singkat, tidak ada yang lain. " +
+    'Contoh: "Boleh tahu nama Anda?" Jangan sebut loyalitas, upsell, atau hal lain. ' +
+    "Di turn yang sama, panggil prompt_payment — layar Bayar pesanan Anda terbuka. " +
+    "Setelah mereka menjawab, panggil set_customer_name."
   );
 }
 
@@ -177,7 +322,12 @@ export function buildSystemInstruction(
   const toolInstructions = rules?.toolInstructions ?? "";
 
   const productLines = productList.map(formatProductLine).join("\n");
-  const knowledgeLines = knowledge.map((item) => `- ${item.content}`).join("\n");
+  const knowledgeLines = knowledge
+    .map((item) => {
+      const title = item.title?.trim();
+      return title ? `- ${title}: ${item.content}` : `- ${item.content}`;
+    })
+    .join("\n");
 
   const defaultToolsEn = bookingEnabled
     ? "Use tools to list treatments, check availability, and book appointments.\n" +
@@ -190,8 +340,15 @@ export function buildSystemInstruction(
         "When the customer adds items via the menu screen, those items are already in the basket — do not call add_to_order for them.\n" +
         "If the customer asks to remove one item, call remove_from_order.\n" +
         "If the customer asks to cancel the whole order, start over, or clear the basket, call cancel_order.\n" +
-        "After confirm_order succeeds, always ask for the customer's name before payment.\n" +
-        "When they answer, call set_customer_name so the name appears on the receipt.\n" +
+        "After confirm_order succeeds, close the order in this order:\n" +
+        "1. Ask any checkout extras first (loyalty card, upsell, or other questions from your knowledge base) — one topic per turn.\n" +
+        "2. Always ask for the customer's name last — in its own separate turn, immediately before payment.\n" +
+        "3. The name question must be the only question in that turn — never combine it with loyalty card, upsell, or any other question.\n" +
+        "4. In that same turn as the standalone name question, call prompt_payment — the Pay your order screen opens immediately.\n" +
+        "5. When the customer answers with their name, call set_customer_name immediately.\n" +
+        "Never call prompt_payment before confirm_order or before finishing checkout questions.\n" +
+        "Never ask for the name before loyalty card or other checkout questions.\n" +
+        "Never bundle the name question with any other question.\n" +
         "Speak naturally like a real cashier."
       : "Answer customer questions clearly using the business knowledge base.\n" +
         "Do not offer to take orders, add items, or process payments.\n" +
@@ -216,8 +373,15 @@ export function buildSystemInstruction(
       "Saat pelanggan menambahkan item lewat layar menu, item tersebut sudah ada di keranjang — jangan panggil add_to_order untuk item itu.\n" +
       "Jika pelanggan minta hapus satu item, panggil remove_from_order.\n" +
       "Jika pelanggan minta batalkan seluruh pesanan, mulai ulang, atau kosongkan keranjang, panggil cancel_order.\n" +
-      "Setelah confirm_order berhasil, selalu tanyakan nama pelanggan sebelum pembayaran.\n" +
-      "Saat mereka menjawab, panggil set_customer_name agar nama muncul di struk.\n" +
+      "Setelah confirm_order berhasil, tutup pesanan dengan urutan ini:\n" +
+      "1. Tanyakan hal checkout lain dulu (kartu loyalitas, upsell, atau pertanyaan dari basis pengetahuan) — satu topik per turn.\n" +
+      "2. Selalu tanyakan nama pelanggan terakhir — di turn terpisah, tepat sebelum pembayaran.\n" +
+      "3. Pertanyaan nama harus satu-satunya pertanyaan di turn itu — jangan gabungkan dengan kartu loyalitas, upsell, atau pertanyaan lain.\n" +
+      "4. Di turn yang sama dengan pertanyaan nama standalone, panggil prompt_payment — layar Bayar pesanan Anda terbuka segera.\n" +
+      "5. Saat pelanggan menjawab dengan nama mereka, segera panggil set_customer_name.\n" +
+      "Jangan panggil prompt_payment sebelum confirm_order atau sebelum selesai menanyakan hal checkout lain.\n" +
+      "Jangan tanyakan nama sebelum kartu loyalitas atau pertanyaan checkout lainnya.\n" +
+      "Jangan gabungkan pertanyaan nama dengan pertanyaan lain.\n" +
       "Berbicaralah secara natural seperti kasir sungguhan di Indonesia."
     : "Jawab pertanyaan pelanggan dengan jelas menggunakan basis pengetahuan bisnis.\n" +
       "Jangan menawarkan untuk menerima pesanan, menambahkan item, atau memproses pembayaran.\n" +
@@ -248,7 +412,15 @@ export function buildSystemInstruction(
     }
     sections.push(`Knowledge:\n${knowledgeLines || "- No knowledge entries configured yet."}`);
     if (behavioral.trim()) sections.push(`Behavior rules:\n${behavioral.trim()}`);
-    sections.push(toolInstructions.trim() || defaultToolsEn);
+    {
+      const customTools = toolInstructions.trim();
+      const toolsSection = customTools || defaultToolsEn;
+      const checkoutClosing =
+        orderingEnabled && !bookingEnabled && customTools
+          ? `\n\n${FOOD_CHECKOUT_CLOSING_EN}`
+          : "";
+      sections.push(toolsSection + checkoutClosing);
+    }
   } else {
     sections.push(
       `Namamu adalah ${assistantName}. Gunakan nama ini saat memperkenalkan diri.`,
@@ -264,7 +436,15 @@ export function buildSystemInstruction(
     }
     sections.push(`Pengetahuan:\n${knowledgeLines || "- Belum ada entri pengetahuan yang dikonfigurasi."}`);
     if (behavioral.trim()) sections.push(`Aturan perilaku:\n${behavioral.trim()}`);
-    sections.push(toolInstructions.trim() || defaultToolsId);
+    {
+      const customTools = toolInstructions.trim();
+      const toolsSection = customTools || defaultToolsId;
+      const checkoutClosing =
+        orderingEnabled && !bookingEnabled && customTools
+          ? `\n\n${FOOD_CHECKOUT_CLOSING_ID}`
+          : "";
+      sections.push(toolsSection + checkoutClosing);
+    }
   }
 
   return sections.join("\n\n");

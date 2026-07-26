@@ -2,7 +2,16 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Pencil, Plus, Search, Trash2, Upload, UtensilsCrossed, X } from "lucide-react";
+import {
+  ArrowUpTrayIcon,
+  CakeIcon,
+  ChevronDownIcon,
+  MagnifyingGlassIcon,
+  PencilIcon,
+  PlusIcon,
+  TrashIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 
 import { PageHeader, StatCard } from "@/components/ui";
 import { api, type Product } from "@/lib/api";
@@ -91,7 +100,7 @@ function ProductCard({
   const resolvedImageUrl = resolveMediaUrl(product.image_url);
 
   return (
-    <article className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80 transition hover:shadow-md active:scale-[0.99]">
+    <article className="group flex flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80 transition active:scale-[0.99]">
       <div className="px-1 pt-1">
         <div className="relative aspect-[7/6] w-full overflow-hidden rounded-xl bg-slate-100">
           {showImage ? (
@@ -135,17 +144,17 @@ function ProductCard({
               type="button"
               onClick={onEdit}
               aria-label={`Edit ${product.name}`}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:scale-95"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 active:scale-95"
             >
-              <Pencil className="h-3.5 w-3.5" strokeWidth={2.5} />
+              <PencilIcon className="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
               onClick={onDelete}
               aria-label={`Delete ${product.name}`}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 active:scale-95"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 active:scale-95"
             >
-              <Trash2 className="h-3.5 w-3.5" strokeWidth={2.5} />
+              <TrashIcon className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
@@ -177,7 +186,7 @@ function FormField({
 }
 
 const inputClassName =
-  "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-orange-500";
+  "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-orange-500";
 
 function CategorySelect({
   id,
@@ -229,14 +238,14 @@ function CategorySelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className={`flex w-full items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2.5 text-left text-sm shadow-sm transition-colors ${
+        className={`flex w-full items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2.5 text-left text-sm transition-colors ${
           open
             ? "border-orange-300 ring-2 ring-orange-500/20"
             : "border-slate-200 hover:border-slate-300"
         }`}
       >
         <span className="font-medium text-slate-900">{value}</span>
-        <ChevronDown
+        <ChevronDownIcon
           className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
         />
       </button>
@@ -245,7 +254,7 @@ function CategorySelect({
         <ul
           role="listbox"
           aria-labelledby={id}
-          className="absolute z-20 mt-1.5 max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-200/80"
+          className="absolute z-20 mt-1.5 max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 ring-1 ring-slate-200/80"
         >
           {resolvedOptions.map((option) => {
             const selected = option === value;
@@ -330,7 +339,7 @@ function ProductImageField({
               onClick={() => fileInputRef.current?.click()}
               className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Upload className="h-3.5 w-3.5" />
+              <ArrowUpTrayIcon className="h-3.5 w-3.5" />
               {uploading ? "Uploading…" : "Replace"}
             </button>
             <button
@@ -350,7 +359,7 @@ function ProductImageField({
           onClick={() => fileInputRef.current?.click()}
           className="flex w-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 transition-colors hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <Upload className="h-6 w-6 text-slate-400" />
+          <ArrowUpTrayIcon className="h-6 w-6 text-slate-400" />
           <p className="mt-2 text-sm font-medium text-slate-700">
             {uploading ? "Uploading…" : "Upload image"}
           </p>
@@ -443,7 +452,7 @@ function ProductFormModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="product-form-title"
-        className="relative z-10 flex max-h-[min(90vh,800px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200"
+        className="relative z-10 flex max-h-[min(90vh,800px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200"
       >
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
           <div>
@@ -472,7 +481,7 @@ function ProductFormModal({
             aria-label="Close"
             className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
           >
-            <X className="h-4 w-4" />
+            <XMarkIcon className="h-4 w-4" />
           </button>
         </div>
 
@@ -619,12 +628,12 @@ function ProductFormModal({
             >
               {editingId ? (
                 <>
-                  <Pencil className="h-4 w-4" />
+                  <PencilIcon className="h-4 w-4" />
                   {saving ? "Saving…" : "Save changes"}
                 </>
               ) : (
                 <>
-                  <Plus className="h-4 w-4" />
+                  <PlusIcon className="h-4 w-4" />
                   {saving ? "Adding…" : "Add product"}
                 </>
               )}
@@ -821,7 +830,7 @@ export function MenuPageClient() {
             onClick={openAddForm}
             className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600"
           >
-            <Plus className="h-4 w-4" />
+            <PlusIcon className="h-4 w-4" />
             {salonMode ? "Add treatment" : "Add product"}
           </button>
         }
@@ -862,7 +871,7 @@ export function MenuPageClient() {
               {[0, 1, 2, 3, 4, 5, 6, 7].map((index) => (
                 <div
                   key={index}
-                  className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80"
+                  className="overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80"
                 >
                   <div className="px-1 pt-1">
                     <div className="aspect-[7/6] animate-pulse rounded-xl bg-slate-200" />
@@ -884,7 +893,7 @@ export function MenuPageClient() {
           ) : products.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-8 py-16 text-center">
               <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
-                <UtensilsCrossed className="h-7 w-7" />
+                <CakeIcon className="h-7 w-7" />
               </div>
               <p className="text-lg font-semibold text-slate-900">
                 {salonMode ? "No treatments yet" : "No products yet"}
@@ -899,20 +908,20 @@ export function MenuPageClient() {
                 onClick={openAddForm}
                 className="mt-6 inline-flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-600"
               >
-                <Plus className="h-4 w-4" />
+                <PlusIcon className="h-4 w-4" />
                 {salonMode ? "Add treatment" : "Add product"}
               </button>
             </div>
           ) : (
             <div className="rounded-2xl bg-slate-50 p-5">
               <div className="relative mb-6 w-full sm:max-w-sm">
-                <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   type="search"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search products…"
-                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
                 />
               </div>
 

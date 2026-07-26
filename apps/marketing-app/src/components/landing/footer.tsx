@@ -1,208 +1,187 @@
-import Image from "next/image";
-import type { SVGProps } from "react";
-import { ChevronRight } from "lucide-react";
+"use client";
 
-import { FooterFitText } from "@/components/landing/footer-fit-text";
-import { FooterNewsletter } from "@/components/landing/footer-newsletter";
-import { adminLoginUrl } from "@/lib/site-links";
+import {
+  ChevronRightIcon,
+  EnvelopeIcon,
+} from "@heroicons/react/24/outline";
+import Link from "next/link";
 
-type SocialIconComponent = (props: SVGProps<SVGSVGElement>) => React.ReactElement;
+import { FlickeringGrid } from "@/components/landing/flickering-grid";
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { adminLoginUrl, adminSignupUrl, demoUrl } from "@/lib/site-links";
 
-function LinkedInIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
-      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 1 1 0-4.124 2.062 2.062 0 0 1 0 4.124zM7.119 20.452H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-    </svg>
-  );
-}
+const FOOTER_DESCRIPTION =
+  "Take the next step toward smarter voice ordering, better customer conversations, and a dashboard that keeps your store running around the clock.";
 
-function TwitterIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
-      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-    </svg>
-  );
-}
-
-function InstagramIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
-      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z" />
-    </svg>
-  );
-}
-
-function GithubIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
-      <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
-    </svg>
-  );
-}
-
-const FOOTER_PATTERN =
-  "https://framerusercontent.com/images/wGAHOWhVswEtWkOKTJN6s2CW0.svg";
-
-const NAV_LINKS = [
-  { href: "#features", label: "Features" },
-  { href: "#how-it-works", label: "How it works" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#faq", label: "FAQ" },
+const SOCIAL_LINKS = [
+  {
+    id: "instagram",
+    label: "Instagram",
+    href: "https://instagram.com/lorescale",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="size-4" aria-hidden>
+        <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zm0 10.162a3.999 3.999 0 1 1 0-7.998 3.999 3.999 0 0 1 0 7.998zm6.406-11.845a1.44 1.44 0 1 1-2.881.001 1.44 1.44 0 0 1 2.881-.001z" />
+      </svg>
+    ),
+  },
+  {
+    id: "x",
+    label: "X",
+    href: "https://x.com/lorescale",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="size-4" aria-hidden>
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+      </svg>
+    ),
+  },
+  {
+    id: "whatsapp",
+    label: "WhatsApp",
+    href: "https://wa.me/6281234567890",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="size-4" aria-hidden>
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z" />
+      </svg>
+    ),
+  },
+  {
+    id: "telegram",
+    label: "Telegram",
+    href: "https://t.me/lorescale",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="size-4" aria-hidden>
+        <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+      </svg>
+    ),
+  },
+  {
+    id: "email",
+    label: "Email",
+    href: "mailto:hello@lorescale.com",
+    icon: <EnvelopeIcon className="size-4" aria-hidden />,
+  },
 ] as const;
 
-const SOCIAL_LINKS: ReadonlyArray<{
-  href: string;
-  label: string;
-  icon: SocialIconComponent;
-}> = [
-  { href: "https://linkedin.com", label: "LinkedIn", icon: LinkedInIcon },
-  { href: "https://twitter.com", label: "Twitter", icon: TwitterIcon },
-  { href: "https://instagram.com", label: "Instagram", icon: InstagramIcon },
-  { href: "https://github.com", label: "Github", icon: GithubIcon },
-];
-
-const COMMUNITY_AVATARS = [
-  "https://framerusercontent.com/images/XQBcFnxyK3FSny302gO7Gggkdsw.jpg?scale-down-to=512",
-  "https://framerusercontent.com/images/6OOWa2zIdujTmN3ZdUxz0qFSaRA.jpg?scale-down-to=512",
-  "https://framerusercontent.com/images/DWQnRIOnYe0oPL85YbQQLSUPo.jpg?scale-down-to=512",
-  "https://framerusercontent.com/images/6KKDj9gnqEHDNBTD7GWaqkIug8.jpg?scale-down-to=512",
-  "https://framerusercontent.com/images/MDE7XIBGnAp7GIZqwSV00Vh90.jpg?scale-down-to=512",
+const FOOTER_LINKS = [
+  {
+    title: "Product",
+    links: [
+      { id: 1, title: "Features", url: "#features" },
+      { id: 2, title: "How it works", url: "#how-it-works" },
+      { id: 4, title: "FAQ", url: "#faq" },
+    ],
+  },
+  {
+    title: "Platform",
+    links: [
+      { id: 5, title: "Live demo", url: demoUrl, external: true },
+      { id: 6, title: "Sign in", url: adminLoginUrl, external: true },
+      { id: 7, title: "Sign up", url: adminSignupUrl, external: true },
+    ],
+  },
+  {
+    title: "Company",
+    links: [
+      { id: 8, title: "Privacy Policy", url: "#" },
+      { id: 9, title: "Terms", url: "#" },
+      { id: 10, title: "Contact", url: "#" },
+    ],
+  },
 ] as const;
-
-function FooterLink({
-  href,
-  label,
-  external,
-}: {
-  href: string;
-  label: string;
-  external?: boolean;
-}) {
-  return (
-    <a
-      href={href}
-      {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-      className="group flex items-center gap-2 text-sm text-[#C2FA69] transition hover:text-[#d4ff85]"
-    >
-      <ChevronRight
-        className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5"
-        aria-hidden
-      />
-      {label}
-    </a>
-  );
-}
-
-function SocialLink({
-  href,
-  label,
-  icon: Icon,
-}: {
-  href: string;
-  label: string;
-  icon: SocialIconComponent;
-}) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={label}
-      className="text-[#C2FA69] transition hover:text-[#d4ff85]"
-    >
-      <Icon className="h-5 w-5" />
-    </a>
-  );
-}
 
 export function Footer() {
-  return (
-    <footer className="bg-white pb-8 pt-16 sm:pb-10 sm:pt-20">
-      <div className="landing-container">
-        <div className="relative overflow-hidden rounded-t-[30px] bg-gradient-to-b from-[#C2FA69] to-[#9CCC50]">
-          <div
-            className="pointer-events-none absolute inset-0 opacity-[0.09]"
-            style={{
-              backgroundImage: `url("${FOOTER_PATTERN}")`,
-              backgroundRepeat: "repeat",
-              backgroundPosition: "center",
-              backgroundSize: "26.5px",
-            }}
-            aria-hidden
-          />
+  const isMobile = useMediaQuery("(max-width: 640px)");
+  const isTablet = useMediaQuery("(max-width: 1024px)");
 
-          <div className="relative px-6 py-12 sm:px-10 sm:py-14 lg:py-16">
-            <div className="max-w-xl">
-              <h2 className="text-[clamp(1.75rem,4vw,2.75rem)] font-semibold leading-[1.1] tracking-tight text-[#0F0F0F]">
-                Ready to Transform Your Business with Lorescale?
-              </h2>
-              <p className="mt-4 text-base leading-relaxed text-[#0F0F0F]/80">
-                Take the next step toward smarter voice ordering, better customer conversations, and
-                a dashboard that keeps your store running around the clock.
-              </p>
+  const fitText = isMobile || isTablet ? "Lorescale" : "LORESCALE";
+
+  return (
+    <footer id="footer" className="w-full bg-black pb-0 text-white">
+      <div className="landing-container">
+        <div className="flex flex-col pt-10 pb-4 sm:px-8 lg:px-10 md:flex-row md:items-start md:justify-between md:pt-10 md:pb-4">
+        <div className="mx-0 flex max-w-xs flex-col items-start justify-start gap-y-5">
+          <Link href="/" className="flex flex-col items-start gap-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-white/65">
+              PT. LORESCALE DIGITAL INDONESIA
+            </p>
+            <p className="text-xl font-semibold text-white">Lorescale</p>
+          </Link>
+          <p className="font-medium tracking-tight text-white/65">{FOOTER_DESCRIPTION}</p>
+          <div className="flex items-center gap-2">
+            {SOCIAL_LINKS.map((social) => (
               <a
-                href={adminLoginUrl}
-                className="mt-8 inline-flex rounded-full bg-black px-7 py-3.5 text-sm font-medium text-white shadow-[0_80px_32px_-5px_rgba(0,0,0,0)] transition hover:bg-[#1a1a1a]"
+                key={social.id}
+                href={social.href}
+                target={social.href.startsWith("mailto:") ? undefined : "_blank"}
+                rel={social.href.startsWith("mailto:") ? undefined : "noopener noreferrer"}
+                aria-label={social.label}
+                className="inline-flex items-center justify-center p-1 text-white/65 transition-colors hover:text-white"
               >
-                Get started for free
+                {social.icon}
               </a>
-            </div>
+            ))}
           </div>
         </div>
-
-        <div className="rounded-b-[30px] bg-black">
-          <div className="grid gap-12 px-6 py-12 sm:px-10 sm:py-14 lg:grid-cols-[1fr_1fr_1.2fr] lg:gap-10">
-            <div className="space-y-3">
-              {NAV_LINKS.map((link) => (
-                <FooterLink key={link.label} {...link} />
-              ))}
-            </div>
-
-            <div className="flex items-start gap-5 self-start">
-              {SOCIAL_LINKS.map((link) => (
-                <SocialLink key={link.label} {...link} />
-              ))}
-            </div>
-
-            <div className="space-y-8">
-              <FooterNewsletter />
-
-              <div>
-                <div className="flex -space-x-2">
-                  {COMMUNITY_AVATARS.map((src, index) => (
-                    <div
-                      key={src}
-                      className="relative h-12 w-12 overflow-hidden rounded-2xl border-2 border-black ring-1 ring-white/10"
-                      style={{ zIndex: COMMUNITY_AVATARS.length - index }}
-                    >
-                      <Image src={src} alt="" fill className="object-cover" sizes="48px" />
+        <div className="pt-5 md:w-1/2 md:pt-0">
+          <div className="flex flex-col items-start justify-start gap-y-5 md:flex-row md:items-start md:justify-between lg:pl-10">
+            {FOOTER_LINKS.map((column) => (
+              <ul key={column.title} className="flex flex-col gap-y-2">
+                <li className="mb-2 text-sm font-semibold text-white">{column.title}</li>
+                {column.links.map((link) => (
+                  <li
+                    key={link.id}
+                    className="group inline-flex cursor-pointer items-center justify-start gap-1 text-[15px]/snug text-white/65 transition-colors hover:text-white"
+                  >
+                    {"external" in link && link.external ? (
+                      <a href={link.url} target="_blank" rel="noopener noreferrer">
+                        {link.title}
+                      </a>
+                    ) : (
+                      <Link href={link.url}>{link.title}</Link>
+                    )}
+                    <div className="flex size-4 translate-x-0 transform items-center justify-center rounded border border-white/20 opacity-0 transition-all duration-300 ease-out group-hover:translate-x-1 group-hover:opacity-100">
+                      <ChevronRightIcon className="h-4 w-4 text-white" aria-hidden />
                     </div>
-                  ))}
-                </div>
-                <p className="mt-4 text-sm text-[#F5FFFD]">
-                  Join community of{" "}
-                  <span className="font-semibold text-[#C2FA69]">1,000+</span> merchants.
-                </p>
-              </div>
-            </div>
+                  </li>
+                ))}
+              </ul>
+            ))}
           </div>
-
-          <div className="overflow-hidden px-6 pb-6 sm:px-10">
-            <FooterFitText text="LORESCALE" />
-          </div>
-
-          <div className="flex flex-col gap-4 border-t border-white/15 px-6 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-10">
-            <div className="flex flex-wrap gap-6">
-              <a href="#" className="text-sm text-white/70 transition hover:text-white">
-                Privacy Policy
-              </a>
-              <a href="#" className="text-sm text-white/70 transition hover:text-white">
-                Terms
-              </a>
-            </div>
-            <p className="text-sm text-white/50">
-              © {new Date().getFullYear()} Lorescale. All rights reserved.
+        </div>
+        </div>
+      </div>
+      <div className="relative z-0 mt-2 h-44 w-full sm:mt-4 sm:h-56 md:h-80">
+        <div className="absolute inset-0">
+          <FlickeringGrid
+            text={fitText}
+            fontSize={210}
+            fitText
+            minFontSize={44}
+            textYRatio={isMobile ? 0.72 : 0.68}
+            className="h-full w-full"
+            squareSize={2}
+            gridGap={isMobile ? 2 : isTablet ? 2 : 3}
+            color="#9CA3AF"
+            maxOpacity={0.35}
+            flickerChance={0.1}
+          />
+        </div>
+        <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-t from-transparent to-black from-40%" />
+        <span className="sr-only">{fitText}</span>
+      </div>
+      <div className="relative z-20 border-t border-dashed border-white/10">
+        <div className="landing-container border-x border-dashed border-white/10">
+          <div className="flex items-center justify-between gap-4 py-4 sm:px-8 lg:px-10">
+            <p className="text-xs font-medium text-neutral-500">
+              Copyright © {new Date().getFullYear()} Lorescale{" "}
+              <span className="hidden sm:inline">Seluruh hak cipta dilindungi.</span>
             </p>
+            <Link
+              href="#"
+              className="shrink-0 text-xs font-medium text-neutral-500 transition-colors hover:text-neutral-300"
+            >
+              Terms & Conditions
+            </Link>
           </div>
         </div>
       </div>

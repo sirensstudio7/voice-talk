@@ -1,6 +1,8 @@
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import type { BusinessCapabilities } from "@voicetalk/shared";
 
+import type { VisionConfig } from "@/types/kiosk";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export const DEFAULT_ASSISTANT_AVATAR = "/lorescale-cashier-nobg.png";
@@ -31,27 +33,49 @@ export interface MenuResponse {
   avatar_url?: string;
   background_url?: string;
   gradient_color?: string;
+  display_orientation?: string;
   capabilities?: BusinessCapabilities;
+  vision?: VisionConfig;
   products: MenuProduct[];
 }
 
 export async function fetchMenu(businessSlug: string): Promise<MenuResponse> {
-  const response = await fetchWithTimeout(
-    `${API_URL}/menu?business=${encodeURIComponent(businessSlug)}`,
-    { cache: "no-store" },
-  );
-  if (!response.ok) {
-    throw new Error("Unable to load menu.");
+  const url = `${API_URL}/menu?business=${encodeURIComponent(businessSlug)}`;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetchWithTimeout(
+        url,
+        { cache: "no-store" },
+        attempt === 0 ? 18_000 : 24_000,
+      );
+      if (!response.ok) {
+        throw new Error("Unable to load menu.");
+      }
+      return (await response.json()) as MenuResponse;
+    } catch (error) {
+      lastError = error;
+      const retryable =
+        (error instanceof DOMException && error.name === "AbortError") ||
+        error instanceof TypeError;
+      if (retryable && attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
+      throw error;
+    }
   }
-  return response.json() as Promise<MenuResponse>;
+
+  throw lastError;
 }
 
 export function menuFetchErrorMessage(error: unknown): string {
   if (error instanceof DOMException && error.name === "AbortError") {
-    return "Can't reach the server — it may be stopped or still starting. Run npm run api:ensure in the project root, then retry.";
+    return "The server is slow to respond — it may still be starting. Run npm run api:ensure in the project root, wait a few seconds, then refresh.";
   }
   if (error instanceof TypeError) {
-    return "Can't connect to the server. Make sure the API is running on port 8000.";
+    return "Can't connect to the server. Run npm run api:ensure in the project root, then refresh.";
   }
   return error instanceof Error ? error.message : "Unable to load menu.";
 }

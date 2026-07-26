@@ -1,13 +1,13 @@
 "use client";
 
 import {
-  Home,
-  Keyboard,
-  Mic,
-  MoreHorizontal,
-  PhoneOff,
-  Share,
-} from "lucide-react";
+  CommandLineIcon,
+  EllipsisHorizontalIcon,
+  HomeIcon,
+  MicrophoneIcon,
+  PhoneXMarkIcon,
+  ShareIcon,
+} from "@heroicons/react/24/outline";
 import Image from "next/image";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -215,7 +215,7 @@ export function ExperienceHeader({
         className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition hover:bg-slate-50"
         aria-label="Home"
       >
-        <Home className="h-4 w-4" />
+        <HomeIcon className="h-4 w-4" />
       </button>
 
       <div className="flex items-center gap-2.5">
@@ -272,7 +272,7 @@ export function ExperienceHeader({
             className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition hover:bg-slate-50"
             aria-label="More options"
           >
-            <MoreHorizontal className="h-4 w-4" />
+            <EllipsisHorizontalIcon className="h-4 w-4" />
           </button>
 
           {menuOpen && (
@@ -293,7 +293,7 @@ export function ExperienceHeader({
                     }}
                     className="flex w-full items-center gap-2 px-4 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
                   >
-                    <PhoneOff className="h-4 w-4" />
+                    <PhoneXMarkIcon className="h-4 w-4" />
                     End session
                   </button>
                 ) : null}
@@ -317,6 +317,7 @@ interface BottomControlsProps {
   onStart: () => void;
   onStop: () => void;
   menuEnabled?: boolean;
+  hideMic?: boolean;
 }
 
 export function BottomControls({
@@ -325,18 +326,36 @@ export function BottomControls({
   onStart,
   onStop,
   menuEnabled = true,
+  hideMic = false,
 }: BottomControlsProps) {
+  if (hideMic) {
+    return (
+      <footer className="absolute inset-x-0 bottom-0 z-20 px-6 pb-8 pt-16">
+        {menuEnabled ? (
+          <div className="absolute bottom-8 right-6 z-10">
+            <StoreMenuButton />
+          </div>
+        ) : null}
+      </footer>
+    );
+  }
+
   return (
     <footer className="absolute inset-x-0 bottom-0 z-20 px-6 pb-8 pt-16">
+      {menuEnabled ? (
+        <div className="absolute bottom-8 right-6 z-10">
+          <StoreMenuButton />
+        </div>
+      ) : null}
+
       <div className="mx-auto grid w-full max-w-lg grid-cols-[1fr_auto_1fr] items-end gap-x-4 sm:gap-x-6">
         <div className="flex items-end justify-end gap-4 sm:gap-6">
-          {menuEnabled ? <StoreMenuButton /> : null}
           <button
             type="button"
             className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] transition hover:bg-slate-50"
             aria-label="Keyboard input"
           >
-            <Keyboard className="h-5 w-5" />
+            <CommandLineIcon className="h-5 w-5" />
           </button>
         </div>
 
@@ -353,7 +372,7 @@ export function BottomControls({
             className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] transition hover:bg-slate-50"
             aria-label="Share"
           >
-            <Share className="h-5 w-5" />
+            <ShareIcon className="h-5 w-5" />
           </button>
         </div>
       </div>
@@ -412,7 +431,7 @@ export function TalkButton({
         }
         aria-label={isTalking ? "Release to stop talking" : "Hold to talk"}
       >
-        <Mic className="h-7 w-7" />
+        <MicrophoneIcon className="h-7 w-7" />
       </button>
     </div>
   );

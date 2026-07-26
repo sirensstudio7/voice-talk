@@ -76,7 +76,7 @@ export function FeaturesGrid() {
   return (
     <section id="features" className="bg-black">
       <div className="landing-container border-x border-dashed border-white/10">
-        <div className="px-6 py-20 sm:px-8 sm:py-24 lg:px-10">
+        <div className="py-20 sm:px-8 sm:py-24 lg:px-10">
           <div className="text-left">
             <div className="mb-6 text-sm uppercase tracking-wide text-[#737373]">
               Capabilities

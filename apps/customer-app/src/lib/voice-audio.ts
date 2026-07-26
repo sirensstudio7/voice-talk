@@ -47,6 +47,7 @@ export class VoiceAudioEngine {
   private scheduledSources: AudioBufferSourceNode[] = [];
   private recording = false;
   private micReady = false;
+  private prepareMicrophonePromise: Promise<void> | null = null;
 
   async initialize(): Promise<void> {
     if (!this.audioContext) {
@@ -60,17 +61,50 @@ export class VoiceAudioEngine {
   }
 
   async prepareMicrophone(): Promise<void> {
+    if (this.prepareMicrophonePromise) {
+      return this.prepareMicrophonePromise;
+    }
+
+    this.prepareMicrophonePromise = this.doPrepareMicrophone().finally(() => {
+      this.prepareMicrophonePromise = null;
+    });
+
+    return this.prepareMicrophonePromise;
+  }
+
+  private async doPrepareMicrophone(): Promise<void> {
     await this.initialize();
 
     if (this.micReady && this.mediaStream) return;
 
-    this.mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        this.mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+        }
+      }
+    }
+
+    if (!this.mediaStream) {
+      throw lastError ?? new Error("Microphone access failed.");
+    }
+
+    if (this.workletNode) {
+      this.sourceNode?.disconnect();
+      this.workletNode.disconnect();
+    }
 
     this.sourceNode = this.audioContext!.createMediaStreamSource(this.mediaStream);
     this.workletNode = new AudioWorkletNode(this.audioContext!, "pcm-processor");
@@ -116,9 +150,18 @@ export class VoiceAudioEngine {
   }
 
   playPcm(arrayBuffer: ArrayBuffer, sampleRate = 24000): void {
+    void this.playPcmAsync(arrayBuffer, sampleRate);
+  }
+
+  async playPcmAsync(arrayBuffer: ArrayBuffer, sampleRate = 24000): Promise<void> {
     if (!this.audioContext) return;
+
     if (this.audioContext.state === "suspended") {
-      void this.audioContext.resume();
+      try {
+        await this.audioContext.resume();
+      } catch {
+        return;
+      }
     }
 
     const pcmData = new Int16Array(arrayBuffer);

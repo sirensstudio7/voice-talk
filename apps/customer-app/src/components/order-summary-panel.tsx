@@ -1,6 +1,9 @@
 "use client";
 
-import { ChevronRight, ShoppingBag } from "lucide-react";
+import {
+  ChevronRightIcon,
+  ShoppingBagIcon,
+} from "@heroicons/react/24/outline";
 
 import { useSessionStore } from "@/store/session-store";
 import { formatCurrency } from "@voicetalk/shared";
@@ -14,7 +17,7 @@ export function OrderSummaryPanel() {
     <div className="mx-4 mb-2">
       <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-md">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
-          <ShoppingBag className="h-5 w-5" />
+          <ShoppingBagIcon className="h-5 w-5" />
         </div>
 
         <div className="min-w-0 flex-1">
@@ -29,7 +32,7 @@ export function OrderSummaryPanel() {
           </p>
         </div>
 
-        <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
+        <ChevronRightIcon className="h-5 w-5 shrink-0 text-slate-400" />
       </div>
     </div>
   );

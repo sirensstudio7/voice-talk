@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Clock } from "lucide-react";
+import {
+  ClockIcon,
+} from "@heroicons/react/24/outline";
 
 import { PageHeader } from "@/components/ui";
 import { api, type BusinessHour } from "@/lib/api";
@@ -10,7 +12,7 @@ import { useAuth } from "@/lib/auth";
 const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const inputClassName =
-  "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-orange-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
+  "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-orange-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
 
 function sortHours(hours: BusinessHour[]) {
   return [...hours].sort((a, b) => a.day_of_week - b.day_of_week);
@@ -109,10 +111,10 @@ export function SchedulePageClient() {
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-            <Clock className="h-4 w-4 text-slate-400" />
+            <ClockIcon className="h-4 w-4 text-slate-400" />
             Weekly hours
           </div>
         </div>

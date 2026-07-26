@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
   id VARCHAR(36) PRIMARY KEY,
   business_id VARCHAR(36) NOT NULL REFERENCES businesses(id),
   category VARCHAR(100) NOT NULL DEFAULT 'General',
+  title VARCHAR(200),
   content TEXT NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0
 );

@@ -13,4 +13,7 @@ dist/
 *.egg-info/
 .demo-*.log
 .api.log
+.vision.log
+.vision.pid
+.vision.slug
 apps/server/uploads/

@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Phone, Scissors, User, XCircle } from "lucide-react";
+import {
+  CalendarDaysIcon,
+  PhoneIcon,
+  ScissorsIcon,
+  UserIcon,
+  XCircleIcon,
+} from "@heroicons/react/24/outline";
 
 import { DateFilter } from "@/components/date-filter";
 import { PageHeader, StatCard } from "@/components/ui";
@@ -80,22 +86,22 @@ function AppointmentRow({
   const isCancelled = appointment.status === "cancelled";
 
   return (
-    <article className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
+    <article className="rounded-xl border border-slate-200 bg-white px-4 py-4 sm:px-5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 text-base font-semibold text-slate-900">
-            <Scissors className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+            <ScissorsIcon className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
             <span className="truncate">{appointment.treatment_name}</span>
           </p>
 
           <p className="mt-1.5 flex items-center gap-1.5 text-sm text-slate-600">
-            <User className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+            <UserIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
             <span className="truncate">{appointment.customer_name}</span>
           </p>
 
           {appointment.customer_phone ? (
             <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
-              <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+              <PhoneIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
               <span>{appointment.customer_phone}</span>
             </p>
           ) : null}
@@ -114,7 +120,7 @@ function AppointmentRow({
               onClick={onCancel}
               className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <XCircle className="h-3.5 w-3.5" />
+              <XCircleIcon className="h-3.5 w-3.5" />
               {cancelling ? "Cancelling…" : "Cancel"}
             </button>
           ) : null}
@@ -219,7 +225,7 @@ export function AppointmentsPageClient() {
       ) : appointments.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-8 py-16 text-center">
           <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
-            <CalendarDays className="h-7 w-7" />
+            <CalendarDaysIcon className="h-7 w-7" />
           </div>
           <p className="text-lg font-semibold text-slate-900">No appointments yet</p>
           <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-500">

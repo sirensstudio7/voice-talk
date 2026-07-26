@@ -1,13 +1,21 @@
 import bcrypt from "bcrypt";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import jwt from "jsonwebtoken";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getBusinessCapabilities } from "@voicetalk/shared";
 import { db } from "../db/client.js";
 import { businessMembers, businesses, users, type User } from "../db/schema.js";
 import { env } from "../env.js";
 
 const JWT_ALGORITHM = "HS256";
+const USER_CACHE_TTL_MS = 60_000;
+const BUSINESS_ACCESS_CACHE_TTL_MS = 60_000;
+
+const userCache = new Map<string, { user: User; expiresAt: number }>();
+const businessAccessCache = new Map<
+  string,
+  { business: typeof businesses.$inferSelect; expiresAt: number }
+>();
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
@@ -24,44 +32,97 @@ export function createAccessToken(userId: string): string {
   });
 }
 
-export async function getCurrentUser(request: FastifyRequest): Promise<User> {
+function readBearerToken(request: FastifyRequest): string {
   const header = request.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     throw authError("Not authenticated");
   }
+  return header.slice("Bearer ".length);
+}
 
-  const token = header.slice("Bearer ".length);
+export function getAuthUserId(request: FastifyRequest): string {
+  const token = readBearerToken(request);
   try {
     const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: [JWT_ALGORITHM] }) as {
       sub?: string;
     };
     if (!payload.sub) throw authError("Invalid token");
-
-    const user = await db.query.users.findFirst({ where: eq(users.id, payload.sub) });
-    if (!user) throw authError("User not found");
-    return user;
-  } catch {
+    return payload.sub;
+  } catch (error) {
+    if (error instanceof Error && "statusCode" in error) throw error;
     throw authError("Invalid token");
   }
+}
+
+async function getCachedUser(userId: string): Promise<User | undefined> {
+  const cached = userCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.user;
+  }
+
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (user) {
+    userCache.set(userId, { user, expiresAt: Date.now() + USER_CACHE_TTL_MS });
+  }
+  return user;
+}
+
+export async function getCurrentUser(request: FastifyRequest): Promise<User> {
+  const userId = getAuthUserId(request);
+  const user = await getCachedUser(userId);
+  if (!user) throw authError("User not found");
+  return user;
+}
+
+function publicErrorDetail(error: unknown): string {
+  if (!(error instanceof Error)) return "Internal error";
+
+  const parts = [error.message];
+  if (error.cause instanceof Error) parts.push(error.cause.message);
+  const combined = parts.join(" ");
+
+  if (/CONNECT_TIMEOUT|connect timed out|timed out|ECONNREFUSED|connection/i.test(combined)) {
+    return "Database connection timed out. Please retry in a moment.";
+  }
+
+  if (error.name === "DrizzleQueryError" && error.cause instanceof Error) {
+    return error.cause.message;
+  }
+
+  return error.message;
 }
 
 export async function requireBusinessAccess(
   request: FastifyRequest,
   businessId: string,
 ): Promise<typeof businesses.$inferSelect> {
-  const user = await getCurrentUser(request);
+  const userId = getAuthUserId(request);
+  const cacheKey = `${userId}:${businessId}`;
+  const cached = businessAccessCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.business;
+  }
 
-  const membership = await db.query.businessMembers.findFirst({
-    where: (m, { and, eq: eqFn }) =>
-      and(eqFn(m.businessId, businessId), eqFn(m.userId, user.id)),
-  });
-  if (!membership) throw forbiddenError("No access to this business");
+  const [row] = await db
+    .select({ business: businesses })
+    .from(businesses)
+    .innerJoin(
+      businessMembers,
+      and(
+        eq(businessMembers.businessId, businesses.id),
+        eq(businessMembers.userId, userId),
+      ),
+    )
+    .where(eq(businesses.id, businessId))
+    .limit(1);
 
-  const business = await db.query.businesses.findFirst({
-    where: eq(businesses.id, businessId),
+  if (!row) throw forbiddenError("No access to this business");
+
+  businessAccessCache.set(cacheKey, {
+    business: row.business,
+    expiresAt: Date.now() + BUSINESS_ACCESS_CACHE_TTL_MS,
   });
-  if (!business) throw notFoundError("Business not found");
-  return business;
+  return row.business;
 }
 
 function authError(detail: string) {
@@ -87,7 +148,7 @@ export function sendAuthError(reply: FastifyReply, error: unknown): void {
     error instanceof Error && "statusCode" in error
       ? (error as Error & { statusCode: number }).statusCode
       : 500;
-  const detail = error instanceof Error ? error.message : "Internal error";
+  const detail = publicErrorDetail(error);
   reply.status(statusCode).send({ detail });
 }
 

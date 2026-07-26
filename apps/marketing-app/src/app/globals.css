@@ -6,7 +6,10 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
   --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
   --font-sans: var(--font-inter), system-ui, sans-serif;
 }
 
@@ -17,17 +20,20 @@
   --surface-muted: #f8fafc;
   --border: #e2e8f0;
   --primary: #f97316;
+  --secondary: #364153;
   --muted: #64748b;
-}
-
-html {
-  scroll-behavior: smooth;
+  --muted-foreground: #64748b;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-inter), system-ui, sans-serif;
+  overflow-x: clip;
+}
+
+html {
+  overflow-x: clip;
 }
 
 .glass-nav {
@@ -43,8 +49,35 @@ body {
 }
 
 .landing-container {
-  width: min(calc(100vw - 60px), 1280px);
+  width: 100%;
+  max-width: 1280px;
   margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+@media (min-width: 768px) {
+  .landing-container {
+    width: min(calc(100% - 3.75rem), 1280px);
+    padding-inline: 0;
+  }
+}
+
+.hero-scroll-card {
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.12),
+    0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+@media (min-width: 768px) {
+  .hero-scroll-card {
+    box-shadow:
+      0 0 #0000004d,
+      0 9px 20px #0000004a,
+      0 37px 37px #00000042,
+      0 84px 50px #00000026,
+      0 149px 60px #0000000a,
+      0 233px 65px #00000003;
+  }
 }
 
 @keyframes hero-voice-preview-mic-pulse {
@@ -96,6 +129,19 @@ body {
 
 .hero-brand-marquee-track {
   animation: hero-brand-marquee 45s linear infinite;
+}
+
+@keyframes showcase-slide-progress-ring {
+  from {
+    stroke-dashoffset: var(--progress-circumference);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.showcase-slide-progress-ring {
+  animation: showcase-slide-progress-ring linear forwards;
 }
 
 .features-use-case-marquee-track {
@@ -150,9 +196,34 @@ body {
   animation: hero-brand-marquee 28s linear infinite;
 }
 
+@keyframes pre-footer-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.pre-footer-fade-in-up {
+  opacity: 0;
+  animation: pre-footer-fade-in-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.pre-footer-vertical-marquee-track {
+  animation: features-vertical-marquee var(--duration, 20s) linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hero-brand-marquee-track {
     animation: none;
+  }
+
+  .showcase-slide-progress-ring {
+    animation: none;
+    stroke-dashoffset: 0;
   }
 
   .features-use-case-marquee-track,
@@ -161,7 +232,11 @@ body {
   .features-cursor-blink,
   .features-vertical-marquee-track,
   .features-model-marquee-track,
-  .features-integration-marquee-track {
+  .features-integration-marquee-track,
+  .pre-footer-vertical-marquee-track,
+  .pre-footer-fade-in-up {
     animation: none;
+    opacity: 1;
+    transform: none;
   }
 }

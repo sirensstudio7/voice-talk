@@ -40,6 +40,38 @@ function findProduct(query: string, productList: ProductInfo[]) {
     }));
 }
 
+function resolveRemoveProductId(
+  query: string,
+  orderStore: OrderStore,
+  productList: ProductInfo[],
+): string | null {
+  const trimmed = query.trim();
+  if (!trimmed) return null;
+
+  const orderItems =
+    ((orderStore.snapshot().items as Array<{ product_id: string; name: string }>) ?? []);
+
+  if (orderItems.some((item) => item.product_id === trimmed)) {
+    return trimmed;
+  }
+
+  const needle = trimmed.toLowerCase();
+  const orderMatches = orderItems.filter((item) => item.name.toLowerCase().includes(needle));
+  if (orderMatches.length === 1) {
+    return orderMatches[0]!.product_id;
+  }
+
+  const menuMatches = findProduct(trimmed, productList);
+  const inOrderMenuMatches = menuMatches.filter((match) =>
+    orderItems.some((item) => item.product_id === match.id),
+  );
+  if (inOrderMenuMatches.length === 1) {
+    return inOrderMenuMatches[0]!.id;
+  }
+
+  return null;
+}
+
 export function buildToolDeclarations(
   options: {
     orderingEnabled?: boolean;
@@ -92,11 +124,14 @@ export function buildToolDeclarations(
         {
           name: "remove_from_order",
           description:
-            "Remove one item or reduce its quantity from the order. Use when the customer asks to remove a specific item.",
+            "Remove one item or reduce its quantity from the order. Use when the customer asks to remove a specific item. You can pass the product id or the item name (for example 'cold brew').",
           parameters: {
             type: Type.OBJECT,
             properties: {
-              product_id: { type: Type.STRING, description: "Product id to remove." },
+              product_id: {
+                type: Type.STRING,
+                description: "Product id or item name to remove.",
+              },
               quantity: { type: Type.INTEGER, description: "Optional quantity to remove." },
             },
             required: ["product_id"],
@@ -121,7 +156,7 @@ export function buildToolDeclarations(
         {
           name: "set_customer_name",
           description:
-            "Save the customer's name on the order receipt. Call this after confirm_order once the customer tells you their name.",
+            "Save the customer's name on the order receipt. Call ONLY after confirm_order, after all checkout questions, and after the customer has spoken their name in response to your standalone name question. The payment screen opens automatically after this succeeds.",
           parameters: {
             type: Type.OBJECT,
             properties: {
@@ -129,6 +164,12 @@ export function buildToolDeclarations(
             },
             required: ["name"],
           },
+        },
+        {
+          name: "prompt_payment",
+          description:
+            "Open the Pay your order screen. Call in the SAME turn as your standalone name question — after all other checkout questions are done. Never call before confirm_order or while asking loyalty or other checkout questions.",
+          parameters: { type: Type.OBJECT, properties: {} },
         },
       ],
     },
@@ -171,8 +212,14 @@ export function buildToolMapping(
         product!.image_url,
       );
     },
-    remove_from_order: (args) =>
-      orderStore.removeItem(String(args.product_id ?? ""), args.quantity as number | undefined),
+    remove_from_order: (args) => {
+      const query = String(args.product_id ?? "");
+      const productId = resolveRemoveProductId(query, orderStore, productList);
+      if (!productId) {
+        return { error: `Could not find '${query}' in the current order.` };
+      }
+      return orderStore.removeItem(productId, args.quantity as number | undefined);
+    },
     cancel_order: () => orderStore.cancelOrder(),
     get_order_summary: () => orderStore.snapshot() as Record<string, unknown>,
     confirm_order: () => {
@@ -184,17 +231,34 @@ export function buildToolMapping(
         return {
           ...result,
           next_step:
-            "Order confirmed. Ask the customer for their name, then call set_customer_name.",
+            "Order confirmed. Do NOT call prompt_payment yet. Ask loyalty card and any other checkout questions from your knowledge first — one topic per turn, one question only per turn. Then ask for the customer's name alone as the ONLY question in that turn and call prompt_payment in that same turn — the Pay your order screen opens. Wait for their answer, then call set_customer_name. BAD: \"Punya kartu loyalitas? Boleh tahu nama?\" GOOD: \"Boleh tahu nama Anda?\" + prompt_payment",
         };
       }
       return result;
     },
     set_customer_name: (args) => {
+      const snapshot = orderStore.snapshot();
+      if (snapshot.status !== "confirmed") {
+        return {
+          error:
+            "Confirm the order first, complete loyalty and other checkout questions, ask for the customer's name alone with prompt_payment, then call set_customer_name when they answer.",
+        };
+      }
       const result = orderStore.setCustomerName(String(args.name ?? ""));
       if (result.success && callbacks.onSetCustomerName) {
         callbacks.onSetCustomerName(String(args.name ?? ""));
       }
       return result;
+    },
+    prompt_payment: () => {
+      const snapshot = orderStore.snapshot();
+      if (snapshot.status !== "confirmed") {
+        return {
+          error:
+            "Order is not confirmed yet. Call confirm_order first, complete checkout questions, ask for the customer's name alone with prompt_payment, then call set_customer_name when they answer.",
+        };
+      }
+      return { success: true, prompt_payment: true };
     },
   };
 }

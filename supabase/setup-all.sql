@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS businesses (
   payment_qr_url TEXT NOT NULL DEFAULT '',
   background_url TEXT NOT NULL DEFAULT '',
   gradient_color VARCHAR(7) NOT NULL DEFAULT '',
+  display_orientation VARCHAR(10) NOT NULL DEFAULT 'landscape',
   business_type VARCHAR(50) NOT NULL DEFAULT '',
   primary_use_case VARCHAR(20) NOT NULL DEFAULT 'both',
   onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
@@ -64,6 +65,7 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
   id VARCHAR(36) PRIMARY KEY,
   business_id VARCHAR(36) NOT NULL REFERENCES businesses(id),
   category VARCHAR(100) NOT NULL DEFAULT 'General',
+  title VARCHAR(200),
   content TEXT NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0
 );

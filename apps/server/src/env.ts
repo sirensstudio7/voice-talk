@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { z } from "zod";
 
 config({ path: resolve(process.cwd(), "../../.env") });
+config({ path: resolve(process.cwd(), "../../.env.local"), override: true });
 config();
 
 const envSchema = z.object({
@@ -19,6 +20,8 @@ const envSchema = z.object({
   DEFAULT_BUSINESS_SLUG: z.string().default("sunrise-coffee"),
   ADMIN_EMAIL: z.string().default("admin@sunrise.coffee"),
   ADMIN_PASSWORD: z.string().default("admin123"),
+  LORESCALE_ADMIN_EMAIL: z.string().default("admin@lorescale.com"),
+  LORESCALE_ADMIN_PASSWORD: z.string().default("lorescale123"),
   SUPABASE_URL: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   /** Comma-separated origins for CORS, e.g. https://app.example.com,https://admin.example.com */

@@ -2,6 +2,8 @@
 
 import dynamic from "next/dynamic";
 
+import type { AvatarMode } from "@voicetalk/avatar";
+
 const AvatarHero = dynamic(
   () => import("@voicetalk/avatar").then((mod) => ({ default: mod.AvatarHero })),
   {
@@ -19,16 +21,24 @@ const AvatarHero = dynamic(
 
 type LorescaleHeroProps = {
   isTalking: boolean;
+  mode?: AvatarMode;
+  frameClassName?: string;
 };
 
 const USE_PNG_AVATAR = process.env.NEXT_PUBLIC_USE_PNG_AVATAR === "true";
 
-export function LorescaleHero({ isTalking }: LorescaleHeroProps) {
+export function LorescaleHero({
+  isTalking,
+  mode = "idle",
+  frameClassName,
+}: LorescaleHeroProps) {
   return (
     <AvatarHero
       isTalking={isTalking}
+      mode={mode}
       assistantName="Lorescale"
       usePngFallback={USE_PNG_AVATAR}
+      frameClassName={frameClassName}
     />
   );
 }

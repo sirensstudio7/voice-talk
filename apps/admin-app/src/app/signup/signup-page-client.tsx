@@ -57,7 +57,7 @@ export function SignupPageClient() {
   if (token && businesses.length === 0) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-12">
-        <div className="w-full max-w-[440px] rounded-2xl border border-slate-200/80 bg-white p-6 text-center shadow-sm">
+        <div className="w-full max-w-[440px] rounded-2xl border border-slate-200/80 bg-white p-6 text-center">
           <h1 className="text-xl font-bold text-slate-900">You&apos;re already signed in</h1>
           <p className="mt-2 text-sm text-slate-500">
             Signed in as <span className="font-medium text-slate-700">{user?.email}</span>. Finish
@@ -66,7 +66,7 @@ export function SignupPageClient() {
           <div className="mt-6 flex flex-col gap-3">
             <Link
               href="/onboarding/workspace"
-              className="rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-orange-500/20 transition hover:bg-orange-600"
+              className="rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white-orange-500/20 transition hover:bg-orange-600"
             >
               Continue workspace setup
             </Link>
@@ -90,13 +90,13 @@ export function SignupPageClient() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-12">
       <div className="w-full max-w-[440px]">
         <div className="mb-8 flex items-center justify-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500 shadow-md shadow-orange-500/20">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500-orange-500/20">
             <SparklesIcon className="h-5 w-5 text-white" />
           </div>
           <span className="text-xl font-semibold tracking-tight text-slate-900">Lorescale Admin</span>
         </div>
 
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-6">
           <div className="mb-6 text-center">
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">Welcome to Lorescale</h1>
             <p className="mt-2 text-sm text-slate-500">Create AI Employees for your business.</p>
@@ -131,7 +131,7 @@ export function SignupPageClient() {
                   type="email"
                   autoComplete="email"
                   required
-                  className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20"
+                  className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                 />
@@ -150,7 +150,7 @@ export function SignupPageClient() {
                   autoComplete="new-password"
                   required
                   minLength={8}
-                  className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20"
+                  className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-500/20"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                 />
@@ -167,7 +167,7 @@ export function SignupPageClient() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-orange-500/20 transition hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white-orange-500/20 transition hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Creating account…" : "Create Account"}
             </button>

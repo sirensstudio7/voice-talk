@@ -3,7 +3,12 @@
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BookOpen, Minus, Plus, X } from "lucide-react";
+import {
+  BookOpenIcon,
+  MinusIcon,
+  PlusIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 
 import { slideOverBackdropClass, slideOverPanelClass, useSlideOver } from "@/components/slide-over";
 
@@ -166,7 +171,7 @@ function MenuProductCard({ item, bookingEnabled }: MenuProductCardProps) {
                   aria-label={`Remove one ${item.name}`}
                   className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:scale-95"
                 >
-                  <Minus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                  <MinusIcon className="h-3.5 w-3.5" />
                 </button>
               ) : null}
               <button
@@ -178,7 +183,7 @@ function MenuProductCard({ item, bookingEnabled }: MenuProductCardProps) {
                   boxShadow: "rgba(255, 255, 255, 0.3) 0px 1.5px 3px 0px inset",
                 }}
               >
-                <Plus className="h-4 w-4" strokeWidth={2.5} />
+                <PlusIcon className="h-4 w-4" />
               </button>
             </div>
           ) : null}
@@ -292,7 +297,7 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
             className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-50"
             aria-label="Close menu panel"
           >
-            <X className="h-4 w-4" />
+            <XMarkIcon className="h-4 w-4" />
           </button>
         </div>
 
@@ -404,7 +409,7 @@ export function StoreMenuButton() {
       className="relative z-10 flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] backdrop-blur-sm transition hover:bg-white hover:scale-[1.02] active:scale-[0.98]"
       aria-label={bookingEnabled ? "View treatments" : "View menu"}
     >
-      <BookOpen className="h-4 w-4 text-orange-500" />
+      <BookOpenIcon className="h-4 w-4 text-orange-500" />
       {bookingEnabled ? "Treatments" : "Menu"}
     </button>
   );

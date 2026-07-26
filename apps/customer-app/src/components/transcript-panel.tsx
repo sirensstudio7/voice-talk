@@ -12,9 +12,13 @@ import { AiLanguage } from "@/types/voice";
 
 type TranscriptPanelProps = {
   onLanguageChange: (language: AiLanguage) => void;
+  variant?: "portrait" | "landscape";
 };
 
-export function TranscriptPanel({ onLanguageChange }: TranscriptPanelProps) {
+export function TranscriptPanel({
+  onLanguageChange,
+  variant = "landscape",
+}: TranscriptPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const {
     transcript,
@@ -50,7 +54,11 @@ export function TranscriptPanel({ onLanguageChange }: TranscriptPanelProps) {
   }, [transcript]);
 
   return (
-    <div className="flex max-h-[min(600px,100%)] min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white/95 shadow-lg backdrop-blur-sm">
+    <div
+      className={`flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white/95 shadow-lg backdrop-blur-sm ${
+        variant === "portrait" ? "" : "max-h-[min(600px,100%)]"
+      }`}
+    >
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           Conversation

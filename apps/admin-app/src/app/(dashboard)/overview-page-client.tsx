@@ -2,10 +2,20 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowUpRightIcon,
+} from "@heroicons/react/24/outline";
 
 import { DailyOrdersChart, TopProductsPanel } from "@/components/stats-charts";
-import { PageHeader, StatCard } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { PageHeader, StatCard, StatCardGrid } from "@/components/ui";
 import {
   api,
   type AiRules,
@@ -42,31 +52,40 @@ export function OverviewPageClient() {
   const [daily, setDaily] = useState<StatsDailyPoint[]>([]);
   const [topProducts, setTopProducts] = useState<TopProductStat[]>([]);
   const [aiRules, setAiRules] = useState<AiRules | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(true);
 
   useEffect(() => {
     if (!token || !business) {
-      setLoading(false);
+      setStatsLoading(false);
       return;
     }
 
-    setLoading(true);
-    void Promise.all([
-      api.statsOverview(token, business.id),
-      api.statsDaily(token, business.id),
-      api.statsTopProducts(token, business.id),
-      api.getAiRules(token, business.id),
-    ])
-      .then(([overview, dailyData, topData, rules]) => {
-        setStats(overview);
-        setDaily(dailyData);
-        setTopProducts(topData);
-        setAiRules(rules);
+    let cancelled = false;
+    setStatsLoading(true);
+    setStats(null);
+    setDaily([]);
+    setTopProducts([]);
+    setAiRules(null);
+
+    void api
+      .statsSummary(token, business.id)
+      .then((summary) => {
+        if (cancelled) return;
+        setStats(summary.overview);
+        setDaily(summary.daily);
+        setTopProducts(summary.top_products);
+        setAiRules(summary.ai_rules);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setStatsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [token, business]);
 
-  const showEmptyState = !loading && isWorkspaceEmpty(stats, daily);
+  const showEmptyState = !statsLoading && isWorkspaceEmpty(stats, daily);
   const orderingEnabled = business?.capabilities?.ordering_enabled ?? true;
   const bookingEnabled = business?.capabilities?.booking_enabled ?? false;
 
@@ -78,13 +97,10 @@ export function OverviewPageClient() {
       />
 
       {showEmptyState && business ? (
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-8 shadow-sm">
-          <div className="mx-auto max-w-lg text-center">
-            <p className="text-3xl">👋</p>
-            <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">
-              Welcome to {business.name}
-            </h2>
-            <p className="mt-3 text-sm leading-relaxed text-slate-500">
+        <Card>
+          <CardHeader className="text-center">
+            <CardTitle className="text-xl">Welcome to {business.name}</CardTitle>
+            <CardDescription className="mx-auto max-w-lg text-balance">
               Your workspace is ready.
               {orderingEnabled
                 ? aiRules?.language === "en"
@@ -97,79 +113,80 @@ export function OverviewPageClient() {
                   : aiRules?.language === "en"
                     ? " Your AI assistant is ready to answer customer questions."
                     : " Asisten AI kamu siap menjawab pertanyaan pelanggan."}
-            </p>
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              {orderingEnabled ? (
-                <Link
-                  href="/menu"
-                  className="inline-flex min-w-[180px] items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-semibold text-white shadow-md shadow-orange-500/20 transition hover:bg-orange-600"
-                >
-                  Add your menu
-                </Link>
-              ) : bookingEnabled ? (
-                <>
-                  <Link
-                    href="/menu"
-                    className="inline-flex min-w-[180px] items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-semibold text-white shadow-md shadow-orange-500/20 transition hover:bg-orange-600"
-                  >
-                    Add treatments
-                  </Link>
-                  <Link
-                    href="/schedule"
-                    className="inline-flex min-w-[180px] items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    Set schedule
-                  </Link>
-                </>
-              ) : (
-                <Link
-                  href="/knowledge"
-                  className="inline-flex min-w-[180px] items-center justify-center rounded-xl bg-orange-500 px-5 py-3 text-sm font-semibold text-white shadow-md shadow-orange-500/20 transition hover:bg-orange-600"
-                >
-                  Add knowledge entries
-                </Link>
-              )}
-              <a
-                href={customerAppUrl(business.slug)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex min-w-[180px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="flex-col gap-3 sm:flex-row sm:justify-center">
+            {orderingEnabled ? (
+              <Button asChild>
+                <Link href="/menu">Add your menu</Link>
+              </Button>
+            ) : bookingEnabled ? (
+              <>
+                <Button asChild>
+                  <Link href="/menu">Add treatments</Link>
+                </Button>
+                <Button variant="outline" asChild>
+                  <Link href="/schedule">Set schedule</Link>
+                </Button>
+              </>
+            ) : (
+              <Button asChild>
+                <Link href="/knowledge">Add knowledge entries</Link>
+              </Button>
+            )}
+            <Button variant="outline" asChild>
+              <a href={customerAppUrl(business.slug)} target="_blank" rel="noopener noreferrer">
                 Preview customer page
-                <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                <ArrowUpRightIcon />
               </a>
-            </div>
-          </div>
-        </div>
+            </Button>
+          </CardFooter>
+        </Card>
       ) : (
         <>
-          <div
-            className={`grid gap-[16px] md:grid-cols-2 ${orderingEnabled ? "xl:grid-cols-3 2xl:grid-cols-6" : bookingEnabled ? "xl:grid-cols-3" : "xl:grid-cols-2"}`}
+          <StatCardGrid
+            className={
+              orderingEnabled
+                ? "@5xl/main:grid-cols-3 @7xl/main:grid-cols-6"
+                : bookingEnabled
+                  ? "@5xl/main:grid-cols-3"
+                  : "@5xl/main:grid-cols-2"
+            }
           >
-            <StatCard label="Sessions today" value={String(stats?.sessions_today ?? 0)} />
+            <StatCard
+              label="Sessions today"
+              value={statsLoading ? "…" : String(stats?.sessions_today ?? 0)}
+            />
             {orderingEnabled ? (
               <>
-                <StatCard label="Orders today" value={String(stats?.orders_today ?? 0)} />
-                <StatCard label="Revenue today" value={formatCurrency(stats?.revenue_today ?? 0)} />
-                <StatCard label="Avg order value" value={formatCurrency(stats?.avg_order_value ?? 0)} />
+                <StatCard
+                  label="Orders today"
+                  value={statsLoading ? "…" : String(stats?.orders_today ?? 0)}
+                />
+                <StatCard
+                  label="Revenue today"
+                  value={statsLoading ? "…" : formatCurrency(stats?.revenue_today ?? 0)}
+                />
+                <StatCard
+                  label="Avg order value"
+                  value={statsLoading ? "…" : formatCurrency(stats?.avg_order_value ?? 0)}
+                />
               </>
             ) : null}
             <StatCard
               label="Avg call duration"
-              value={formatDuration(stats?.avg_call_duration_seconds)}
-              hint="All-time average"
+              value={statsLoading ? "…" : formatDuration(stats?.avg_call_duration_seconds)}
             />
             <StatCard
               label="Active sessions"
-              value={String(stats?.active_sessions ?? 0)}
-              hint="Live voice sessions"
+              value={statsLoading ? "…" : String(stats?.active_sessions ?? 0)}
             />
-          </div>
+          </StatCardGrid>
 
           {orderingEnabled ? (
-            <div className="mt-6 grid gap-6 xl:grid-cols-2">
-              <DailyOrdersChart data={daily} loading={loading} />
-              <TopProductsPanel products={topProducts} loading={loading} limit={5} />
+            <div className="grid grid-cols-1 gap-4 @5xl/main:grid-cols-2">
+              <DailyOrdersChart data={daily} loading={statsLoading} />
+              <TopProductsPanel products={topProducts} loading={statsLoading} />
             </div>
           ) : null}
         </>

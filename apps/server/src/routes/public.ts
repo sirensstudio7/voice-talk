@@ -4,6 +4,8 @@ import { getBusinessCapabilities } from "@voicetalk/shared";
 import { db } from "../db/client.js";
 import { orderItems } from "../db/schema.js";
 import { env } from "../env.js";
+import { getOrCreateVisionSettings } from "../services/vision-orchestrator.js";
+import { visionSettingsOut } from "../services/vision-settings.js";
 import {
   buildValidatedOrderSnapshot,
   OrderValidationError,
@@ -104,6 +106,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
 
     const capabilities = getBusinessCapabilities(tenant.primaryUseCase, tenant.businessType);
     const productList = capabilities.menu_enabled ? getActiveProducts(tenant) : [];
+    const vision = await getOrCreateVisionSettings(tenant.id);
     return {
       business: tenant.name,
       slug: tenant.slug,
@@ -113,7 +116,9 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       avatar_url: tenant.aiRules?.avatarUrl || "",
       background_url: tenant.backgroundUrl || "",
       gradient_color: tenant.gradientColor || "",
+      display_orientation: tenant.displayOrientation || "landscape",
       capabilities,
+      vision: visionSettingsOut(vision),
       products: productList.map((p) => ({
         id: p.productId,
         name: p.name,

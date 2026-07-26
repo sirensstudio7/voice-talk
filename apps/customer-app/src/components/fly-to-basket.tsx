@@ -105,7 +105,11 @@ function createFlyElement(request: FlyAnimationRequest): HTMLDivElement {
 }
 
 function getBasketTarget(): HTMLButtonElement | null {
-  return basketButtonRef.current ?? document.querySelector<HTMLButtonElement>("[data-basket-target]");
+  return (
+    basketButtonRef.current ??
+    document.querySelector<HTMLButtonElement>("[data-basket-target]") ??
+    document.querySelector<HTMLButtonElement>("[data-basket-fly-target]")
+  );
 }
 
 function runBasketAnimation(
@@ -204,16 +208,31 @@ function FlyingProduct({ request, onComplete }: FlyingProductProps) {
 export function FlyToBasketLayer() {
   const flyAnimations = useSessionStore((s) => s.flyAnimations);
   const completeFlyAnimation = useSessionStore((s) => s.completeFlyAnimation);
+  const fallbackTargetRef = useRef<HTMLButtonElement>(null);
   const [portalReady, setPortalReady] = useState(false);
 
   useEffect(() => {
     setPortalReady(true);
   }, []);
 
+  useEffect(() => {
+    if (!basketButtonRef.current && fallbackTargetRef.current) {
+      basketButtonRef.current = fallbackTargetRef.current;
+    }
+  }, [flyAnimations.length]);
+
   if (!portalReady) return null;
 
   return createPortal(
     <>
+      <button
+        ref={fallbackTargetRef}
+        type="button"
+        data-basket-fly-target
+        aria-hidden
+        tabIndex={-1}
+        className="pointer-events-none fixed bottom-8 right-6 z-[240] h-10 w-10 opacity-0"
+      />
       {flyAnimations.map((request) => (
         <FlyingProduct
           key={request.id}

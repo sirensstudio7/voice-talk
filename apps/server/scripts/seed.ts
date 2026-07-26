@@ -1,5 +1,5 @@
 import { config } from "dotenv";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { resolve } from "node:path";
 import { hashPassword } from "../src/auth/jwt.js";
 import { db, closeDb } from "../src/db/client.js";
@@ -21,26 +21,66 @@ import {
   PRODUCTS,
   TOOL_INSTRUCTIONS,
 } from "../src/seed-data.js";
+import {
+  LORESCALE_BEHAVIORAL_RULES,
+  LORESCALE_BUSINESS_NAME,
+  LORESCALE_KNOWLEDGE,
+  LORESCALE_PERSONALITY,
+  LORESCALE_TAGLINE,
+  LORESCALE_TOOL_INSTRUCTIONS,
+} from "../src/lorescale-seed-data.js";
 
 config({ path: resolve(process.cwd(), "../../.env") });
+config({ path: resolve(process.cwd(), "../../.env.local"), override: true });
 config();
 
-async function seed() {
-  const adminEmail = env.ADMIN_EMAIL;
-  const adminPassword = env.ADMIN_PASSWORD;
-
-  let user = await db.query.users.findFirst({ where: eq(users.email, adminEmail) });
+async function ensureUser(email: string, password: string, name: string) {
+  let user = await db.query.users.findFirst({ where: eq(users.email, email) });
   if (!user) {
     [user] = await db
       .insert(users)
       .values({
-        email: adminEmail,
-        passwordHash: await hashPassword(adminPassword),
-        name: "Admin",
+        email,
+        passwordHash: await hashPassword(password),
+        name,
       })
       .returning();
-    console.log(`Created admin user: ${adminEmail} / ${adminPassword}`);
+    console.log(`Created admin user: ${email} / ${password}`);
   }
+  return user!;
+}
+
+async function ensureMembership(userId: string, businessId: string, slug: string) {
+  const membership = await db.query.businessMembers.findFirst({
+    where: and(eq(businessMembers.userId, userId), eq(businessMembers.businessId, businessId)),
+  });
+  if (!membership) {
+    await db.insert(businessMembers).values({
+      userId,
+      businessId,
+      role: "owner",
+    });
+    console.log(`Linked user to business: ${slug}`);
+  }
+}
+
+async function removeMembership(userId: string, businessId: string, slug: string) {
+  const membership = await db.query.businessMembers.findFirst({
+    where: and(eq(businessMembers.userId, userId), eq(businessMembers.businessId, businessId)),
+  });
+  if (membership) {
+    await db.delete(businessMembers).where(eq(businessMembers.id, membership.id));
+    console.log(`Removed user from business: ${slug}`);
+  }
+}
+
+async function seed() {
+  const sunriseAdmin = await ensureUser(env.ADMIN_EMAIL, env.ADMIN_PASSWORD, "Sunrise Admin");
+  const lorescaleAdmin = await ensureUser(
+    env.LORESCALE_ADMIN_EMAIL,
+    env.LORESCALE_ADMIN_PASSWORD,
+    "Lorescale Admin",
+  );
 
   let business = await db.query.businesses.findFirst({
     where: eq(businesses.slug, "sunrise-coffee"),
@@ -58,12 +98,6 @@ async function seed() {
         onboardingCompleted: true,
       })
       .returning();
-
-    await db.insert(businessMembers).values({
-      userId: user!.id,
-      businessId: business!.id,
-      role: "owner",
-    });
 
     await db.insert(aiRules).values({
       businessId: business!.id,
@@ -90,17 +124,106 @@ async function seed() {
       });
     }
 
-    for (const [index, content] of KNOWLEDGE.entries()) {
+    for (const [index, entry] of KNOWLEDGE.entries()) {
       await db.insert(knowledgeEntries).values({
         businessId: business!.id,
         category: "General",
-        content,
+        title: entry.title,
+        content: entry.content,
         sortOrder: index,
       });
     }
 
     console.log(`Seeded ${PRODUCTS.length} products and ${KNOWLEDGE.length} knowledge entries`);
   }
+
+  await ensureMembership(sunriseAdmin.id, business!.id, "sunrise-coffee");
+  await removeMembership(lorescaleAdmin.id, business!.id, "sunrise-coffee");
+
+  let lorescaleBusiness = await db.query.businesses.findFirst({
+    where: eq(businesses.slug, "lorescale"),
+  });
+
+  if (!lorescaleBusiness) {
+    [lorescaleBusiness] = await db
+      .insert(businesses)
+      .values({
+        slug: "lorescale",
+        name: LORESCALE_BUSINESS_NAME,
+        tagline: LORESCALE_TAGLINE,
+        businessType: "saas",
+        primaryUseCase: "faqs",
+        onboardingCompleted: true,
+      })
+      .returning();
+
+    await db.insert(aiRules).values({
+      businessId: lorescaleBusiness!.id,
+      assistantName: "Lorescale",
+      personality: LORESCALE_PERSONALITY.trim(),
+      tone: "friendly",
+      language: "en",
+      behavioralRules: LORESCALE_BEHAVIORAL_RULES.trim(),
+      toolInstructions: LORESCALE_TOOL_INSTRUCTIONS.trim(),
+    });
+
+    for (const [index, entry] of LORESCALE_KNOWLEDGE.entries()) {
+      await db.insert(knowledgeEntries).values({
+        businessId: lorescaleBusiness!.id,
+        category: "Product",
+        title: entry.title,
+        content: entry.content,
+        sortOrder: index,
+      });
+    }
+
+    console.log(
+      `Created business: lorescale with ${LORESCALE_KNOWLEDGE.length} knowledge entries`,
+    );
+  }
+
+  await db
+    .update(aiRules)
+    .set({
+      assistantName: "Lorescale",
+      personality: LORESCALE_PERSONALITY.trim(),
+      tone: "friendly",
+      language: "en",
+      behavioralRules: LORESCALE_BEHAVIORAL_RULES.trim(),
+      toolInstructions: LORESCALE_TOOL_INSTRUCTIONS.trim(),
+    })
+    .where(eq(aiRules.businessId, lorescaleBusiness!.id));
+
+  const lorescaleRules = await db.query.aiRules.findFirst({
+    where: eq(aiRules.businessId, lorescaleBusiness!.id),
+  });
+  if (!lorescaleRules) {
+    await db.insert(aiRules).values({
+      businessId: lorescaleBusiness!.id,
+      assistantName: "Lorescale",
+      personality: LORESCALE_PERSONALITY.trim(),
+      tone: "friendly",
+      language: "en",
+      behavioralRules: LORESCALE_BEHAVIORAL_RULES.trim(),
+      toolInstructions: LORESCALE_TOOL_INSTRUCTIONS.trim(),
+    });
+  }
+  console.log("Synced lorescale AI rules");
+
+  await db.delete(knowledgeEntries).where(eq(knowledgeEntries.businessId, lorescaleBusiness!.id));
+  for (const [index, entry] of LORESCALE_KNOWLEDGE.entries()) {
+    await db.insert(knowledgeEntries).values({
+      businessId: lorescaleBusiness!.id,
+      category: "Product",
+      title: entry.title,
+      content: entry.content,
+      sortOrder: index,
+    });
+  }
+  console.log(`Synced ${LORESCALE_KNOWLEDGE.length} lorescale knowledge entries`);
+
+  await removeMembership(sunriseAdmin.id, lorescaleBusiness!.id, "lorescale");
+  await ensureMembership(lorescaleAdmin.id, lorescaleBusiness!.id, "lorescale");
 
   console.log("Database seed complete.");
   await closeDb();

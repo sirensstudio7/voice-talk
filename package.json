@@ -14,12 +14,17 @@
     "api:stop": "bash scripts/dev-api.sh stop",
     "api:health": "bash scripts/dev-api.sh health",
     "api:ensure": "bash scripts/dev-api.sh ensure",
+    "vision:ensure": "bash scripts/dev-vision.sh ensure",
+    "vision:restart": "VISION_DEBUG=1 bash scripts/dev-vision.sh restart",
     "dev:all": "concurrently \"npm run dev:api\" \"npm run dev\" \"npm run dev:admin\" \"npm run dev:marketing\"",
     "seed:db": "npm run db:migrate --workspace=server && npm run seed --workspace=server",
+    "seed:demo-analytics": "npm run seed:demo-analytics --workspace=server",
+    "seed:demo-analytics:force": "npm run seed:demo-analytics:force --workspace=server",
     "setup:db": "bash scripts/setup-db.sh",
     "setup:supabase": "bash scripts/setup-supabase.sh",
     "check:deploy": "bash scripts/check-deploy-env.sh",
-    "demo:cloudflare": "bash scripts/demo-cloudflare.sh"
+    "demo:cloudflare": "bash scripts/demo-cloudflare.sh",
+    "vision:dev": "cd services/vision && python main.py --business ${BUSINESS_SLUG:-demo} --ws-url ws://localhost:8000/ws/vision --debug"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

@@ -48,6 +48,12 @@ export function getTranscriptPlaceholder({
   }
 
   if (faqMode) {
+    if (businessType === "saas") {
+      return isIndonesian
+        ? "Tahan mic dan tanyakan sesuatu seperti \"Apa itu Lorescale?\""
+        : 'Hold the mic and ask something like "What is Lorescale?"';
+    }
+
     return isIndonesian
       ? "Tahan mic dan tanyakan sesuatu seperti \"Jam buka sampai jam berapa?\""
       : "Hold the mic and ask something like \"What are your opening hours?\"";

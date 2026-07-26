@@ -53,6 +53,7 @@ export type BusinessHour = {
 export type KnowledgeEntry = {
   id: string;
   category: string;
+  title: string;
   content: string;
   sort_order: number;
 };
@@ -135,6 +136,13 @@ export type TopProductStat = {
   revenue: number;
 };
 
+export type StatsSummary = {
+  overview: StatsOverview;
+  daily: StatsDailyPoint[];
+  top_products: TopProductStat[];
+  ai_rules: AiRules;
+};
+
 export type PaymentSettings = {
   payment_qr_url: string;
 };
@@ -142,6 +150,34 @@ export type PaymentSettings = {
 export type AppearanceSettings = {
   background_url: string;
   gradient_color: string;
+  display_orientation: "portrait" | "landscape" | "auto";
+};
+
+export type GreetingTriggerMode = "presence" | "gesture" | "raise_hand";
+
+export type VisionSource = "auto" | "python" | "browser";
+
+export type VisionSettings = {
+  camera_trigger_enabled: boolean;
+  vision_source: VisionSource;
+  greeting_trigger_mode: GreetingTriggerMode;
+  greeting_delay_seconds: number;
+  detection_distance_m: number;
+  cooldown_seconds: number;
+  lost_timeout_seconds: number;
+  silence_timeout_seconds: number;
+  auto_goodbye_timeout_seconds: number;
+  greeting_script: string;
+  goodbye_script: string;
+};
+
+export type VisionMetrics = {
+  period_days: number;
+  person_enter_count: number;
+  person_confirmed_count: number;
+  greeting_accuracy: number;
+  false_greeting_rate: number;
+  conversation_start_rate: number;
 };
 
 function authHeaders(token: string): HeadersInit {
@@ -162,6 +198,9 @@ export class ApiRequestError extends Error {
 }
 
 function apiFetchErrorMessage(error: unknown): string {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return "Request timed out — the API may be slow or the database unreachable. Wait a moment and retry.";
+  }
   if (error instanceof TypeError) {
     return "Can't connect to the API. Run npm run api:ensure in the project root, then retry.";
   }
@@ -180,13 +219,17 @@ function parseErrorMessage(text: string, fallback: string): string {
 async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, {
-      ...init,
-      headers: {
-        ...authHeaders(token),
-        ...(init?.headers ?? {}),
+    response = await fetchWithTimeout(
+      `${API_URL}${path}`,
+      {
+        ...init,
+        headers: {
+          ...authHeaders(token),
+          ...(init?.headers ?? {}),
+        },
       },
-    });
+      45000,
+    );
   } catch (error) {
     throw new Error(apiFetchErrorMessage(error));
   }
@@ -232,6 +275,8 @@ export type HealthStatus = {
   status: string;
   model: string;
   ai_online: boolean;
+  db_online?: boolean;
+  db_latency_ms?: number | null;
 };
 
 export async function getHealth(): Promise<HealthStatus> {
@@ -243,16 +288,24 @@ export async function getHealth(): Promise<HealthStatus> {
 }
 
 export async function login(email: string, password: string) {
-  const response = await fetch(`${API_URL}/admin/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
+  const response = await fetchWithTimeout(
+    `${API_URL}/admin/auth/login`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    },
+    45000,
+  );
   if (!response.ok) {
     const text = await response.text();
     throw new ApiRequestError(parseErrorMessage(text, "Invalid credentials"), response.status);
   }
-  return response.json() as Promise<{ access_token: string; user: { id: string; email: string; name: string } }>;
+  return response.json() as Promise<{
+    access_token: string;
+    user: { id: string; email: string; name: string };
+    businesses: Business[];
+  }>;
 }
 
 export async function signup(email: string, password: string, name?: string) {
@@ -316,7 +369,11 @@ export const api = {
     uploadRequest<{ image_url: string }>(`/admin/businesses/${businessId}/product-images`, token, file),
   listKnowledge: (token: string, businessId: string) =>
     request<KnowledgeEntry[]>(`/admin/businesses/${businessId}/knowledge`, token),
-  createKnowledge: (token: string, businessId: string, body: { category: string; content: string }) =>
+  createKnowledge: (
+    token: string,
+    businessId: string,
+    body: { category: string; title?: string; content: string },
+  ) =>
     request<KnowledgeEntry>(`/admin/businesses/${businessId}/knowledge`, token, {
       method: "POST",
       body: JSON.stringify(body),
@@ -363,12 +420,26 @@ export const api = {
   },
   getConversation: (token: string, businessId: string, sessionId: string) =>
     request<VoiceSessionDetail>(`/admin/businesses/${businessId}/conversations/${sessionId}`, token),
+  exportConversations: (token: string, businessId: string, date?: string) => {
+    const params = new URLSearchParams();
+    if (date) {
+      params.set("date", date);
+      params.set("tz_offset", String(new Date().getTimezoneOffset()));
+    }
+    const query = params.size > 0 ? `?${params.toString()}` : "";
+    return request<VoiceSessionDetail[]>(
+      `/admin/businesses/${businessId}/conversations/export${query}`,
+      token,
+    );
+  },
   statsOverview: (token: string, businessId: string) =>
     request<StatsOverview>(`/admin/businesses/${businessId}/stats/overview`, token),
   statsDaily: (token: string, businessId: string) =>
     request<StatsDailyPoint[]>(`/admin/businesses/${businessId}/stats/daily`, token),
   statsTopProducts: (token: string, businessId: string) =>
     request<TopProductStat[]>(`/admin/businesses/${businessId}/stats/top-products`, token),
+  statsSummary: (token: string, businessId: string) =>
+    request<StatsSummary>(`/admin/businesses/${businessId}/stats/summary`, token),
   getPaymentSettings: (token: string, businessId: string) =>
     request<PaymentSettings>(`/admin/businesses/${businessId}/payment`, token),
   uploadPaymentQr: (token: string, businessId: string, file: File) =>
@@ -382,7 +453,7 @@ export const api = {
   updateAppearanceSettings: (
     token: string,
     businessId: string,
-    body: { gradient_color?: string },
+    body: { gradient_color?: string; display_orientation?: "portrait" | "landscape" | "auto" },
   ) =>
     request<AppearanceSettings>(`/admin/businesses/${businessId}/appearance`, token, {
       method: "PATCH",
@@ -415,4 +486,16 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ hours }),
     }),
+  getVisionSettings: (token: string, businessId: string) =>
+    request<VisionSettings>(`/admin/businesses/${businessId}/vision-settings`, token),
+  updateVisionSettings: (token: string, businessId: string, body: Partial<VisionSettings>) =>
+    request<VisionSettings>(`/admin/businesses/${businessId}/vision-settings`, token, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getVisionMetrics: (token: string, businessId: string, days = 7) =>
+    request<VisionMetrics>(
+      `/admin/businesses/${businessId}/vision-metrics?days=${days}`,
+      token,
+    ),
 };

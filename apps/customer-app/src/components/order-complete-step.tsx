@@ -1,6 +1,8 @@
 "use client";
 
-import { CheckCircle2 } from "lucide-react";
+import {
+  CheckCircleIcon,
+} from "@heroicons/react/24/outline";
 
 import type { OrderState } from "@/types/voice";
 import { formatCurrency } from "@voicetalk/shared";
@@ -14,7 +16,7 @@ export function OrderCompleteStep({ order, onNewOrder }: OrderCompleteStepProps)
   return (
     <div className="flex flex-col items-center gap-5 py-4 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-600">
-        <CheckCircle2 className="h-9 w-9" />
+        <CheckCircleIcon className="h-9 w-9" />
       </div>
 
       <div>

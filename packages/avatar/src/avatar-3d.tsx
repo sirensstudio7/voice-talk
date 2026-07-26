@@ -2,7 +2,7 @@
 
 import { useGLTF } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   Box3,
   DoubleSide,
@@ -257,11 +257,33 @@ function BottomFitCamera({ target }: { target: RefObject<Group | null> }) {
   return null;
 }
 
+export type AvatarMode = "idle" | "greeting" | "listening" | "thinking" | "talking" | "goodbye";
+
+function modeOffsets(mode: AvatarMode, t: number) {
+  switch (mode) {
+    case "greeting":
+      return { lean: 0.02, sway: Math.sin(t * 2.5) * 0.012, talkBob: 0 };
+    case "listening":
+      return { lean: 0.035, sway: Math.sin(t * 1.4) * 0.006, talkBob: 0 };
+    case "thinking":
+      return { lean: -0.01, sway: Math.sin(t * 0.8) * 0.004, talkBob: 0 };
+    case "talking":
+      return { lean: 0.02, sway: 0, talkBob: Math.sin(t * 7) * 0.005 };
+    case "goodbye":
+      return { lean: 0.015, sway: Math.sin(t * 2) * 0.01, talkBob: 0 };
+    case "idle":
+    default:
+      return { lean: 0, sway: 0, talkBob: 0 };
+  }
+}
+
 function AvatarModel({
   isTalking,
+  mode = "idle",
   modelPath,
 }: {
   isTalking: boolean;
+  mode?: AvatarMode;
   modelPath: string;
 }) {
   const calibration = getModelCalibration(modelPath);
@@ -306,8 +328,11 @@ function AvatarModel({
     if (root) {
       const t = state.clock.elapsedTime;
       const bob = Math.sin(t * 1.1) * 0.008;
-      const talkBob = isTalking ? Math.sin(t * 7) * 0.005 : 0;
-      root.position.y = calibration.bottomOffset + bob + talkBob;
+      const effectiveMode: AvatarMode = isTalking ? "talking" : mode;
+      const offsets = modeOffsets(effectiveMode, t);
+      root.position.y = calibration.bottomOffset + bob + offsets.talkBob;
+      root.rotation.z = offsets.sway;
+      root.rotation.x = offsets.lean;
     }
 
     const blink = blinkState.current;
@@ -367,9 +392,11 @@ function AvatarModel({
 
 function Scene({
   isTalking,
+  mode,
   modelPath,
 }: {
   isTalking: boolean;
+  mode?: AvatarMode;
   modelPath: string;
 }) {
   const fitRef = useRef<Group>(null);
@@ -381,7 +408,7 @@ function Scene({
       <directionalLight position={[-3, 2, 2]} intensity={0.55} />
       <directionalLight position={[0, 1, -2]} intensity={0.25} />
       <group ref={fitRef}>
-        <AvatarModel isTalking={isTalking} modelPath={modelPath} />
+        <AvatarModel isTalking={isTalking} mode={mode} modelPath={modelPath} />
       </group>
       <BottomFitCamera target={fitRef} />
     </>
@@ -390,29 +417,60 @@ function Scene({
 
 export type Avatar3DProps = {
   isTalking: boolean;
+  mode?: AvatarMode;
   modelPath?: string;
   resize?: {
     scroll?: boolean;
     offsetSize?: boolean;
     debounce?: number | { scroll: number; resize: number };
   };
+  /** Pause the render loop when the canvas is off-screen. */
+  pauseWhenOffscreen?: boolean;
 };
 
 export function Avatar3D({
   isTalking,
+  mode = "idle",
   modelPath = DEFAULT_MODEL_PATH,
   resize,
+  pauseWhenOffscreen = false,
 }: Avatar3DProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(true);
+
+  useEffect(() => {
+    if (!pauseWhenOffscreen) {
+      setIsVisible(true);
+      return;
+    }
+
+    const element = containerRef.current;
+    if (!element) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsVisible(entry.isIntersecting);
+      },
+      { rootMargin: "120px", threshold: 0 },
+    );
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [pauseWhenOffscreen]);
+
   return (
-    <Canvas
-      className="h-full w-full"
-      dpr={[1, 2]}
-      gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
-      camera={{ fov: 28, near: 0.01, far: 100 }}
-      resize={resize}
-      style={{ width: "100%", height: "100%", display: "block", background: "transparent" }}
-    >
-      <Scene isTalking={isTalking} modelPath={modelPath} />
-    </Canvas>
+    <div ref={containerRef} className="h-full w-full">
+      <Canvas
+        className="h-full w-full"
+        dpr={[1, 2]}
+        frameloop={pauseWhenOffscreen && !isVisible ? "never" : "always"}
+        gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
+        camera={{ fov: 28, near: 0.01, far: 100 }}
+        resize={resize}
+        style={{ width: "100%", height: "100%", display: "block", background: "transparent" }}
+      >
+        <Scene isTalking={isTalking} mode={mode} modelPath={modelPath} />
+      </Canvas>
+    </div>
   );
 }

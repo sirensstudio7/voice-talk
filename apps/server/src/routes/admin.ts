@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { mergeTranscriptMessages } from "@voicetalk/shared";
-import { and, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   businessOut,
   createAccessToken,
+  getAuthUserId,
   getCurrentUser,
   hashPassword,
   requireBusinessAccess,
@@ -24,6 +25,7 @@ import {
   transcriptMessages,
   users,
   voiceSessions,
+  visionSettings,
 } from "../db/schema.js";
 import { buildSystemInstruction, normalizeIdleTimeoutSeconds } from "../services/config-builder.js";
 import {
@@ -41,8 +43,35 @@ import {
   saveBusinessHours,
   type BusinessHourInput,
 } from "../services/appointments.js";
+import {
+  fetchBusinessStatsSummary,
+  fetchStatsDaily,
+  fetchStatsOverview,
+  fetchStatsTopProducts,
+} from "../services/business-stats.js";
 import { serializeUtcDatetime } from "../services/pricing.js";
 import { getBusinessWithRelations } from "../services/tenant.js";
+import { listBusinessesForUser } from "../services/user-businesses.js";
+import {
+  DEFAULT_VISION_SETTINGS,
+  normalizeAutoGoodbyeTimeoutSeconds,
+  normalizeCooldownSeconds,
+  normalizeDetectionDistanceM,
+  normalizeGreetingDelaySeconds,
+  normalizeGreetingTriggerMode,
+  normalizeVisionSource,
+  normalizeLostTimeoutSeconds,
+  normalizeSilenceTimeoutSeconds,
+  normalizeVisionScript,
+  visionSettingsOut,
+} from "../services/vision-settings.js";
+import {
+  broadcastVisionConfig,
+  getOrCreateVisionSettings,
+  getVisionHub,
+  getVisionMetrics,
+  refreshHubSettings,
+} from "../services/vision-orchestrator.js";
 import {
   ALLOWED_IMAGE_TYPES,
   deleteFromStorage,
@@ -52,6 +81,7 @@ import {
 import { orderToOut } from "./public.js";
 
 const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+const DISPLAY_ORIENTATIONS = new Set(["portrait", "landscape", "auto"]);
 
 function normalizeGradientColor(value: string | undefined | null): string {
   if (value == null) return "";
@@ -68,6 +98,19 @@ function normalizeGradientColor(value: string | undefined | null): string {
     return ("#" + [...cleaned.slice(1)].map((c) => c + c).join("")).toLowerCase();
   }
   return cleaned.toLowerCase();
+}
+
+function normalizeDisplayOrientation(value: string | undefined | null): string {
+  if (value == null || !value.trim()) return "landscape";
+  const cleaned = value.trim().toLowerCase();
+  if (!DISPLAY_ORIENTATIONS.has(cleaned)) {
+    const err = new Error("Display orientation must be portrait, landscape, or auto.") as Error & {
+      statusCode: number;
+    };
+    err.statusCode = 400;
+    throw err;
+  }
+  return cleaned;
 }
 
 function productOut(p: typeof products.$inferSelect) {
@@ -87,7 +130,13 @@ function productOut(p: typeof products.$inferSelect) {
 }
 
 function knowledgeOut(e: typeof knowledgeEntries.$inferSelect) {
-  return { id: e.id, category: e.category, content: e.content, sort_order: e.sortOrder };
+  return {
+    id: e.id,
+    category: e.category,
+    title: e.title ?? "",
+    content: e.content,
+    sort_order: e.sortOrder,
+  };
 }
 
 function aiRulesOut(r: typeof aiRules.$inferSelect) {
@@ -117,6 +166,42 @@ function parseDateFilter(date: string, tzOffset?: number) {
   return { start, end };
 }
 
+type ConversationSessionRow = typeof voiceSessions.$inferSelect;
+type ConversationMessageRow = typeof transcriptMessages.$inferSelect;
+type ConversationOrderRow = typeof orders.$inferSelect;
+
+function buildConversationDetail(
+  session: ConversationSessionRow,
+  messages: ConversationMessageRow[],
+  order: ConversationOrderRow | undefined,
+) {
+  const duration =
+    session.endedAt != null
+      ? Math.floor((session.endedAt.getTime() - session.startedAt.getTime()) / 1000)
+      : null;
+
+  const mappedMessages = messages.map((m) => ({
+    id: m.id,
+    role: m.role,
+    text: m.text,
+    created_at: serializeUtcDatetime(m.createdAt),
+  }));
+  const mergedMessages = mergeTranscriptMessages(mappedMessages);
+
+  return {
+    id: session.id,
+    status: session.status,
+    started_at: serializeUtcDatetime(session.startedAt),
+    ended_at: session.endedAt ? serializeUtcDatetime(session.endedAt) : null,
+    end_reason: session.endReason ?? null,
+    duration_seconds: duration,
+    message_count: mergedMessages.length,
+    order_id: order?.id ?? null,
+    order_total: order?.total ?? null,
+    messages: mergedMessages,
+  };
+}
+
 export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   app.post("/admin/auth/login", async (request, reply) => {
     const body = request.body as { email: string; password: string };
@@ -130,6 +215,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       access_token: createAccessToken(user.id),
       token_type: "bearer",
       user: userOut(user),
+      businesses: await listBusinessesForUser(user.id),
     };
   });
 
@@ -180,14 +266,8 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/admin/businesses", async (request, reply) => {
     try {
-      const user = await getCurrentUser(request);
-      const rows = await db
-        .select({ business: businesses })
-        .from(businesses)
-        .innerJoin(businessMembers, eq(businessMembers.businessId, businesses.id))
-        .where(eq(businessMembers.userId, user.id))
-        .orderBy(businesses.name);
-      return rows.map((r) => businessOut(r.business));
+      const userId = getAuthUserId(request);
+      return listBusinessesForUser(userId);
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -420,6 +500,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       return {
         background_url: business.backgroundUrl || "",
         gradient_color: business.gradientColor || "",
+        display_orientation: business.displayOrientation || "landscape",
       };
     } catch (err) {
       return sendAuthError(reply, err);
@@ -430,19 +511,27 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      const body = request.body as { gradient_color?: string | null };
+      const body = request.body as {
+        gradient_color?: string | null;
+        display_orientation?: string | null;
+      };
       let gradientColor = business.gradientColor;
+      let displayOrientation = business.displayOrientation;
       if (body.gradient_color !== undefined) {
         gradientColor = normalizeGradientColor(body.gradient_color);
       }
+      if (body.display_orientation !== undefined) {
+        displayOrientation = normalizeDisplayOrientation(body.display_orientation);
+      }
       const [updated] = await db
         .update(businesses)
-        .set({ gradientColor })
+        .set({ gradientColor, displayOrientation })
         .where(eq(businesses.id, business.id))
         .returning();
       return {
         background_url: updated!.backgroundUrl || "",
         gradient_color: updated!.gradientColor || "",
+        display_orientation: updated!.displayOrientation || "landscape",
       };
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
@@ -491,6 +580,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       return {
         background_url: updated!.backgroundUrl || "",
         gradient_color: updated!.gradientColor || "",
+        display_orientation: updated!.displayOrientation || "landscape",
       };
     } catch (err) {
       return sendAuthError(reply, err);
@@ -501,9 +591,27 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      await deleteFromStorage("backgrounds", business.id);
-      await db.update(businesses).set({ backgroundUrl: "" }).where(eq(businesses.id, business.id));
-      return { background_url: "", gradient_color: business.gradientColor || "" };
+
+      try {
+        await deleteFromStorage("backgrounds", business.id);
+      } catch (storageErr) {
+        request.log.warn(
+          { err: storageErr, businessId: business.id },
+          "Background file delete failed; clearing database URL anyway",
+        );
+      }
+
+      const [updated] = await db
+        .update(businesses)
+        .set({ backgroundUrl: "" })
+        .where(eq(businesses.id, business.id))
+        .returning();
+
+      return {
+        background_url: updated!.backgroundUrl || "",
+        gradient_color: updated!.gradientColor || "",
+        display_orientation: updated!.displayOrientation || "landscape",
+      };
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -661,6 +769,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .values({
           businessId,
           category: String(body.category ?? "General"),
+          title: body.title !== undefined ? String(body.title).trim() || null : null,
           content: String(body.content),
           sortOrder: Number(body.sort_order ?? 0),
         })
@@ -684,6 +793,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as Record<string, unknown>;
       const updates: Partial<typeof knowledgeEntries.$inferInsert> = {};
       if (body.category !== undefined) updates.category = String(body.category);
+      if (body.title !== undefined) updates.title = String(body.title).trim() || null;
       if (body.content !== undefined) updates.content = String(body.content);
       if (body.sort_order !== undefined) updates.sortOrder = Number(body.sort_order);
 
@@ -886,12 +996,24 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         rows = rows.filter((o) => o.createdAt >= filterStart! && o.createdAt < filterEnd!);
       }
 
-      const result = [];
-      for (const order of rows) {
-        const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
-        result.push(orderToOut({ ...order, items }));
+      const orderIds = rows.map((order) => order.id);
+      const itemsByOrderId = new Map<string, (typeof orderItems.$inferSelect)[]>();
+
+      if (orderIds.length) {
+        const items = await db
+          .select()
+          .from(orderItems)
+          .where(inArray(orderItems.orderId, orderIds));
+        for (const item of items) {
+          const existing = itemsByOrderId.get(item.orderId) ?? [];
+          existing.push(item);
+          itemsByOrderId.set(item.orderId, existing);
+        }
       }
-      return result;
+
+      return rows.map((order) =>
+        orderToOut({ ...order, items: itemsByOrderId.get(order.id) ?? [] }),
+      );
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
         return reply.status((err as Error & { statusCode: number }).statusCode).send({
@@ -918,45 +1040,55 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       let sessions = await db
         .select()
         .from(voiceSessions)
-        .where(eq(voiceSessions.businessId, businessId))
+        .where(
+          filterStart && filterEnd
+            ? and(
+                eq(voiceSessions.businessId, businessId),
+                gte(voiceSessions.startedAt, filterStart),
+                lt(voiceSessions.startedAt, filterEnd),
+              )
+            : eq(voiceSessions.businessId, businessId),
+        )
         .orderBy(desc(voiceSessions.startedAt))
         .limit(200);
 
-      if (filterStart && filterEnd) {
-        sessions = sessions.filter(
-          (s) => s.startedAt >= filterStart! && s.startedAt < filterEnd!,
-        );
-      }
-
       const sessionIds = sessions.map((s) => s.id);
       const messageCounts = new Map<string, number>();
+      const orderBySessionId = new Map<string, (typeof orders.$inferSelect)>();
+
       if (sessionIds.length) {
-        const counts = await db
-          .select({
-            voiceSessionId: transcriptMessages.voiceSessionId,
-            count: count(),
-          })
-          .from(transcriptMessages)
-          .where(inArray(transcriptMessages.voiceSessionId, sessionIds))
-          .groupBy(transcriptMessages.voiceSessionId);
+        const [counts, sessionOrders] = await Promise.all([
+          db
+            .select({
+              voiceSessionId: transcriptMessages.voiceSessionId,
+              count: count(),
+            })
+            .from(transcriptMessages)
+            .where(inArray(transcriptMessages.voiceSessionId, sessionIds))
+            .groupBy(transcriptMessages.voiceSessionId),
+          db
+            .select()
+            .from(orders)
+            .where(inArray(orders.voiceSessionId, sessionIds)),
+        ]);
+
         for (const row of counts) {
           messageCounts.set(row.voiceSessionId, Number(row.count));
         }
+        for (const order of sessionOrders) {
+          if (order.voiceSessionId && !orderBySessionId.has(order.voiceSessionId)) {
+            orderBySessionId.set(order.voiceSessionId, order);
+          }
+        }
       }
 
-      const result = [];
-      for (const session of sessions) {
-        const sessionOrders = await db
-          .select()
-          .from(orders)
-          .where(eq(orders.voiceSessionId, session.id))
-          .limit(1);
-        const order = sessionOrders[0];
+      return sessions.map((session) => {
+        const order = orderBySessionId.get(session.id);
         const duration =
           session.endedAt != null
             ? Math.floor((session.endedAt.getTime() - session.startedAt.getTime()) / 1000)
             : null;
-        result.push({
+        return {
           id: session.id,
           status: session.status,
           started_at: serializeUtcDatetime(session.startedAt),
@@ -966,9 +1098,79 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           message_count: messageCounts.get(session.id) ?? 0,
           order_id: order?.id ?? null,
           order_total: order?.total ?? null,
+        };
+      });
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
         });
       }
-      return result;
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/conversations/export", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      const query = request.query as { date?: string; tz_offset?: string };
+      let filterStart: Date | null = null;
+      let filterEnd: Date | null = null;
+      if (query.date) {
+        const { start, end } = parseDateFilter(query.date, query.tz_offset ? Number(query.tz_offset) : 0);
+        filterStart = start;
+        filterEnd = end;
+      }
+
+      const sessions = await db
+        .select()
+        .from(voiceSessions)
+        .where(
+          filterStart && filterEnd
+            ? and(
+                eq(voiceSessions.businessId, businessId),
+                gte(voiceSessions.startedAt, filterStart),
+                lt(voiceSessions.startedAt, filterEnd),
+              )
+            : eq(voiceSessions.businessId, businessId),
+        )
+        .orderBy(desc(voiceSessions.startedAt))
+        .limit(200);
+
+      const sessionIds = sessions.map((session) => session.id);
+      if (sessionIds.length === 0) return [];
+
+      const [messages, sessionOrders] = await Promise.all([
+        db
+          .select()
+          .from(transcriptMessages)
+          .where(inArray(transcriptMessages.voiceSessionId, sessionIds))
+          .orderBy(transcriptMessages.createdAt),
+        db.select().from(orders).where(inArray(orders.voiceSessionId, sessionIds)),
+      ]);
+
+      const messagesBySessionId = new Map<string, ConversationMessageRow[]>();
+      for (const message of messages) {
+        const existing = messagesBySessionId.get(message.voiceSessionId) ?? [];
+        existing.push(message);
+        messagesBySessionId.set(message.voiceSessionId, existing);
+      }
+
+      const orderBySessionId = new Map<string, ConversationOrderRow>();
+      for (const order of sessionOrders) {
+        if (order.voiceSessionId && !orderBySessionId.has(order.voiceSessionId)) {
+          orderBySessionId.set(order.voiceSessionId, order);
+        }
+      }
+
+      return sessions.map((session) =>
+        buildConversationDetail(
+          session,
+          messagesBySessionId.get(session.id) ?? [],
+          orderBySessionId.get(session.id),
+        ),
+      );
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
         return reply.status((err as Error & { statusCode: number }).statusCode).send({
@@ -1002,31 +1204,37 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .from(orders)
         .where(eq(orders.voiceSessionId, sessionId))
         .limit(1);
-      const order = sessionOrders[0];
-      const duration =
-        session.endedAt != null
-          ? Math.floor((session.endedAt.getTime() - session.startedAt.getTime()) / 1000)
-          : null;
 
-      const mappedMessages = messages.map((m) => ({
-        id: m.id,
-        role: m.role,
-        text: m.text,
-        created_at: serializeUtcDatetime(m.createdAt),
-      }));
-      const mergedMessages = mergeTranscriptMessages(mappedMessages);
+      return buildConversationDetail(session, messages, sessionOrders[0]);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/stats/summary", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      const business = await requireBusinessAccess(request, businessId);
+      const summary = await fetchBusinessStatsSummary(businessId);
+
+      let rules = summary.ai_rules;
+      if (!rules) {
+        [rules] = await db
+          .insert(aiRules)
+          .values({
+            businessId,
+            assistantName: "Lorescale",
+            personality: `Kamu adalah kasir AI yang ramah di ${business.name}. Selalu berbicara dalam Bahasa Indonesia.`,
+            tone: "friendly",
+          })
+          .returning();
+      }
 
       return {
-        id: session.id,
-        status: session.status,
-        started_at: serializeUtcDatetime(session.startedAt),
-        ended_at: session.endedAt ? serializeUtcDatetime(session.endedAt) : null,
-        end_reason: session.endReason ?? null,
-        duration_seconds: duration,
-        message_count: mergedMessages.length,
-        order_id: order?.id ?? null,
-        order_total: order?.total ?? null,
-        messages: mergedMessages,
+        overview: summary.overview,
+        daily: summary.daily,
+        top_products: summary.top_products,
+        ai_rules: aiRulesOut(rules!),
       };
     } catch (err) {
       return sendAuthError(reply, err);
@@ -1037,61 +1245,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
-
-      const [sessionsTodayRow] = await db
-        .select({ value: count() })
-        .from(voiceSessions)
-        .where(and(eq(voiceSessions.businessId, businessId), gte(voiceSessions.startedAt, today)));
-
-      const [activeSessionsRow] = await db
-        .select({ value: count() })
-        .from(voiceSessions)
-        .where(and(eq(voiceSessions.businessId, businessId), eq(voiceSessions.status, "active")));
-
-      const confirmedToday = await db
-        .select()
-        .from(orders)
-        .where(
-          and(
-            eq(orders.businessId, businessId),
-            eq(orders.status, "confirmed"),
-            gte(orders.confirmedAt, today),
-          ),
-        );
-
-      const ordersToday = confirmedToday.length;
-      const revenueToday = confirmedToday.reduce((sum, o) => sum + o.total, 0);
-      const avgOrderValue = ordersToday ? revenueToday / ordersToday : 0;
-
-      const endedSessions = await db
-        .select()
-        .from(voiceSessions)
-        .where(
-          and(
-            eq(voiceSessions.businessId, businessId),
-            eq(voiceSessions.status, "ended"),
-            sql`${voiceSessions.endedAt} IS NOT NULL`,
-          ),
-        );
-
-      const durations = endedSessions
-        .filter((s) => s.endedAt)
-        .map((s) => (s.endedAt!.getTime() - s.startedAt.getTime()) / 1000);
-      const avgCallDuration = durations.length
-        ? durations.reduce((a, b) => a + b, 0) / durations.length
-        : null;
-
-      return {
-        sessions_today: Number(sessionsTodayRow?.value ?? 0),
-        orders_today: ordersToday,
-        revenue_today: Math.round(revenueToday * 100) / 100,
-        avg_order_value: Math.round(avgOrderValue * 100) / 100,
-        active_sessions: Number(activeSessionsRow?.value ?? 0),
-        avg_call_duration_seconds:
-          avgCallDuration != null ? Math.round(avgCallDuration * 10) / 10 : null,
-      };
+      return fetchStatsOverview(businessId);
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -1101,37 +1255,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const start = new Date();
-      start.setUTCHours(0, 0, 0, 0);
-      start.setUTCDate(start.getUTCDate() - 13);
-
-      const confirmedOrders = await db
-        .select()
-        .from(orders)
-        .where(
-          and(
-            eq(orders.businessId, businessId),
-            eq(orders.status, "confirmed"),
-            gte(orders.confirmedAt, start),
-          ),
-        );
-
-      const buckets: Record<string, { date: string; orders: number; revenue: number }> = {};
-      for (let i = 0; i < 14; i++) {
-        const day = new Date(start.getTime() + i * 24 * 60 * 60 * 1000);
-        const key = day.toISOString().slice(0, 10);
-        buckets[key] = { date: key, orders: 0, revenue: 0 };
-      }
-
-      for (const order of confirmedOrders) {
-        if (!order.confirmedAt) continue;
-        const day = order.confirmedAt.toISOString().slice(0, 10);
-        if (!buckets[day]) continue;
-        buckets[day].orders += 1;
-        buckets[day].revenue = Math.round((buckets[day].revenue + order.total) * 100) / 100;
-      }
-
-      return Object.values(buckets);
+      return fetchStatsDaily(businessId);
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -1141,27 +1265,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-
-      const rows = await db
-        .select({
-          productId: orderItems.productId,
-          name: orderItems.name,
-          qty: sql<number>`sum(${orderItems.quantity})`,
-          rev: sql<number>`sum(${orderItems.price} * ${orderItems.quantity})`,
-        })
-        .from(orderItems)
-        .innerJoin(orders, eq(orders.id, orderItems.orderId))
-        .where(and(eq(orders.businessId, businessId), eq(orders.status, "confirmed")))
-        .groupBy(orderItems.productId, orderItems.name)
-        .orderBy(sql`sum(${orderItems.quantity}) desc`)
-        .limit(10);
-
-      return rows.map((row) => ({
-        product_id: row.productId,
-        name: row.name,
-        quantity: Number(row.qty ?? 0),
-        revenue: Math.round(Number(row.rev ?? 0) * 100) / 100,
-      }));
+      return fetchStatsTopProducts(businessId);
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -1207,6 +1311,104 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       await requireBusinessAccess(request, businessId);
       const body = request.body as { hours: BusinessHourInput[] };
       return saveBusinessHours(businessId, body.hours ?? []);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/vision-settings", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      const settings = await getOrCreateVisionSettings(businessId);
+      return visionSettingsOut(settings);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.patch("/admin/businesses/:businessId/vision-settings", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      const business = await requireBusinessAccess(request, businessId);
+      await getOrCreateVisionSettings(businessId);
+      const body = request.body as Record<string, unknown>;
+      const updates: Partial<typeof visionSettings.$inferInsert> = {
+        updatedAt: new Date(),
+      };
+
+      if (body.camera_trigger_enabled !== undefined) {
+        updates.cameraTriggerEnabled = Boolean(body.camera_trigger_enabled);
+      }
+      if (body.vision_source !== undefined) {
+        updates.visionSource = normalizeVisionSource(body.vision_source);
+      }
+      if (body.greeting_trigger_mode !== undefined) {
+        updates.greetingTriggerMode = normalizeGreetingTriggerMode(
+          body.greeting_trigger_mode,
+        );
+      }
+      if (body.greeting_delay_seconds !== undefined) {
+        updates.greetingDelaySeconds = normalizeGreetingDelaySeconds(
+          body.greeting_delay_seconds,
+        );
+      }
+      if (body.detection_distance_m !== undefined) {
+        updates.detectionDistanceM = normalizeDetectionDistanceM(body.detection_distance_m);
+      }
+      if (body.cooldown_seconds !== undefined) {
+        updates.cooldownSeconds = normalizeCooldownSeconds(body.cooldown_seconds);
+      }
+      if (body.lost_timeout_seconds !== undefined) {
+        updates.lostTimeoutSeconds = normalizeLostTimeoutSeconds(body.lost_timeout_seconds);
+      }
+      if (body.silence_timeout_seconds !== undefined) {
+        updates.silenceTimeoutSeconds = normalizeSilenceTimeoutSeconds(
+          body.silence_timeout_seconds,
+        );
+      }
+      if (body.auto_goodbye_timeout_seconds !== undefined) {
+        updates.autoGoodbyeTimeoutSeconds = normalizeAutoGoodbyeTimeoutSeconds(
+          body.auto_goodbye_timeout_seconds,
+        );
+      }
+      if (body.greeting_script !== undefined) {
+        updates.greetingScript = normalizeVisionScript(
+          body.greeting_script,
+          DEFAULT_VISION_SETTINGS.greetingScript,
+        );
+      }
+      if (body.goodbye_script !== undefined) {
+        updates.goodbyeScript = normalizeVisionScript(
+          body.goodbye_script,
+          DEFAULT_VISION_SETTINGS.goodbyeScript,
+        );
+      }
+
+      const [updated] = await db
+        .update(visionSettings)
+        .set(updates)
+        .where(eq(visionSettings.businessId, businessId))
+        .returning();
+
+      await refreshHubSettings(business.slug);
+      const hub = getVisionHub(business.slug);
+      if (hub) {
+        broadcastVisionConfig(hub);
+      }
+      return visionSettingsOut(updated!);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/vision-metrics", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      const { days } = request.query as { days?: string };
+      const periodDays = days ? Math.max(1, Math.min(90, Number(days))) : 7;
+      return getVisionMetrics(businessId, periodDays);
     } catch (err) {
       return sendAuthError(reply, err);
     }

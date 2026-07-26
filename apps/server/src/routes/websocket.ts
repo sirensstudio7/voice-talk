@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import {
   getBusinessCapabilities,
+  isCombinedCustomerNameAsk,
+  isStandaloneCustomerNameAsk,
   mergeTranscriptChunk,
   parseVerbalizedEndConversation,
   shouldEndFaqConversation,
@@ -9,14 +11,19 @@ import {
 } from "@voicetalk/shared";
 import { env } from "../env.js";
 import {
+  buildCombinedNameAskCorrectionPrompt,
   buildSessionGreetingPrompt,
   buildSystemInstruction,
   buildTranscriptContext,
+  buildVisionGoodbyePrompt,
+  buildVisionGreetingPrompt,
+  buildVisionSilenceFollowUpPrompt,
   getActiveProducts,
   resolveAssistantName,
   resolveIdleTimeoutMs,
   resolveLanguage,
 } from "../services/config-builder.js";
+import { getOrCreateVisionSettings } from "../services/vision-orchestrator.js";
 import { handleClientOrderMessage } from "../services/client-order.js";
 import {
   ACTIVITY_END,
@@ -146,6 +153,10 @@ async function handleSession(
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
   let completionScheduled = false;
   let lastAssistantTurn = "";
+  let lastNameCorrectionTurn = "";
+  let visionMode = false;
+  let visionSilenceStage: "none" | "follow_up" | "goodbye" = "none";
+  let visionSettingsCache: Awaited<ReturnType<typeof getOrCreateVisionSettings>> | null = null;
   const transcriptBuffer = createTranscriptTurnBuffer();
 
   const maybeCompleteAfterUserTurn = (userText: string) => {
@@ -165,7 +176,41 @@ async function handleSession(
   };
 
   const scheduleIdleTimeout = () => {
-    if (!faqEnabled || completionScheduled || idleTimeoutMs === null) return;
+    if (completionScheduled) return;
+
+    if (visionMode && visionSettingsCache) {
+      clearIdleTimer();
+      const silenceMs = visionSettingsCache.silenceTimeoutSeconds * 1000;
+      if (visionSilenceStage === "none") {
+        idleTimer = setTimeout(() => {
+          visionSilenceStage = "follow_up";
+          audioQueue.push(
+            new ClientTextEvent(buildVisionSilenceFollowUpPrompt(resolvedLanguage)),
+          );
+          scheduleIdleTimeout();
+        }, silenceMs);
+        return;
+      }
+      if (visionSilenceStage === "follow_up") {
+        const goodbyeMs = visionSettingsCache.autoGoodbyeTimeoutSeconds * 1000;
+        idleTimer = setTimeout(() => {
+          visionSilenceStage = "goodbye";
+          audioQueue.push(
+            new ClientTextEvent(
+              buildVisionGoodbyePrompt(
+                resolvedLanguage,
+                visionSettingsCache?.goodbyeScript,
+              ),
+            ),
+          );
+          completeConversation("vision_silence_timeout");
+        }, goodbyeMs);
+        return;
+      }
+      return;
+    }
+
+    if (!faqEnabled || idleTimeoutMs === null) return;
     clearIdleTimer();
     idleTimer = setTimeout(() => {
       completeConversation("idle_timeout");
@@ -183,10 +228,28 @@ async function handleSession(
 
   const resolvedLanguage = resolveLanguage(tenant.aiRules, query.language);
 
+  const maybeCorrectCombinedNameAsk = () => {
+    if (!orderingEnabled || completionScheduled) return;
+    const snap = orderStore.snapshot();
+    if (snap.status !== "confirmed" || snap.customer_name) return;
+    if (!lastAssistantTurn || !isCombinedCustomerNameAsk(lastAssistantTurn)) return;
+    if (lastNameCorrectionTurn === lastAssistantTurn) return;
+    lastNameCorrectionTurn = lastAssistantTurn;
+    audioQueue.push(new ClientTextEvent(buildCombinedNameAskCorrectionPrompt(resolvedLanguage)));
+  };
+
+  const maybePromptPaymentAfterNameAsk = () => {
+    if (!orderingEnabled || completionScheduled) return;
+    const snap = orderStore.snapshot();
+    if (snap.status !== "confirmed" || snap.customer_name) return;
+    if (!lastAssistantTurn || !isStandaloneCustomerNameAsk(lastAssistantTurn)) return;
+    safeSendJson(socket, { type: "checkout.prompt_payment" });
+  };
+
   let resolveRestore: () => void = () => undefined;
   const waitRestore = new Promise<void>((resolve) => {
     resolveRestore = resolve;
-    restoreTimer = setTimeout(resolve, 750);
+    restoreTimer = setTimeout(resolve, 50);
   });
 
   const onConfirm = (orderSnapshot: Record<string, unknown>) => {
@@ -214,6 +277,7 @@ async function handleSession(
       }
       if (msgType === "audio.activity_start") {
         clearIdleTimer();
+        visionSilenceStage = "none";
         audioQueue.push(ACTIVITY_START);
       } else if (msgType === "audio.activity_end") {
         audioQueue.push(ACTIVITY_END);
@@ -229,16 +293,43 @@ async function handleSession(
           resolveRestore();
         }
       } else if (msgType === "session.greeting") {
-        audioQueue.push(
-          new ClientTextEvent(
-            buildSessionGreetingPrompt(
-              resolvedLanguage,
-              tenant.name,
-              resolveAssistantName(tenant.aiRules),
-              orderingEnabled,
+        console.info(`Vision session.greeting business=${slug} source=${String(payload.source ?? "manual")}`);
+        void (async () => {
+          const source = String(payload.source ?? "");
+          visionMode = source === "vision";
+          if (visionMode) {
+            visionSettingsCache = await getOrCreateVisionSettings(tenant.id);
+          }
+          const assistantName = resolveAssistantName(tenant.aiRules);
+          const greetingPrompt = visionMode
+            ? buildVisionGreetingPrompt(
+                resolvedLanguage,
+                tenant.name,
+                assistantName,
+                visionSettingsCache?.greetingTriggerMode ?? "presence",
+                visionSettingsCache?.greetingScript,
+              )
+            : buildSessionGreetingPrompt(
+                resolvedLanguage,
+                tenant.name,
+                assistantName,
+                orderingEnabled,
+              );
+          audioQueue.push(new ClientTextEvent(greetingPrompt));
+        })();
+      } else if (msgType === "session.goodbye") {
+        void (async () => {
+          visionMode = true;
+          if (!visionSettingsCache) {
+            visionSettingsCache = await getOrCreateVisionSettings(tenant.id);
+          }
+          audioQueue.push(
+            new ClientTextEvent(
+              buildVisionGoodbyePrompt(resolvedLanguage, visionSettingsCache!.goodbyeScript),
             ),
-          ),
-        );
+          );
+          completeConversation("vision_goodbye");
+        })();
       } else if (
         orderingEnabled &&
         (msgType === "order.add_item" ||
@@ -323,6 +414,28 @@ async function handleSession(
           continue;
         }
 
+        if (event.name === "prompt_payment") {
+          const snap = orderStore.snapshot();
+          if (snap.status === "confirmed") {
+            safeSendJson(socket, { type: "checkout.prompt_payment" });
+          }
+          continue;
+        }
+
+        if (event.name === "set_customer_name") {
+          const result = event.result as Record<string, unknown> | undefined;
+          if (result && typeof result === "object" && "order" in result) {
+            safeSendJson(socket, {
+              type: "order.updated",
+              order: (result as Record<string, unknown>).order,
+            });
+            if (result.success) {
+              safeSendJson(socket, { type: "checkout.prompt_payment" });
+            }
+          }
+          continue;
+        }
+
         const result = event.result;
         if (result && typeof result === "object" && "order" in (result as object)) {
           safeSendJson(socket, {
@@ -360,6 +473,11 @@ async function handleSession(
 
         if (!safeSendJson(socket, { ...event, text })) break;
 
+        if (role === "assistant") {
+          lastAssistantTurn = transcriptBuffer.peek("assistant");
+          maybeCorrectCombinedNameAsk();
+        }
+
         if (role === "user" && maybeCompleteAfterUserTurn(transcriptBuffer.peek("user"))) {
           continue;
         }
@@ -375,14 +493,22 @@ async function handleSession(
         if (maybeCompleteAfterUserTurn(transcriptBuffer.peek("user"))) {
           continue;
         }
-        if (faqEnabled) {
+        if (faqEnabled || visionMode) {
           scheduleIdleTimeout();
         }
+        maybeCorrectCombinedNameAsk();
+        maybePromptPaymentAfterNameAsk();
+        safeSendJson(socket, { type: "turn_complete" });
         continue;
       }
 
       if (event.type === "interrupted") {
+        if (transcriptBuffer.has("assistant")) {
+          lastAssistantTurn = stripVerbalizedToolCalls(transcriptBuffer.peek("assistant"));
+        }
         void transcriptBuffer.flush("assistant", voiceSessionId);
+        maybeCorrectCombinedNameAsk();
+        maybePromptPaymentAfterNameAsk();
       }
 
       if (!safeSendJson(socket, event)) break;

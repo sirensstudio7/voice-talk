@@ -1,14 +1,35 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bot, ChevronDown, MessageSquare, User } from "lucide-react";
+import {
+  ArrowDownTrayIcon,
+  ChatBubbleLeftRightIcon,
+  ChevronDownIcon,
+  CodeBracketIcon,
+  CpuChipIcon,
+  TableCellsIcon,
+  UserIcon,
+} from "@heroicons/react/24/outline";
 import { mergeTranscriptMessages } from "@voicetalk/shared";
 
+import { DatePicker } from "@/components/date-picker";
 import { PageHeader, StatCard } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { api, type TranscriptMessage, type VoiceSession, type VoiceSessionDetail } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { parseApiDate } from "@/lib/dates";
+import { parseApiDate, todayDateInputValue } from "@/lib/dates";
 import { formatCurrency } from "@/lib/currency";
+import {
+  exportConversationsCsv,
+  exportConversationsJson,
+  exportConversationsXls,
+} from "@/lib/export-conversations";
 
 function formatTimestamp(iso: string) {
   const date = parseApiDate(iso);
@@ -46,13 +67,6 @@ function formatSelectedDateLabel(dateStr: string) {
   return date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 }
 
-function todayDateInputValue() {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${month}-${day}`;
-}
-
 function formatDateLabel(iso: string) {
   const date = parseApiDate(iso);
   const now = new Date();
@@ -81,6 +95,29 @@ function groupSessionsByDate(sessions: VoiceSession[]) {
     label: formatDateLabel(groupSessions[0].started_at),
     sessions: groupSessions,
   }));
+}
+
+function orderFilterPillClass(active: boolean) {
+  return [
+    "inline-flex items-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+    active
+      ? "bg-slate-900 text-white"
+      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+  ].join(" ");
+}
+
+type OrderFilter = "all" | "with_order" | "no_order";
+
+function matchesOrderFilter(session: VoiceSession, filter: OrderFilter) {
+  if (filter === "with_order") return Boolean(session.order_id);
+  if (filter === "no_order") return !session.order_id;
+  return true;
+}
+
+function orderFilterLabel(filter: OrderFilter) {
+  if (filter === "with_order") return "with order";
+  if (filter === "no_order") return "without order";
+  return "";
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -142,7 +179,7 @@ function TranscriptBubble({ message }: { message: TranscriptMessage }) {
           isUser ? "bg-orange-100 text-orange-600" : "bg-slate-200 text-slate-600"
         }`}
       >
-        {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
+        {isUser ? <UserIcon className="h-3.5 w-3.5" /> : <CpuChipIcon className="h-3.5 w-3.5" />}
       </div>
       <div
         className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
@@ -177,10 +214,10 @@ function ConversationRow({
 
   return (
     <article
-      className={`rounded-xl border bg-white shadow-sm transition-all ${
+      className={`rounded-xl border bg-white transition-all ${
         expanded
-          ? "border-slate-300 shadow-md ring-1 ring-slate-200/80"
-          : "border-slate-200 hover:border-slate-300 hover:shadow"
+          ? "border-slate-300 ring-1 ring-slate-200/80"
+          : "border-slate-200 hover:border-slate-300"
       }`}
     >
       <button
@@ -220,7 +257,7 @@ function ConversationRow({
             </div>
           </div>
 
-          <ChevronDown
+          <ChevronDownIcon
             className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
           />
         </div>
@@ -255,15 +292,53 @@ export function ConversationsPageClient() {
   const [detail, setDetail] = useState<VoiceSessionDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token || !business) return;
 
-    const load = () => api.listConversations(token, business.id, selectedDate ?? undefined).then(setSessions);
+    let cancelled = false;
+    let inFlight = false;
 
-    void load();
-    const interval = window.setInterval(() => void load(), 10000);
-    return () => window.clearInterval(interval);
+    const load = async (isInitial: boolean) => {
+      if (inFlight) return;
+      inFlight = true;
+      if (isInitial) {
+        setInitialLoading(true);
+      } else {
+        setRefreshing(true);
+      }
+      setLoadError(null);
+      try {
+        const data = await api.listConversations(token, business.id, selectedDate ?? undefined);
+        if (!cancelled) setSessions(data);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : "Failed to load conversations.");
+        }
+      } finally {
+        inFlight = false;
+        if (!cancelled) {
+          if (isInitial) {
+            setInitialLoading(false);
+          } else {
+            setRefreshing(false);
+          }
+        }
+      }
+    };
+
+    void load(true);
+    const interval = window.setInterval(() => void load(false), 10000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [token, business, selectedDate]);
 
   useEffect(() => {
@@ -279,49 +354,187 @@ export function ConversationsPageClient() {
       .finally(() => setLoadingDetail(false));
   }, [token, business, expandedId]);
 
-  const groups = useMemo(() => groupSessionsByDate(sessions), [sessions]);
+  const filteredSessions = useMemo(
+    () => sessions.filter((session) => matchesOrderFilter(session, orderFilter)),
+    [sessions, orderFilter],
+  );
+
+  useEffect(() => {
+    if (expandedId && !filteredSessions.some((session) => session.id === expandedId)) {
+      setExpandedId(null);
+    }
+  }, [expandedId, filteredSessions]);
+
+  const groups = useMemo(() => groupSessionsByDate(filteredSessions), [filteredSessions]);
 
   const stats = useMemo(() => {
-    const ended = sessions.filter((s) => s.duration_seconds !== null);
+    const ended = filteredSessions.filter((s) => s.duration_seconds !== null);
     const avgDuration =
       ended.length > 0
         ? ended.reduce((sum, s) => sum + (s.duration_seconds ?? 0), 0) / ended.length
         : null;
-    const withOrder = sessions.filter((s) => s.order_id).length;
-    return { count: sessions.length, avgDuration, withOrder };
-  }, [sessions]);
+    const withOrder = filteredSessions.filter((s) => s.order_id).length;
+    return { count: filteredSessions.length, avgDuration, withOrder };
+  }, [filteredSessions]);
 
   const subtitle = useMemo(() => {
-    if (sessions.length === 0) {
+    const orderNote = orderFilter !== "all" ? ` · ${orderFilterLabel(orderFilter)} only` : "";
+
+    if (filteredSessions.length === 0) {
+      if (sessions.length > 0 && orderFilter !== "all") {
+        return `No conversations ${orderFilterLabel(orderFilter)} in this view.`;
+      }
       return selectedDate
         ? `No conversations on ${formatSelectedDateLabel(selectedDate)}.`
         : "Customer–AI voice conversation history and transcripts.";
     }
 
-    const countLabel = `${sessions.length} ${sessions.length === 1 ? "conversation" : "conversations"}`;
+    const countLabel = `${filteredSessions.length} ${filteredSessions.length === 1 ? "conversation" : "conversations"}`;
+    const cappedNote = !selectedDate && sessions.length >= 200 ? " · showing latest 200" : "";
     if (selectedDate) {
-      return `${countLabel} on ${formatSelectedDateLabel(selectedDate)} · refreshes every 10s`;
+      return `${countLabel} on ${formatSelectedDateLabel(selectedDate)}${orderNote}${cappedNote} · refreshes every 10s`;
     }
-    return `${countLabel} · refreshes every 10s`;
-  }, [sessions.length, selectedDate]);
+    return `${countLabel}${orderNote}${cappedNote} · refreshes every 10s`;
+  }, [filteredSessions.length, sessions.length, selectedDate, orderFilter]);
+
+  const exportData = business
+    ? {
+        businessSlug: business.slug,
+        filterDate: selectedDate,
+      }
+    : null;
+
+  const fetchConversationDetails = async () => {
+    if (!token || !business || filteredSessions.length === 0) return [];
+
+    const exportedIds = new Set(filteredSessions.map((session) => session.id));
+    const allDetails = await api.exportConversations(token, business.id, selectedDate ?? undefined);
+    return allDetails.filter((session) => exportedIds.has(session.id));
+  };
+
+  const handleExport = async (format: "csv" | "xls" | "json") => {
+    if (!exportData) return;
+
+    setExporting(true);
+    setExportError(null);
+    try {
+      const conversations = await fetchConversationDetails();
+      if (format === "csv") {
+        exportConversationsCsv({ ...exportData, conversations });
+      } else if (format === "json") {
+        exportConversationsJson({ ...exportData, conversations });
+      } else {
+        exportConversationsXls({ ...exportData, conversations });
+      }
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <>
       <PageHeader
         title="Conversations"
         subtitle={subtitle}
-        action={
-          <div className="flex shrink-0 items-center gap-2">
-            <label htmlFor="conversations-date-filter" className="text-sm text-slate-500">
-              Date
-            </label>
-            <input
+        titleAction={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!exportData || filteredSessions.length === 0 || exporting}
+              >
+                <ArrowDownTrayIcon />
+                {exporting ? "Exporting…" : "Export"}
+                <ChevronDownIcon />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => void handleExport("csv")}>
+                <TableCellsIcon />
+                Export CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void handleExport("xls")}>
+                <TableCellsIcon />
+                Export Excel (.xls)
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void handleExport("json")}>
+                <CodeBracketIcon />
+                Export JSON
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
+
+      {loadError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {loadError}
+        </div>
+      ) : null}
+
+      {exportError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {exportError}
+        </div>
+      ) : null}
+
+      {initialLoading && sessions.length === 0 ? (
+        <div className="space-y-3">
+          {[0, 1, 2].map((index) => (
+            <div key={index} className="h-24 animate-pulse rounded-xl bg-slate-100" />
+          ))}
+        </div>
+      ) : null}
+
+      {!initialLoading && filteredSessions.length > 0 ? (
+        <div className="mb-6 grid gap-[16px] sm:grid-cols-3">
+          <StatCard label="Total conversations" value={String(stats.count)} />
+          <StatCard
+            label="Avg call duration"
+            value={stats.avgDuration !== null ? formatDuration(Math.round(stats.avgDuration)) : "—"}
+          />
+          <StatCard label="With order" value={String(stats.withOrder)} />
+        </div>
+      ) : null}
+
+      {!initialLoading ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div
+            role="group"
+            aria-label="Filter by order"
+            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1"
+          >
+            <button
+              type="button"
+              onClick={() => setOrderFilter("all")}
+              className={orderFilterPillClass(orderFilter === "all")}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrderFilter("with_order")}
+              className={orderFilterPillClass(orderFilter === "with_order")}
+            >
+              Order
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrderFilter("no_order")}
+              className={orderFilterPillClass(orderFilter === "no_order")}
+            >
+              No order
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <DatePicker
               id="conversations-date-filter"
-              type="date"
-              value={selectedDate ?? ""}
-              max={todayDateInputValue()}
-              onChange={(event) => setSelectedDate(event.target.value || null)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+              value={selectedDate}
+              onChange={setSelectedDate}
+              maxDate={todayDateInputValue()}
             />
             {selectedDate ? (
               <button
@@ -333,36 +546,38 @@ export function ConversationsPageClient() {
               </button>
             ) : null}
           </div>
-        }
-      />
-
-      {sessions.length > 0 ? (
-        <div className="mb-6 grid gap-[16px] sm:grid-cols-3">
-          <StatCard label="Total conversations" value={String(stats.count)} />
-          <StatCard
-            label="Avg call duration"
-            value={stats.avgDuration !== null ? formatDuration(Math.round(stats.avgDuration)) : "—"}
-          />
-          <StatCard label="With order" value={String(stats.withOrder)} />
         </div>
       ) : null}
 
-      {sessions.length === 0 ? (
+      {!initialLoading && filteredSessions.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-8 py-16 text-center">
           <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
-            <MessageSquare className="h-7 w-7" />
+            <ChatBubbleLeftRightIcon className="h-7 w-7" />
           </div>
           <p className="text-lg font-semibold text-slate-900">
-            {selectedDate ? "No conversations on this date" : "No conversations yet"}
+            {orderFilter !== "all" && sessions.length > 0
+              ? orderFilter === "with_order"
+                ? "No conversations with an order"
+                : "No conversations without an order"
+              : selectedDate
+                ? "No conversations on this date"
+                : "No conversations yet"}
           </p>
           <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-500">
-            {selectedDate
-              ? `There are no voice sessions for ${formatSelectedDateLabel(selectedDate)}. Try another date or view all dates.`
-              : "When a customer talks to Lorescale, the conversation transcript will appear here automatically."}
+            {orderFilter !== "all" && sessions.length > 0
+              ? "Try switching the order filter to All, or pick another date range."
+              : selectedDate
+                ? `There are no voice sessions for ${formatSelectedDateLabel(selectedDate)}. Try another date, click All dates, or confirm you're viewing the same business as your customer app (${business?.slug ?? "check sidebar"}).`
+                : `When a customer talks to Lorescale at /b/${business?.slug ?? "your-slug"}, the conversation transcript will appear here. Check the business switcher in the sidebar if you tested on a different workspace.`}
           </p>
         </div>
-      ) : (
+      ) : null}
+
+      {!initialLoading && filteredSessions.length > 0 ? (
         <div className="space-y-6">
+          {refreshing ? (
+            <p className="px-1 text-xs text-slate-400">Refreshing…</p>
+          ) : null}
           {groups.map((group) => (
             <section key={group.label}>
               <div className="mb-2 flex items-baseline justify-between px-1">
@@ -390,7 +605,7 @@ export function ConversationsPageClient() {
             </section>
           ))}
         </div>
-      )}
+      ) : null}
     </>
   );
 }

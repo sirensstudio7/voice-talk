@@ -1,7 +1,15 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { BookOpen, Mic, Minus, Pencil, Plus, ShoppingBasket, X } from "lucide-react";
+import {
+  BookOpenIcon,
+  MicrophoneIcon,
+  MinusIcon,
+  PencilIcon,
+  PlusIcon,
+  ShoppingCartIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -23,7 +31,7 @@ const BasketModel3D = dynamic(
     ssr: false,
     loading: () => (
       <div className="flex h-full w-full items-center justify-center">
-        <ShoppingBasket className="h-8 w-8 animate-pulse text-orange-500" strokeWidth={1.75} />
+        <ShoppingCartIcon className="h-8 w-8 animate-pulse text-orange-500" />
       </div>
     ),
   },
@@ -74,12 +82,12 @@ function BasketEmptyState({ onBrowseMenu }: { onBrowseMenu: () => void }) {
             boxShadow: "rgba(255, 255, 255, 0.35) 0px 2.5px 5px 0px inset",
           }}
         >
-          <BookOpen className="h-4 w-4" strokeWidth={2.25} />
+          <BookOpenIcon className="h-4 w-4" />
           Open menu
         </button>
 
         <p className="flex items-center justify-center gap-2 text-xs font-medium text-slate-400">
-          <Mic className="h-3.5 w-3.5" strokeWidth={2.25} />
+          <MicrophoneIcon className="h-3.5 w-3.5" />
           Or hold the mic on the main screen
         </p>
       </div>
@@ -157,7 +165,7 @@ function BasketItemRow({
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:scale-95"
                 aria-label={`Remove one ${item.name}`}
               >
-                <Minus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                <MinusIcon className="h-3.5 w-3.5" />
               </button>
               <span className="min-w-[1.25rem] select-none text-center text-sm font-bold tabular-nums text-slate-900">
                 {item.quantity}
@@ -168,7 +176,7 @@ function BasketItemRow({
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-500 text-white shadow-sm shadow-orange-200/60 transition hover:bg-orange-600 active:scale-95"
                 aria-label={`Add one ${item.name}`}
               >
-                <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                <PlusIcon className="h-3.5 w-3.5" />
               </button>
             </div>
           ) : (
@@ -194,7 +202,7 @@ function BasketItemRow({
               }`}
               aria-label={item.note ? "Edit note" : "Add note"}
             >
-              <Pencil className="h-4 w-4" strokeWidth={2.25} />
+              <PencilIcon className="h-4 w-4" />
             </button>
           </>
         ) : null}
@@ -309,7 +317,7 @@ export function CheckoutPanel() {
             className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-50"
             aria-label="Close checkout panel"
           >
-            <X className="h-4 w-4" />
+            <XMarkIcon className="h-4 w-4" />
           </button>
         </div>
 
@@ -408,7 +416,7 @@ export function BasketButton() {
       className="relative flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition hover:bg-slate-50"
       aria-label={`Basket${itemCount > 0 ? `, ${itemCount} items` : ""}`}
     >
-      <ShoppingBasket className="h-4 w-4" />
+      <ShoppingCartIcon className="h-4 w-4" />
       {itemCount > 0 && checkoutPhase === "shopping" ? (
         <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">
           {itemCount > 99 ? "99+" : itemCount}

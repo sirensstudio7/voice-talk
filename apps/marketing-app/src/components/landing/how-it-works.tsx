@@ -95,11 +95,12 @@ export function HowItWorks() {
   return (
     <section id="how-it-works" className="bg-white">
       <div className="landing-container border-x border-dashed border-black/[0.06]">
-        <div className="px-6 py-20 sm:px-8 sm:py-24 lg:px-10">
+        <div className="py-20 sm:px-8 sm:py-24 lg:px-10">
           <div className="mx-auto max-w-4xl text-center">
             <div className="mb-6 text-sm uppercase tracking-wide text-[#737373]">How it works</div>
             <h2 className="text-[clamp(1.75rem,4vw,2.75rem)] font-semibold leading-[1.15] tracking-tight text-[#181818]">
-              Go From Sign-Up to Your First Voice Order in an Afternoon
+              <span className="block">Launch Your Voice Store</span>
+              <span className="block">In Three Simple Steps</span>
             </h2>
           </div>
 

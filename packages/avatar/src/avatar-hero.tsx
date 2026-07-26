@@ -2,7 +2,7 @@
 
 import { Component, Suspense, type ReactNode } from "react";
 
-import { Avatar3D, type Avatar3DProps } from "./avatar-3d";
+import { Avatar3D, type Avatar3DProps, type AvatarMode } from "./avatar-3d";
 import { DEFAULT_MODEL_PATH } from "./model-calibration";
 
 export const HERO_FRAME_CLASS =
@@ -10,6 +10,12 @@ export const HERO_FRAME_CLASS =
 
 export const COMPACT_HERO_FRAME_CLASS =
   "relative mx-auto aspect-[2/3] h-full max-h-[420px] w-auto [mask-image:linear-gradient(to_bottom,black_0%,black_78%,transparent_94%)] [-webkit-mask-image:linear-gradient(to_bottom,black_0%,black_78%,transparent_94%)]";
+
+export const LANDSCAPE_HERO_FRAME_CLASS =
+  "absolute bottom-0 right-[6%] aspect-[2/3] h-[110vh] max-h-none max-w-[48vw] w-auto [mask-image:linear-gradient(to_bottom,black_0%,black_78%,transparent_94%)] [-webkit-mask-image:linear-gradient(to_bottom,black_0%,black_78%,transparent_94%)]";
+
+export const PORTRAIT_HERO_FRAME_CLASS =
+  "relative mx-auto aspect-[2/3] w-[68%] max-w-[88%] shrink-0";
 
 function AvatarHeroFallback({ assistantName }: { assistantName: string }) {
   return (
@@ -59,22 +65,26 @@ class AvatarHeroErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundar
 
 export type AvatarHeroProps = {
   isTalking: boolean;
+  mode?: AvatarMode;
   modelPath?: string;
   assistantName?: string;
   frameClassName?: string;
   pngSrc?: string;
   usePngFallback?: boolean;
   resize?: Avatar3DProps["resize"];
+  pauseWhenOffscreen?: Avatar3DProps["pauseWhenOffscreen"];
 };
 
 export function AvatarHero({
   isTalking,
+  mode = "idle",
   modelPath = DEFAULT_MODEL_PATH,
   assistantName = "Lorescale",
   frameClassName = HERO_FRAME_CLASS,
   pngSrc = "/lorescale-cashier-nobg.png",
   usePngFallback = false,
   resize,
+  pauseWhenOffscreen = false,
 }: AvatarHeroProps) {
   const ariaLabel = `${assistantName}, AI assistant`;
 
@@ -104,7 +114,13 @@ export function AvatarHero({
       >
         <Suspense fallback={<AvatarHeroFallback assistantName={assistantName} />}>
           <div className="h-full w-full">
-            <Avatar3D isTalking={isTalking} modelPath={modelPath} resize={resize} />
+            <Avatar3D
+              isTalking={isTalking}
+              mode={mode}
+              modelPath={modelPath}
+              resize={resize}
+              pauseWhenOffscreen={pauseWhenOffscreen}
+            />
           </div>
         </Suspense>
       </div>

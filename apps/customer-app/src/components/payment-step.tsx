@@ -1,6 +1,11 @@
 "use client";
 
-import { CheckCircle2, Clock, QrCode, Smartphone } from "lucide-react";
+import {
+  CheckCircleIcon,
+  ClockIcon,
+  DevicePhoneMobileIcon,
+  QrCodeIcon,
+} from "@heroicons/react/24/outline";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 
@@ -24,17 +29,17 @@ function formatCountdown(seconds: number): string {
 
 const STEPS = [
   {
-    icon: QrCode,
+    icon: QrCodeIcon,
     title: "Scan the QR code",
     detail: "Open your banking app and scan the code below.",
   },
   {
-    icon: Smartphone,
+    icon: DevicePhoneMobileIcon,
     title: "Complete payment on your phone",
     detail: "Confirm the amount — your app will send you a payment receipt or bill.",
   },
   {
-    icon: CheckCircle2,
+    icon: CheckCircleIcon,
     title: "Tap I've paid",
     detail: "Once you see the payment confirmation on your phone, tap the button below.",
   },
@@ -120,7 +125,7 @@ export function PaymentStep({ order, onPaid, onExpired }: PaymentStepProps) {
           </div>
         ) : (
           <div className="flex h-52 w-52 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4">
-            <QrCode className="mb-2 h-10 w-10 text-slate-300" />
+            <QrCodeIcon className="mb-2 h-10 w-10 text-slate-300" />
             <p className="text-sm font-semibold text-slate-700">Payment QR not set up</p>
             <p className="mt-1 text-xs text-slate-500">Ask staff to configure payment in the dashboard.</p>
           </div>
@@ -135,7 +140,7 @@ export function PaymentStep({ order, onPaid, onExpired }: PaymentStepProps) {
                 : "bg-slate-100 text-slate-700"
           }`}
         >
-          <Clock className="h-4 w-4 shrink-0" />
+          <ClockIcon className="h-4 w-4 shrink-0" />
           {expired ? "Payment time expired" : `Complete payment within ${formatCountdown(secondsLeft)}`}
         </div>
 

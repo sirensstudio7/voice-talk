@@ -1,6 +1,9 @@
 "use client";
 
-import { Check, UserRound } from "lucide-react";
+import {
+  CheckIcon,
+  UserCircleIcon,
+} from "@heroicons/react/24/outline";
 
 import { ASSISTANT_TEMPLATES } from "@/lib/assistant-templates";
 import { useAssistantTemplate } from "@/lib/assistant-template-context";
@@ -42,7 +45,7 @@ export function AssistantTemplatePicker() {
                       : "border-slate-200 bg-slate-50 text-slate-500"
                   }`}
                 >
-                  <UserRound className="h-4 w-4" strokeWidth={1.5} />
+                  <UserCircleIcon className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
@@ -50,7 +53,7 @@ export function AssistantTemplatePicker() {
                       {template.label}
                     </p>
                     {active ? (
-                      <Check className="h-3.5 w-3.5 shrink-0 text-orange-500" aria-hidden />
+                      <CheckIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" aria-hidden />
                     ) : null}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-slate-500">{template.description}</p>

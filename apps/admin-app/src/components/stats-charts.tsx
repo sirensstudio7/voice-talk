@@ -1,4 +1,11 @@
 import type { StatsDailyPoint, TopProductStat } from "@/lib/api";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { formatCurrency } from "@/lib/currency";
 
 function formatShortDate(isoDate: string): string {
@@ -18,129 +25,155 @@ export function DailyOrdersChart({
   const maxOrders = Math.max(...data.map((point) => point.orders), 1);
 
   return (
-    <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Orders</h2>
-          <p className="mt-0.5 text-sm text-slate-500">Last 14 days</p>
-        </div>
-        {!loading && data.length > 0 ? (
-          <div className="flex gap-5 text-right text-sm">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Total orders</p>
-              <p className="mt-0.5 font-semibold tabular-nums text-slate-900">{totalOrders}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Total revenue</p>
-              <p className="mt-0.5 font-semibold tabular-nums text-orange-600">{formatCurrency(totalRevenue)}</p>
-            </div>
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Orders</CardTitle>
+            <CardDescription>Last 14 days</CardDescription>
           </div>
-        ) : null}
-      </div>
-
-      {loading ? (
-        <div className="mt-6 flex h-56 items-end gap-2">
-          {Array.from({ length: 14 }).map((_, index) => (
-            <div key={index} className="flex flex-1 flex-col items-center gap-2">
-              <div
-                className="w-full animate-pulse rounded-t-lg bg-slate-100"
-                style={{ height: `${20 + (index % 5) * 12}%` }}
-              />
-              <div className="h-2 w-6 animate-pulse rounded bg-slate-100" />
-            </div>
-          ))}
-        </div>
-      ) : data.length === 0 ? (
-        <div className="mt-8 flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50">
-          <p className="text-sm text-slate-500">No order data yet.</p>
-        </div>
-      ) : (
-        <div className="mt-6 flex h-56 items-end gap-1.5 sm:gap-2">
-          {data.map((point) => {
-            const heightPercent = (point.orders / maxOrders) * 100;
-            return (
-              <div key={point.date} className="group flex flex-1 flex-col items-center gap-2">
-                <div className="relative flex h-full w-full items-end">
-                  <div
-                    className="w-full rounded-t-lg bg-gradient-to-t from-orange-500 to-orange-400 shadow-sm transition-all duration-200 group-hover:from-orange-600 group-hover:to-orange-500"
-                    style={{
-                      height: `${heightPercent}%`,
-                      minHeight: point.orders > 0 ? "8px" : "2px",
-                    }}
-                    title={`${formatShortDate(point.date)}: ${point.orders} orders · ${formatCurrency(point.revenue)}`}
-                  />
-                </div>
-                <span className="text-[10px] tabular-nums text-slate-400">{point.date.slice(8)}</span>
+          {!loading && data.length > 0 ? (
+            <div className="flex gap-5 text-right text-sm">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Total orders</p>
+                <p className="mt-0.5 font-semibold tabular-nums">{totalOrders}</p>
               </div>
-            );
-          })}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Total revenue</p>
+                <p className="mt-0.5 font-semibold tabular-nums text-primary">
+                  {formatCurrency(totalRevenue)}
+                </p>
+              </div>
+            </div>
+          ) : null}
         </div>
-      )}
-    </section>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex h-56 items-end gap-2">
+            {Array.from({ length: 14 }).map((_, index) => (
+              <div key={index} className="flex flex-1 flex-col items-center gap-2">
+                <div
+                  className="w-full animate-pulse rounded-t-md bg-muted"
+                  style={{ height: `${20 + (index % 5) * 12}%` }}
+                />
+                <div className="h-2 w-6 animate-pulse rounded bg-muted" />
+              </div>
+            ))}
+          </div>
+        ) : data.length === 0 ? (
+          <div className="flex h-40 items-center justify-center rounded-lg border border-dashed">
+            <p className="text-sm text-muted-foreground">No order data yet.</p>
+          </div>
+        ) : (
+          <div className="flex h-56 items-end gap-1.5 sm:gap-2">
+            {data.map((point) => {
+              const heightPercent = (point.orders / maxOrders) * 100;
+              return (
+                <div key={point.date} className="group flex flex-1 flex-col items-center gap-2">
+                  <div className="relative flex h-full w-full items-end">
+                    <div
+                      className="w-full rounded-t-md bg-primary/90 transition-all duration-200 group-hover:bg-primary"
+                      style={{
+                        height: `${heightPercent}%`,
+                        minHeight: point.orders > 0 ? "8px" : "2px",
+                      }}
+                      title={`${formatShortDate(point.date)}: ${point.orders} orders · ${formatCurrency(point.revenue)}`}
+                    />
+                  </div>
+                  <span className="text-[10px] tabular-nums text-muted-foreground">
+                    {point.date.slice(8)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
+
+const TOP_PRODUCTS_DISPLAY_LIMIT = 4;
 
 export function TopProductsPanel({
   products,
   loading,
-  limit,
+  limit = TOP_PRODUCTS_DISPLAY_LIMIT,
 }: {
   products: TopProductStat[];
   loading?: boolean;
   limit?: number;
 }) {
-  const maxRevenue = Math.max(...products.map((product) => product.revenue), 1);
-  const visibleProducts = limit ? products.slice(0, limit) : products;
+  const visibleProducts = products.slice(0, limit);
 
   return (
-    <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-semibold tracking-tight text-slate-900">Top products</h2>
-      <p className="mt-0.5 text-sm text-slate-500">Best sellers by revenue</p>
-
-      {loading ? (
-        <div className="mt-4 space-y-3">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="animate-pulse rounded-xl bg-slate-50 px-4 py-3">
-              <div className="h-4 w-1/2 rounded bg-slate-200" />
-              <div className="mt-2 h-2 w-full rounded bg-slate-100" />
-            </div>
-          ))}
-        </div>
-      ) : products.length === 0 ? (
-        <div className="mt-6 flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50">
-          <p className="text-sm text-slate-500">No product sales yet.</p>
-        </div>
-      ) : (
-        <div className="mt-4 space-y-2.5">
-          {visibleProducts.map((product, index) => (
-            <div
-              key={product.product_id}
-              className="rounded-xl border border-transparent bg-slate-50/80 px-4 py-3 transition-colors hover:border-slate-200 hover:bg-white"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-100 text-xs font-bold text-orange-600">
-                    {index + 1}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-900">{product.name}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">{product.quantity} sold</p>
-                  </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Top products</CardTitle>
+        <CardDescription>Best sellers by revenue</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="grid grid-cols-2 gap-3">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div
+                key={index}
+                className="flex flex-col gap-3 rounded-xl border bg-card p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="h-3 w-5 animate-pulse rounded bg-muted" />
+                  <div className="h-5 w-14 animate-pulse rounded-full bg-muted" />
                 </div>
-                <p className="shrink-0 text-sm font-semibold tabular-nums text-orange-600">
-                  {formatCurrency(product.revenue)}
-                </p>
+                <div>
+                  <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+                  <div className="mt-2 h-6 w-1/2 animate-pulse rounded bg-muted" />
+                </div>
               </div>
-              <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-slate-200/80">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-orange-400 to-orange-500"
-                  style={{ width: `${(product.revenue / maxRevenue) * 100}%` }}
-                />
+            ))}
+          </div>
+        ) : products.length === 0 ? (
+          <div className="flex h-40 items-center justify-center rounded-lg border border-dashed">
+            <p className="text-sm text-muted-foreground">No product sales yet.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {visibleProducts.map((product, index) => (
+              <div
+                key={product.product_id}
+                className="flex flex-col gap-3 rounded-xl border bg-card p-4 transition-colors hover:border-slate-300 hover:bg-slate-50/80"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium tabular-nums text-slate-400">
+                    {index === 0 ? (
+                      <>
+                        #1{" "}
+                        <span className="animate-trophy" aria-hidden="true">
+                          🏆
+                        </span>
+                      </>
+                    ) : (
+                      `#${index + 1}`
+                    )}
+                  </span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-600">
+                    {product.quantity} sold
+                  </span>
+                </div>
+
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-900">
+                    {product.name}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-slate-900">
+                    {formatCurrency(product.revenue)}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

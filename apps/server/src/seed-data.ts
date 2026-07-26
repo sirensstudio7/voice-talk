@@ -12,15 +12,20 @@ Tawarkan upsell dengan sopan jika relevan dengan pesanan.
 Jika tidak yakin, tanyakan klarifikasi daripada menebak.`;
 
 export const TOOL_INSTRUCTIONS = `Panggil add_to_order segera setelah pelanggan memilih item.
-Setelah confirm_order, tanyakan nama pelanggan sebelum pembayaran.
-Gunakan set_customer_name saat mereka menjawab.`;
+Setelah confirm_order: tanyakan kartu loyalitas atau hal checkout lain dulu (satu topik per turn), lalu tanyakan nama pelanggan terakhir di turn terpisah.
+Pertanyaan nama harus satu-satunya pertanyaan di turn itu — jangan gabungkan dengan pertanyaan lain.
+Tunggu pelanggan menjawab, lalu panggil set_customer_name — layar pembayaran terbuka otomatis setelah nama disimpan.`;
 
 export const KNOWLEDGE = [
-  "Kami buka setiap hari pukul 07.00–21.00.",
-  "Susu oat dan almond bisa diganti gratis.",
-  "Kami menerima tunai dan kartu di kasir.",
-  "Semua pastry dipanggang segar setiap pagi.",
-  "Tawarkan kartu loyalitas setelah pesanan dikonfirmasi.",
+  { title: "Jam buka", content: "Kami buka setiap hari pukul 07.00–21.00." },
+  { title: "Substitusi susu", content: "Susu oat dan almond bisa diganti gratis." },
+  { title: "Metode pembayaran", content: "Kami menerima tunai dan kartu di kasir." },
+  { title: "Pastry segar", content: "Semua pastry dipanggang segar setiap pagi." },
+  {
+    title: "Kartu loyalitas",
+    content:
+      "Tawarkan kartu loyalitas setelah pesanan dikonfirmasi, sebelum menanyakan nama pelanggan. Tanyakan kartu loyalitas di turn terpisah — jangan gabungkan dengan pertanyaan nama.",
+  },
 ];
 
 export const PRODUCTS = [

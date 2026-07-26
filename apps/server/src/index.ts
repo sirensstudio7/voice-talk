@@ -6,11 +6,14 @@ import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { closeDb } from "./db/client.js";
+import { warmDbConnection } from "./db/health.js";
 import { env, getProductionDomains, hasSupabaseStorage, isAllowedOrigin } from "./env.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerPublicRoutes } from "./routes/public.js";
 import { registerWebSocketRoutes } from "./routes/websocket.js";
+import { registerVisionWebSocketRoutes } from "./routes/vision-ws.js";
+import { initVisionEventBus } from "./services/vision-orchestrator.js";
 import { getUploadRoot } from "./storage/index.js";
 
 const app = Fastify({ logger: true });
@@ -45,11 +48,21 @@ await registerHealthRoutes(app);
 await registerPublicRoutes(app);
 await registerAdminRoutes(app);
 await registerWebSocketRoutes(app);
+await registerVisionWebSocketRoutes(app);
+await initVisionEventBus();
 
 app.setErrorHandler((error, _request, reply) => {
-  const err = error as Error & { statusCode?: number };
+  const err = error as Error & { statusCode?: number; cause?: Error };
   const statusCode = err.statusCode ?? 500;
-  reply.status(statusCode).send({ detail: err.message });
+  const cause =
+    err.name === "DrizzleQueryError" && err.cause?.message ? err.cause.message : err.message;
+  const combined = `${err.message} ${cause}`;
+  const detail = /CONNECT_TIMEOUT|connect timed out|timed out|ECONNREFUSED|connection/i.test(
+    combined,
+  )
+    ? "Database connection timed out. Please retry in a moment."
+    : cause;
+  reply.status(statusCode).send({ detail });
 });
 
 const start = async () => {
@@ -62,6 +75,7 @@ const start = async () => {
   console.info(`CORS allowed origins: ${allowedOrigins || "(all)"}`);
   console.info(`CORS production domains: ${productionDomains.join(", ") || "(none)"}`);
 
+  await warmDbConnection();
   await app.listen({ port: env.PORT ?? env.API_PORT, host: "0.0.0.0" });
 };
 

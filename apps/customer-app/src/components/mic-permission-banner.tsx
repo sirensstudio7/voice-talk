@@ -1,6 +1,9 @@
 "use client";
 
-import { ExternalLink, MicOff } from "lucide-react";
+import {
+  ArrowTopRightOnSquareIcon,
+  ExclamationTriangleIcon,
+} from "@heroicons/react/24/outline";
 import { useEffect, useState } from "react";
 
 function isEmbeddedPreviewBrowser(): boolean {
@@ -20,7 +23,7 @@ export function MicPermissionBanner() {
   return (
     <div className="absolute inset-x-4 top-[4.5rem] z-30 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 shadow-md">
       <div className="flex items-start gap-3">
-        <MicOff className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+        <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-amber-950">
             Microphone not available in Cursor browser
@@ -36,7 +39,7 @@ export function MicPermissionBanner() {
             className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-orange-600 underline underline-offset-2 hover:text-orange-700"
           >
             Open in external browser
-            <ExternalLink className="h-3.5 w-3.5" />
+            <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
           </a>
         </div>
       </div>

@@ -24,7 +24,7 @@ export function AssistantPreviewHero() {
   const { selectedTemplate } = useAssistantTemplate();
 
   return (
-    <section className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm">
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
       <AssistantTemplatePicker />
       <div className="relative h-[420px] w-full">
         <AvatarHero
