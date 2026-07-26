@@ -111,6 +111,8 @@ NEXT_PUBLIC_CUSTOMER_APP_URL=https://app.yourdomain.com
 2. Env:
 
 ```env
+# Use real URLs only — template placeholders break the landing-page hero iframe.
+# Leave unset to use defaults: voice-talk-customer.vercel.app + app.lorescale.com
 NEXT_PUBLIC_CUSTOMER_APP_URL=https://app.yourdomain.com
 NEXT_PUBLIC_ADMIN_APP_URL=https://admin.yourdomain.com
 ```
