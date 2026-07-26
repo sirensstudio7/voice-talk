@@ -28,6 +28,7 @@ async function migrate() {
     "013_display_orientation_default_landscape.sql",
     "014_greeting_trigger_mode.sql",
     "015_raise_hand_trigger_mode.sql",
+    "016_vision_source.sql",
   ];
 
   for (const file of migrationFiles) {
