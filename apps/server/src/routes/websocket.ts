@@ -23,7 +23,7 @@ import {
   resolveIdleTimeoutMs,
   resolveLanguage,
 } from "../services/config-builder.js";
-import { getOrCreateVisionSettings } from "../services/vision-orchestrator.js";
+import { getOrCreateVisionSettings, ensureVisionHub, setKioskSessionActive } from "../services/vision-orchestrator.js";
 import { handleClientOrderMessage } from "../services/client-order.js";
 import {
   ACTIVITY_END,
@@ -293,9 +293,18 @@ async function handleSession(
           resolveRestore();
         }
       } else if (msgType === "session.greeting") {
-        console.info(`Vision session.greeting business=${slug} source=${String(payload.source ?? "manual")}`);
+        const greetingSource = String(payload.source ?? "manual");
+        console.info(`Vision session.greeting business=${slug} source=${greetingSource}`);
+        if (greetingSource === "vision") {
+          void (async () => {
+            const hub = await ensureVisionHub(tenant.id, slug);
+            if (!hub.sessionActive) {
+              setKioskSessionActive(hub, true);
+            }
+          })();
+        }
         void (async () => {
-          const source = String(payload.source ?? "");
+          const source = greetingSource;
           visionMode = source === "vision";
           if (visionMode) {
             visionSettingsCache = await getOrCreateVisionSettings(tenant.id);

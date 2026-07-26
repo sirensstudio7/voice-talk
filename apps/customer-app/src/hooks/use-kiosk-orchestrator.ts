@@ -139,14 +139,34 @@ export function useKioskOrchestrator(
     }
   }, []);
 
-  const notifySessionStarted = useCallback(() => {
+  const sessionStartedAckPendingRef = useRef(false);
+
+  const sendSessionStartedAck = useCallback(() => {
     hadVisionSessionRef.current = true;
     sessionReleaseSentRef.current = false;
     sessionActiveRef.current = true;
     setVisionSessionActive(true);
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "kiosk.session.started" }));
+
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "kiosk.session.started" }));
+      sessionStartedAckPendingRef.current = false;
+      return;
     }
+    sessionStartedAckPendingRef.current = true;
+  }, []);
+
+  const flushPendingSessionStartedAck = useCallback(() => {
+    if (!sessionActiveRef.current && !sessionStartedAckPendingRef.current) {
+      return;
+    }
+    const ws = wsRef.current;
+    if (ws?.readyState !== WebSocket.OPEN) {
+      sessionStartedAckPendingRef.current = true;
+      return;
+    }
+    ws.send(JSON.stringify({ type: "kiosk.session.started" }));
+    sessionStartedAckPendingRef.current = false;
   }, []);
 
   const notifySessionEnded = useCallback(() => {
@@ -154,6 +174,7 @@ export function useKioskOrchestrator(
     sessionReleaseSentRef.current = true;
     hadVisionSessionRef.current = false;
     sessionActiveRef.current = false;
+    sessionStartedAckPendingRef.current = false;
     setVisionSessionActive(false);
     greetingStartedRef.current = false;
     prefetchActiveRef.current = false;
@@ -197,10 +218,11 @@ export function useKioskOrchestrator(
     greetingStartedRef.current = true;
     prefetchActiveRef.current = false;
     setKioskPhase("greeting");
+    // Ack the vision server immediately so the 12s release timer does not fire
+    // while voice connect + greeting dispatch runs (kiosk WS may reconnect in dev).
+    sendSessionStartedAck();
     // Release browser camera before voice connect — avoids getUserMedia hanging
     // when camera + mic are requested at the same time.
-    sessionActiveRef.current = true;
-    setVisionSessionActive(true);
     releaseBrowserCamera();
     // Give the browser a moment to release the camera device before opening the mic.
     await new Promise((resolve) => setTimeout(resolve, 350));
@@ -219,9 +241,8 @@ export function useKioskOrchestrator(
         throw new Error("Vision greeting was not sent to the voice server");
       }
 
-      // Tell the vision server immediately so vision.config does not reset
-      // the client and restart the browser camera mid-greeting.
-      notifySessionStarted();
+      // Re-send in case the kiosk socket dropped and reconnected during connect().
+      sendSessionStartedAck();
       greetingStartedRef.current = false;
 
       const micReady = await voiceRef.current.waitForVisionMicReady(20_000);
@@ -244,7 +265,7 @@ export function useKioskOrchestrator(
       );
       setKioskPhase("idle");
     }
-  }, [notifySessionEnded, notifySessionStarted, releaseBrowserCamera, setKioskPhase]);
+  }, [notifySessionEnded, releaseBrowserCamera, sendSessionStartedAck, setKioskPhase]);
 
   const handleVisionTriggerRef = useRef(handleVisionTrigger);
   handleVisionTriggerRef.current = handleVisionTrigger;
@@ -301,6 +322,7 @@ export function useKioskOrchestrator(
       ws.onopen = () => {
         if (!active) return;
         setKioskConnected(true);
+        flushPendingSessionStartedAck();
       };
 
       ws.onmessage = (event) => {
@@ -421,6 +443,7 @@ export function useKioskOrchestrator(
             sessionReleaseSentRef.current = true;
             hadVisionSessionRef.current = false;
             sessionActiveRef.current = false;
+            sessionStartedAckPendingRef.current = false;
             setVisionSessionActive(false);
             greetingStartedRef.current = false;
             prefetchActiveRef.current = false;
@@ -482,6 +505,7 @@ export function useKioskOrchestrator(
   }, [
     businessSlug,
     clearLostTimer,
+    flushPendingSessionStartedAck,
     scheduleLostTimeout,
     setKioskConnected,
     setKioskPhase,
@@ -552,7 +576,7 @@ export function useKioskOrchestrator(
 
   return {
     visionEnabled,
-    notifySessionStarted,
+    notifySessionStarted: sendSessionStartedAck,
     notifySessionEnded,
   };
 }
