@@ -118,7 +118,10 @@ function Card({
       }}
       className="hero-scroll-card relative z-0 mx-auto mt-4 w-full max-w-5xl rounded-2xl border-2 border-[#6C6C6C] bg-[#222222] p-3 sm:mt-4 sm:rounded-[24px] sm:border-[3px] sm:p-2 md:mt-8 md:rounded-[30px] md:border-4 md:p-6"
     >
-      <div className="h-full w-full overflow-hidden rounded-xl bg-gray-100 sm:rounded-2xl md:rounded-2xl md:p-4 dark:bg-zinc-900">
+      <div
+        className="h-full w-full overflow-hidden rounded-xl bg-gray-100 sm:rounded-2xl md:rounded-2xl md:p-4 dark:bg-zinc-900"
+        data-lenis-prevent
+      >
         {children}
       </div>
     </motion.div>

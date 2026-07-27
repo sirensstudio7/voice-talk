@@ -249,7 +249,7 @@ export function VoiceExperience() {
             />
           </div>
         ) : (
-          <div key={freshOrderRequest} className="absolute inset-0">
+          <div key={freshOrderRequest} className="pointer-events-none absolute inset-0">
             <LorescaleHero
               isTalking={isTalking}
               mode={avatarMode}

@@ -26,6 +26,7 @@ export function HeroVoicePreview() {
       className={PREVIEW_CLASS}
       allow="microphone; autoplay"
       onError={() => setIframeFailed(true)}
+      style={{ touchAction: "manipulation" }}
     />
   );
 }

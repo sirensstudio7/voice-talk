@@ -68,7 +68,7 @@ export function TranscriptPanel({
 
       <div
         ref={scrollRef}
-        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-y-contain px-3 py-3"
+        className="transcript-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3"
       >
         {transcript.length === 0 ? (
           <p className="px-1 text-sm leading-relaxed text-slate-600">{placeholder}</p>

@@ -80,7 +80,7 @@ const LANDSCAPE_KIOSK_LAYOUT = {
 const PORTRAIT_STACKED_LAYOUT = {
   shellClassName: "relative h-[100dvh] w-full overflow-hidden bg-slate-100",
   frameClassName: "relative h-full w-full overflow-hidden bg-slate-100",
-  heroWrapperClassName: "relative z-10 flex justify-center px-3 pt-[14%]",
+  heroWrapperClassName: "relative z-10 flex justify-center px-3 pt-[14%] pointer-events-none overflow-hidden",
   heroFrameClassName: PORTRAIT_HERO_FRAME_CLASS,
   gradientHeightClass: "h-[45%]",
   transcriptWrapperClass:
@@ -101,10 +101,10 @@ const HERO_EMBED_PORTRAIT_LAYOUT = {
   frameClassName:
     "relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-slate-100",
   heroWrapperClassName:
-    "relative z-10 flex min-h-0 flex-1 items-center justify-center px-3 pt-11",
+    "relative z-10 flex min-h-0 flex-1 items-center justify-center px-3 pt-11 pointer-events-none overflow-hidden",
   heroFrameClassName: HERO_EMBED_PORTRAIT_FRAME_CLASS,
   gradientHeightClass: "h-[28%]",
-  transcriptWrapperClass: "relative z-30 shrink-0 px-3 pb-2.5",
+  transcriptWrapperClass: "pointer-events-none relative z-30 shrink-0 px-3 pb-2.5",
   transcriptInnerClass: "pointer-events-auto h-[min(22dvh,10rem)] w-full",
   statusOverlayClass:
     "relative z-20 flex shrink-0 flex-col items-center gap-2.5 px-3 pb-2.5 pt-1.5",

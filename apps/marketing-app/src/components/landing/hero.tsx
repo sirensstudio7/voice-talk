@@ -54,7 +54,10 @@ export function HeroSection() {
               </div>
             }
           >
-            <div className="overflow-hidden rounded-xl border border-black/[0.06] bg-white shadow-[0_24px_80px_-24px_rgba(15,23,42,0.18)]">
+            <div
+              className="overflow-hidden rounded-xl border border-black/[0.06] bg-white shadow-[0_24px_80px_-24px_rgba(15,23,42,0.18)]"
+              data-lenis-prevent
+            >
               <HeroVoicePreview />
             </div>
           </ContainerScroll>
