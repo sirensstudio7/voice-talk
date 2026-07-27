@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { LorescaleHero } from "@/components/lorescale-hero";
 import { ExperienceBackground } from "@/components/experience-background";
@@ -211,20 +212,15 @@ export function VoiceExperience() {
     void startTalking();
   };
 
-  const isHeroEmbed = useMemo(
-    () =>
-      typeof window !== "undefined" && isHeroEmbedSearchParam(window.location.search),
-    [],
-  );
-  const effectiveDisplayOrientationSetting = useMemo(
-    () =>
-      typeof window === "undefined"
-        ? displayOrientationSetting
-        : resolveDisplayOrientationSettingForEmbed(
-            displayOrientationSetting,
-            window.location.search,
-          ),
-    [displayOrientationSetting],
+  const searchParams = useSearchParams();
+  const search = useMemo(() => {
+    const query = searchParams.toString();
+    return query ? `?${query}` : "";
+  }, [searchParams]);
+  const isHeroEmbed = isHeroEmbedSearchParam(search);
+  const effectiveDisplayOrientationSetting = resolveDisplayOrientationSettingForEmbed(
+    displayOrientationSetting,
+    search,
   );
   const resolvedDisplayOrientation = useResolvedDisplayOrientation(
     effectiveDisplayOrientationSetting,

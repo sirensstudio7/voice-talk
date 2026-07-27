@@ -9,7 +9,9 @@ import {
 } from "@/lib/display-orientation";
 
 function initialResolvedOrientation(setting: DisplayOrientationSetting): DisplayOrientation {
-  if (setting === "auto") return "landscape";
+  if (setting === "auto") {
+    return isPortraitViewport() ? "portrait" : "landscape";
+  }
   return setting;
 }
 

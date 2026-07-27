@@ -119,7 +119,6 @@ export function getExperienceLayout(
   if (options?.heroEmbed && orientation === "portrait") {
     return {
       isLandscape: false,
-      compactUi: true,
       ...HERO_EMBED_PORTRAIT_LAYOUT,
     };
   }
