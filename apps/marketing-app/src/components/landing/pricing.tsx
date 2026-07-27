@@ -175,7 +175,9 @@ export function PricingSection() {
       <div className="landing-container border-x border-dashed border-white/10">
         <div className="py-20 sm:px-8 sm:py-24 lg:px-10">
           <div className="mx-auto max-w-3xl text-center">
-            <div className="mb-6 text-sm uppercase tracking-wide text-[#737373]">Pricing</div>
+            <div className="mx-auto mb-6 w-fit rounded-full bg-white/10 px-4 py-1 text-xs font-medium uppercase tracking-wider text-white/70">
+              Pricing
+            </div>
             <h2 className="text-[clamp(1.75rem,4vw,2.75rem)] font-semibold leading-[1.15] tracking-tight text-white">
               <span className="block">Choose the plan that</span>
               <span className="block">fits your business.</span>

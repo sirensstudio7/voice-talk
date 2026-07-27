@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/landing/navbar";
+import { AboutUsSection } from "@/components/landing/about-us";
 import { HeroSection } from "@/components/landing/hero";
 import { ProductShowcase } from "@/components/landing/product-showcase";
 import { FeaturesGrid } from "@/components/landing/features";
@@ -14,6 +15,7 @@ export default function LandingPage() {
       <Navbar />
       <main>
         <HeroSection />
+        <AboutUsSection />
         <ProductShowcase />
         <FeaturesGrid />
         <HowItWorks />

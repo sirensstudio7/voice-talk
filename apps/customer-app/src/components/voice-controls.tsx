@@ -88,6 +88,7 @@ interface ExperienceHeaderProps {
   onDisconnect: () => void;
   orderingEnabled?: boolean;
   bookingEnabled?: boolean;
+  compact?: boolean;
 }
 
 const languageOptions = [
@@ -188,6 +189,7 @@ export function ExperienceHeader({
   onDisconnect,
   orderingEnabled = true,
   bookingEnabled = false,
+  compact = false,
 }: ExperienceHeaderProps) {
   const { status, error, assistantName, avatarUrl, avatarCacheBust, conversationPhase } =
     useSessionStore();
@@ -208,24 +210,35 @@ export function ExperienceHeader({
   const liveStatusLabel =
     conversationPhase === "wrapping_up" ? "Ending…" : statusLabel[status];
 
+  const iconButtonClass = compact
+    ? "flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition hover:bg-slate-50"
+    : "flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition hover:bg-slate-50";
+  const headerIconClass = compact ? "h-3.5 w-3.5" : "h-4 w-4";
+
   return (
-    <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-5 pt-5">
-      <button
-        type="button"
-        className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition hover:bg-slate-50"
-        aria-label="Home"
-      >
-        <HomeIcon className="h-4 w-4" />
+    <header
+      className={`absolute inset-x-0 top-0 z-20 flex items-center justify-between ${
+        compact ? "px-3 pt-3" : "px-5 pt-5"
+      }`}
+    >
+      <button type="button" className={iconButtonClass} aria-label="Home">
+        <HomeIcon className={headerIconClass} />
       </button>
 
-      <div className="flex items-center gap-2.5">
+      <div className={`flex items-center ${compact ? "gap-1.5" : "gap-2.5"}`}>
         <div
-          className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-2 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)]"
+          className={`flex items-center rounded-full border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] ${
+            compact ? "gap-1 py-0.5 pl-0.5 pr-1.5" : "gap-1.5 py-1 pl-1 pr-2"
+          }`}
           aria-label={`AI ${
             orderingEnabled ? "Cashier" : bookingEnabled ? "Receptionist" : "Assistant"
           } ${assistantName}, ${liveStatusLabel}`}
         >
-          <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-slate-100">
+          <div
+            className={`relative shrink-0 overflow-hidden rounded-full bg-slate-100 ${
+              compact ? "h-6 w-6" : "h-8 w-8"
+            }`}
+          >
             {assistantAvatarSrc.startsWith("http") ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -254,7 +267,11 @@ export function ExperienceHeader({
               className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-white transition-colors duration-300 ease-out ${statusDot}`}
             />
           </div>
-          <p className="flex items-center gap-0.5 whitespace-nowrap pr-0.5 text-[11px] font-semibold leading-none text-slate-900">
+          <p
+            className={`flex items-center gap-0.5 whitespace-nowrap pr-0.5 font-semibold leading-none text-slate-900 ${
+              compact ? "text-[10px]" : "text-[11px]"
+            }`}
+          >
             {assistantName}
             <span className="font-normal text-slate-400">·</span>
             <span className="font-medium text-slate-600">
@@ -269,10 +286,10 @@ export function ExperienceHeader({
           <button
             type="button"
             onClick={() => setMenuOpen((open) => !open)}
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition hover:bg-slate-50"
+            className={iconButtonClass}
             aria-label="More options"
           >
-            <EllipsisHorizontalIcon className="h-4 w-4" />
+            <EllipsisHorizontalIcon className={headerIconClass} />
           </button>
 
           {menuOpen && (
@@ -318,7 +335,15 @@ interface BottomControlsProps {
   onStop: () => void;
   menuEnabled?: boolean;
   hideMic?: boolean;
+  footerClassName?: string;
+  compact?: boolean;
 }
+
+const DEFAULT_FOOTER_CLASS = "absolute inset-x-0 bottom-0 z-20 px-6 pb-8 pt-16";
+const COMPACT_SIDE_BUTTON_CLASS =
+  "relative z-10 flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] transition hover:bg-slate-50";
+const DEFAULT_SIDE_BUTTON_CLASS =
+  "relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] transition hover:bg-slate-50";
 
 export function BottomControls({
   disabled,
@@ -327,10 +352,22 @@ export function BottomControls({
   onStop,
   menuEnabled = true,
   hideMic = false,
+  footerClassName,
+  compact = false,
 }: BottomControlsProps) {
+  const footerClass = footerClassName ?? DEFAULT_FOOTER_CLASS;
+  const sideButtonClass = compact ? COMPACT_SIDE_BUTTON_CLASS : DEFAULT_SIDE_BUTTON_CLASS;
+  const sideIconClass = compact ? "h-4 w-4" : "h-5 w-5";
+  const controlsGridClass = compact
+    ? "mx-auto grid w-full max-w-lg grid-cols-[1fr_auto_1fr] items-end gap-x-4"
+    : "mx-auto grid w-full max-w-lg grid-cols-[1fr_auto_1fr] items-end gap-x-4 sm:gap-x-6";
+  const sideClusterClass = compact
+    ? "flex items-end justify-end gap-3"
+    : "flex items-end justify-end gap-4 sm:gap-6";
+
   if (hideMic) {
     return (
-      <footer className="absolute inset-x-0 bottom-0 z-20 px-6 pb-8 pt-16">
+      <footer className={footerClass}>
         {menuEnabled ? (
           <div className="absolute bottom-8 right-6 z-10">
             <StoreMenuButton />
@@ -341,21 +378,17 @@ export function BottomControls({
   }
 
   return (
-    <footer className="absolute inset-x-0 bottom-0 z-20 px-6 pb-8 pt-16">
+    <footer className={footerClass}>
       {menuEnabled ? (
         <div className="absolute bottom-8 right-6 z-10">
           <StoreMenuButton />
         </div>
       ) : null}
 
-      <div className="mx-auto grid w-full max-w-lg grid-cols-[1fr_auto_1fr] items-end gap-x-4 sm:gap-x-6">
-        <div className="flex items-end justify-end gap-4 sm:gap-6">
-          <button
-            type="button"
-            className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] transition hover:bg-slate-50"
-            aria-label="Keyboard input"
-          >
-            <CommandLineIcon className="h-5 w-5" />
+      <div className={controlsGridClass}>
+        <div className={sideClusterClass}>
+          <button type="button" className={sideButtonClass} aria-label="Keyboard input">
+            <CommandLineIcon className={sideIconClass} />
           </button>
         </div>
 
@@ -364,15 +397,18 @@ export function BottomControls({
           isTalking={isTalking}
           onStart={onStart}
           onStop={onStop}
+          compact={compact}
         />
 
-        <div className="flex items-end justify-start gap-4 sm:gap-6">
-          <button
-            type="button"
-            className="relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] transition hover:bg-slate-50"
-            aria-label="Share"
-          >
-            <ShareIcon className="h-5 w-5" />
+        <div
+          className={
+            compact
+              ? "flex items-end justify-start gap-3"
+              : "flex items-end justify-start gap-4 sm:gap-6"
+          }
+        >
+          <button type="button" className={sideButtonClass} aria-label="Share">
+            <ShareIcon className={sideIconClass} />
           </button>
         </div>
       </div>
@@ -385,6 +421,7 @@ interface TalkButtonProps {
   isTalking: boolean;
   onStart: () => void;
   onStop: () => void;
+  compact?: boolean;
 }
 
 export function TalkButton({
@@ -392,11 +429,19 @@ export function TalkButton({
   isTalking,
   onStart,
   onStop,
+  compact = false,
 }: TalkButtonProps) {
   const showHoldPulse = !disabled && !isTalking;
+  const shellClass = compact
+    ? "relative inline-flex h-11 w-11 items-center justify-center"
+    : "relative inline-flex h-[4.5rem] w-[4.5rem] items-center justify-center";
+  const buttonClass = compact
+    ? "relative z-10 inline-flex h-11 w-11 items-center justify-center rounded-full text-white transition-opacity"
+    : "relative z-10 inline-flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full text-white transition-opacity";
+  const micIconClass = compact ? "h-5 w-5" : "h-7 w-7";
 
   return (
-    <div className="relative inline-flex h-[4.5rem] w-[4.5rem] items-center justify-center">
+    <div className={shellClass}>
       {showHoldPulse ? (
         <>
           <span className="mic-hold-pulse" aria-hidden />
@@ -418,7 +463,7 @@ export function TalkButton({
           event.preventDefault();
           onStop();
         }}
-        className={`relative z-10 inline-flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full text-white transition-opacity ${
+        className={`${buttonClass} ${
           disabled ? "cursor-not-allowed bg-slate-300 opacity-60" : "hover:opacity-90"
         }`}
         style={
@@ -431,7 +476,7 @@ export function TalkButton({
         }
         aria-label={isTalking ? "Release to stop talking" : "Hold to talk"}
       >
-        <MicrophoneIcon className="h-7 w-7" />
+        <MicrophoneIcon className={micIconClass} />
       </button>
     </div>
   );

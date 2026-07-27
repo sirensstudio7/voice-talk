@@ -17,7 +17,9 @@ import { fetchMenu, menuFetchErrorMessage } from "@/lib/menu-api";
 import {
   DEFAULT_DISPLAY_ORIENTATION_SETTING,
   getExperienceLayout,
+  isHeroEmbedSearchParam,
   normalizeDisplayOrientationSetting,
+  resolveDisplayOrientationSettingForEmbed,
   type DisplayOrientationSetting,
 } from "@/lib/display-orientation";
 import { buildBottomGradient } from "@/lib/gradient-style";
@@ -209,15 +211,33 @@ export function VoiceExperience() {
     void startTalking();
   };
 
-  const resolvedDisplayOrientation = useResolvedDisplayOrientation(displayOrientationSetting);
-  const layout = getExperienceLayout(resolvedDisplayOrientation);
+  const isHeroEmbed = useMemo(
+    () =>
+      typeof window !== "undefined" && isHeroEmbedSearchParam(window.location.search),
+    [],
+  );
+  const effectiveDisplayOrientationSetting = useMemo(
+    () =>
+      typeof window === "undefined"
+        ? displayOrientationSetting
+        : resolveDisplayOrientationSettingForEmbed(
+            displayOrientationSetting,
+            window.location.search,
+          ),
+    [displayOrientationSetting],
+  );
+  const resolvedDisplayOrientation = useResolvedDisplayOrientation(
+    effectiveDisplayOrientationSetting,
+  );
+  const layout = getExperienceLayout(resolvedDisplayOrientation, { heroEmbed: isHeroEmbed });
   const statusOverlayClass = layout.statusOverlayClass;
 
   return (
     <main
       className={layout.shellClassName}
       data-display={resolvedDisplayOrientation}
-      data-display-setting={displayOrientationSetting}
+      data-display-setting={effectiveDisplayOrientationSetting}
+      data-embed={isHeroEmbed ? "hero" : undefined}
     >
       <div className={layout.frameClassName}>
         <ExperienceBackground backgroundUrl={backgroundUrl} />
@@ -253,6 +273,7 @@ export function VoiceExperience() {
           onDisconnect={disconnect}
           orderingEnabled={showOrdering}
           bookingEnabled={showBooking}
+          compact={layout.compactUi}
         />
 
         {showMenu ? <StoreMenuPanelRoot /> : null}
@@ -341,7 +362,9 @@ export function VoiceExperience() {
                   await connect({ requestGreeting: true });
                 })();
               }}
-              className="inline-flex items-center justify-center rounded-full px-6 py-3 text-[15px] font-medium text-white transition-opacity hover:opacity-90"
+              className={`inline-flex items-center justify-center rounded-full font-medium text-white transition-opacity hover:opacity-90 ${
+                layout.compactUi ? "px-5 py-2.5 text-[13px]" : "px-6 py-3 text-[15px]"
+              }`}
               style={{
                 background: "rgb(249, 115, 22)",
                 boxShadow: "rgba(255, 255, 255, 0.35) 0px 2.5px 5px 0px inset",
@@ -364,6 +387,8 @@ export function VoiceExperience() {
             onStart={handleStartTalking}
             onStop={stopTalking}
             menuEnabled={showMenu}
+            footerClassName={layout.bottomControlsClassName ?? undefined}
+            compact={layout.compactUi}
           />
         ) : null}
       </div>

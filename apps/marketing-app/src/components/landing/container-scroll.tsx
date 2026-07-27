@@ -44,8 +44,8 @@ export function ContainerScroll({
     }
     if (isMobile) {
       return {
-        rotate: [14, 0] as [number, number],
-        scale: [1.03, 1] as [number, number],
+        rotate: [0, 0] as [number, number],
+        scale: [1, 1] as [number, number],
         translate: [0, 0] as [number, number],
       };
     }
@@ -62,7 +62,7 @@ export function ContainerScroll({
 
   return (
     <div
-      className="relative flex h-auto min-h-[110svh] flex-col py-6 sm:min-h-[100svh] sm:py-8 md:min-h-0 md:h-[80rem] md:items-center md:justify-center md:p-20"
+      className="relative flex h-auto min-h-0 flex-col py-4 sm:min-h-[100svh] sm:py-8 md:min-h-0 md:h-[80rem] md:items-center md:justify-center md:p-20"
       ref={containerRef}
     >
       <div
@@ -92,7 +92,7 @@ function Header({
       style={{
         translateY: translate,
       }}
-      className="relative z-10 mx-auto mb-6 max-w-5xl text-center sm:mb-8 md:mb-16"
+      className="relative z-10 mx-auto mb-4 max-w-5xl text-center sm:mb-8 md:mb-16"
     >
       {titleComponent}
     </motion.div>
@@ -116,7 +116,7 @@ function Card({
         rotateX: reduceMotion ? 0 : rotate,
         scale: reduceMotion ? 1 : scale,
       }}
-      className="hero-scroll-card relative z-0 mx-auto mt-2 w-full max-w-5xl rounded-2xl border-2 border-[#6C6C6C] bg-[#222222] p-1.5 sm:mt-4 sm:rounded-[24px] sm:border-[3px] sm:p-2 md:mt-8 md:rounded-[30px] md:border-4 md:p-6"
+      className="hero-scroll-card relative z-0 mx-auto mt-4 w-full max-w-5xl rounded-2xl border-2 border-[#6C6C6C] bg-[#222222] p-3 sm:mt-4 sm:rounded-[24px] sm:border-[3px] sm:p-2 md:mt-8 md:rounded-[30px] md:border-4 md:p-6"
     >
       <div className="h-full w-full overflow-hidden rounded-xl bg-gray-100 sm:rounded-2xl md:rounded-2xl md:p-4 dark:bg-zinc-900">
         {children}

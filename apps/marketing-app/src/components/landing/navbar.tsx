@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Bars3Icon, XMarkIcon } from "@heroicons/react/24/outline";
 
 import { GradientCtaButton } from "@/components/landing/gradient-cta-button";
+import { LorescaleLogo } from "@/components/landing/lorescale-logo";
 import { adminLoginUrl, adminSignupUrl } from "@/lib/site-links";
 
 const NAV_LINKS = [
@@ -62,8 +63,9 @@ export function Navbar() {
         className={`landing-container flex flex-col border-x border-dashed border-black/[0.06] max-md:!px-0 max-md:w-full max-md:max-w-none ${mobileMenuOpen ? "h-dvh md:h-auto" : ""}`}
       >
         <div className="flex h-16 w-full items-center justify-between px-4 sm:px-8 lg:px-10">
-          <Link href="/" className="flex items-center gap-2 text-[#181818]">
-            <span className="text-lg font-semibold tracking-tight">Lorescale</span>
+          <Link href="/" className="flex items-center gap-2 text-[#181818]" aria-label="Lorescale">
+            <LorescaleLogo />
+            <span className="text-lg font-semibold tracking-tight">lorescale.</span>
           </Link>
 
           <nav className="hidden items-center gap-8 md:flex">

@@ -7,6 +7,7 @@ import {
 import Link from "next/link";
 
 import { FlickeringGrid } from "@/components/landing/flickering-grid";
+import { LorescaleLogo } from "@/components/landing/lorescale-logo";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { adminLoginUrl, adminSignupUrl, demoUrl } from "@/lib/site-links";
 
@@ -100,11 +101,14 @@ export function Footer() {
       <div className="landing-container">
         <div className="flex flex-col pt-10 pb-4 sm:px-8 lg:px-10 md:flex-row md:items-start md:justify-between md:pt-10 md:pb-4">
         <div className="mx-0 flex max-w-xs flex-col items-start justify-start gap-y-5">
-          <Link href="/" className="flex flex-col items-start gap-1">
+          <Link href="/" className="flex flex-col items-start gap-1" aria-label="Lorescale">
             <p className="text-xs font-medium uppercase tracking-wide text-white/65">
               PT. LORESCALE DIGITAL INDONESIA
             </p>
-            <p className="text-xl font-semibold text-white">Lorescale</p>
+            <div className="flex items-center gap-2">
+              <LorescaleLogo />
+              <span className="text-lg font-semibold tracking-tight text-white">lorescale.</span>
+            </div>
           </Link>
           <p className="font-medium tracking-tight text-white/65">{FOOTER_DESCRIPTION}</p>
           <div className="flex items-center gap-2">

@@ -49,6 +49,6 @@ export const demoSlug = process.env.NEXT_PUBLIC_DEFAULT_BUSINESS_SLUG ?? DEFAULT
 export const heroDemoSlug = process.env.NEXT_PUBLIC_HERO_DEMO_SLUG ?? "lorescale";
 
 export const demoUrl = `${customerAppUrl}/b/${demoSlug}`;
-export const heroDemoUrl = `${customerAppUrl}/b/${heroDemoSlug}`;
+export const heroDemoUrl = `${customerAppUrl}/b/${heroDemoSlug}?embed=hero`;
 export const adminLoginUrl = `${adminAppUrl}/login?fresh=1`;
 export const adminSignupUrl = `${adminAppUrl}/signup`;

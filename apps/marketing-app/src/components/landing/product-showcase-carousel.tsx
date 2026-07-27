@@ -142,9 +142,9 @@ export function ProductShowcaseCarousel() {
               exit={reduceMotion ? undefined : { opacity: 0, y: -12 }}
               transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
             >
-              <p className="text-sm font-semibold uppercase tracking-wide text-orange-500">
+              <div className="w-fit rounded-full bg-[#f1efec] px-4 py-1 text-xs font-medium uppercase tracking-wider text-black">
                 {activeSlide.eyebrow}
-              </p>
+              </div>
               <h3 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
                 {activeSlide.title}
               </h3>

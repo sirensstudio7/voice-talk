@@ -73,7 +73,9 @@ export function IndustrySection() {
       <div className="landing-container border-x border-t border-b border-dashed border-black/[0.06]">
         <div className="py-20 sm:px-8 sm:py-24 lg:px-10">
           <div className="mb-14 max-w-3xl">
-            <div className="mb-6 text-sm uppercase tracking-wide text-[#737373]">Industry</div>
+            <div className="mb-6 w-fit rounded-full bg-[#f1efec] px-4 py-1 text-xs font-medium uppercase tracking-wider text-black">
+              Industry
+            </div>
             <h2 className="text-[clamp(1.75rem,4vw,2.75rem)] font-semibold leading-[1.15] tracking-tight text-[#181818]">
               Solutions Across Every Sector
             </h2>

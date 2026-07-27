@@ -6,9 +6,9 @@ export function ProductShowcase() {
       <div className="landing-container border-x border-dashed border-black/[0.06]">
         <div className="py-20 sm:px-8 sm:py-24 lg:px-10">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="text-sm font-semibold uppercase tracking-wide text-orange-500">
+            <div className="mx-auto w-fit rounded-full bg-[#f1efec] px-4 py-1 text-xs font-medium uppercase tracking-wider text-black">
               Product preview
-            </p>
+            </div>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
               Immersive voice up front
               <br />

@@ -44,6 +44,24 @@ export function resolveDisplayOrientation(
   return setting;
 }
 
+export const HERO_EMBED_QUERY_PARAM = "embed";
+export const HERO_EMBED_QUERY_VALUE = "hero";
+
+export function isHeroEmbedSearchParam(search: string): boolean {
+  return (
+    new URLSearchParams(search).get(HERO_EMBED_QUERY_PARAM) === HERO_EMBED_QUERY_VALUE
+  );
+}
+
+/** Marketing hero iframe: match viewport aspect instead of forcing landscape kiosk layout. */
+export function resolveDisplayOrientationSettingForEmbed(
+  businessSetting: DisplayOrientationSetting,
+  search: string,
+): DisplayOrientationSetting {
+  if (isHeroEmbedSearchParam(search)) return "auto";
+  return businessSetting;
+}
+
 const LANDSCAPE_KIOSK_LAYOUT = {
   shellClassName: "relative h-[100dvh] w-full overflow-hidden bg-slate-100",
   frameClassName: "relative h-full w-full overflow-hidden",
@@ -56,6 +74,7 @@ const LANDSCAPE_KIOSK_LAYOUT = {
     "pointer-events-auto flex max-h-full min-h-0 w-72 max-w-[calc(100vw-3rem)] flex-col",
   statusOverlayClass:
     "absolute inset-x-0 bottom-[9.5rem] z-20 flex flex-col items-center gap-2 px-6",
+  bottomControlsClassName: null as string | null,
 };
 
 const PORTRAIT_STACKED_LAYOUT = {
@@ -70,14 +89,47 @@ const PORTRAIT_STACKED_LAYOUT = {
     "pointer-events-auto h-[min(24dvh,12.5rem)] w-full",
   statusOverlayClass:
     "absolute inset-x-0 bottom-[9.5rem] z-20 flex flex-col items-center gap-2 px-6",
+  bottomControlsClassName: null as string | null,
 };
 
-export function getExperienceLayout(orientation: DisplayOrientation) {
+/** Compact flex stack for the marketing hero iframe — avoids avatar/transcript overlap. */
+const HERO_EMBED_PORTRAIT_FRAME_CLASS =
+  "relative mx-auto aspect-[2/3] h-full max-h-full w-auto max-w-[74%] translate-y-[17%] [mask-image:linear-gradient(to_bottom,black_0%,black_72%,transparent_96%)] [-webkit-mask-image:linear-gradient(to_bottom,black_0%,black_72%,transparent_96%)]";
+
+const HERO_EMBED_PORTRAIT_LAYOUT = {
+  shellClassName: "relative h-[100dvh] w-full overflow-hidden bg-slate-100",
+  frameClassName:
+    "relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-slate-100",
+  heroWrapperClassName:
+    "relative z-10 flex min-h-0 flex-1 items-center justify-center px-3 pt-11",
+  heroFrameClassName: HERO_EMBED_PORTRAIT_FRAME_CLASS,
+  gradientHeightClass: "h-[28%]",
+  transcriptWrapperClass: "relative z-30 shrink-0 px-3 pb-2.5",
+  transcriptInnerClass: "pointer-events-auto h-[min(22dvh,10rem)] w-full",
+  statusOverlayClass:
+    "relative z-20 flex shrink-0 flex-col items-center gap-2.5 px-3 pb-2.5 pt-1.5",
+  bottomControlsClassName: "relative z-20 shrink-0 px-3 pb-4 pt-3",
+  compactUi: true,
+};
+
+export function getExperienceLayout(
+  orientation: DisplayOrientation,
+  options?: { heroEmbed?: boolean },
+) {
+  if (options?.heroEmbed && orientation === "portrait") {
+    return {
+      isLandscape: false,
+      compactUi: true,
+      ...HERO_EMBED_PORTRAIT_LAYOUT,
+    };
+  }
+
   const isLandscape = orientation === "landscape";
   const layout = isLandscape ? LANDSCAPE_KIOSK_LAYOUT : PORTRAIT_STACKED_LAYOUT;
 
   return {
     isLandscape,
+    compactUi: false,
     ...layout,
   };
 }

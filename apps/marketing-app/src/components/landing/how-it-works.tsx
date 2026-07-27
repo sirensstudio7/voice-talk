@@ -97,7 +97,9 @@ export function HowItWorks() {
       <div className="landing-container border-x border-dashed border-black/[0.06]">
         <div className="py-20 sm:px-8 sm:py-24 lg:px-10">
           <div className="mx-auto max-w-4xl text-center">
-            <div className="mb-6 text-sm uppercase tracking-wide text-[#737373]">How it works</div>
+            <div className="mx-auto mb-6 w-fit rounded-full bg-[#f1efec] px-4 py-1 text-xs font-medium uppercase tracking-wider text-black">
+              How it works
+            </div>
             <h2 className="text-[clamp(1.75rem,4vw,2.75rem)] font-semibold leading-[1.15] tracking-tight text-[#181818]">
               <span className="block">Launch Your Voice Store</span>
               <span className="block">In Three Simple Steps</span>
