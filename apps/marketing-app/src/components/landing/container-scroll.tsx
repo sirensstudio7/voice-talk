@@ -44,9 +44,9 @@ export function ContainerScroll({
     }
     if (isMobile) {
       return {
-        rotate: [0, 0] as [number, number],
-        scale: [1, 1] as [number, number],
-        translate: [0, 0] as [number, number],
+        rotate: [18, 0] as [number, number],
+        scale: [1.04, 1] as [number, number],
+        translate: [0, -56] as [number, number],
       };
     }
     return {
@@ -62,7 +62,7 @@ export function ContainerScroll({
 
   return (
     <div
-      className="relative flex h-auto min-h-0 flex-col py-4 sm:min-h-[100svh] sm:py-8 md:min-h-0 md:h-[80rem] md:items-center md:justify-center md:p-20"
+      className="relative flex min-h-[100svh] flex-col py-4 sm:py-8 md:min-h-0 md:h-[80rem] md:items-center md:justify-center md:p-20"
       ref={containerRef}
     >
       <div
