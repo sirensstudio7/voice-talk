@@ -46,11 +46,20 @@ export function resolveDisplayOrientation(
 
 export const HERO_EMBED_QUERY_PARAM = "embed";
 export const HERO_EMBED_QUERY_VALUE = "hero";
+export const HERO_FRAME_QUERY_PARAM = "frame";
 
 export function isHeroEmbedSearchParam(search: string): boolean {
   return (
     new URLSearchParams(search).get(HERO_EMBED_QUERY_PARAM) === HERO_EMBED_QUERY_VALUE
   );
+}
+
+/** Parent marketing iframe passes expected layout so SSR matches the frame aspect ratio. */
+export function resolveHeroEmbedFrameOrientation(search: string): DisplayOrientation | null {
+  const frame = new URLSearchParams(search).get(HERO_FRAME_QUERY_PARAM)?.trim().toLowerCase();
+  if (frame === "portrait") return "portrait";
+  if (frame === "landscape") return "landscape";
+  return null;
 }
 
 /** Marketing hero iframe: match viewport aspect instead of forcing landscape kiosk layout. */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 
 import {
   isPortraitViewport,
@@ -8,16 +8,11 @@ import {
   type DisplayOrientationSetting,
 } from "@/lib/display-orientation";
 
-function initialResolvedOrientation(
-  setting: DisplayOrientationSetting,
-  heroEmbed?: boolean,
-): DisplayOrientation {
+function initialResolvedOrientation(setting: DisplayOrientationSetting): DisplayOrientation {
   if (setting === "auto") {
     if (typeof window !== "undefined") {
       return isPortraitViewport() ? "portrait" : "landscape";
     }
-    // Marketing hero iframe is portrait on mobile; avoid landscape SSR flash/overlap.
-    if (heroEmbed) return "portrait";
     return "landscape";
   }
   return setting;
@@ -25,13 +20,12 @@ function initialResolvedOrientation(
 
 export function useResolvedDisplayOrientation(
   setting: DisplayOrientationSetting,
-  options?: { heroEmbed?: boolean },
 ): DisplayOrientation {
   const [resolved, setResolved] = useState<DisplayOrientation>(() =>
-    initialResolvedOrientation(setting, options?.heroEmbed),
+    initialResolvedOrientation(setting),
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (setting !== "auto") {
       setResolved(setting);
       return;

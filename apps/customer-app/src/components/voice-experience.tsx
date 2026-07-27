@@ -21,6 +21,7 @@ import {
   isHeroEmbedSearchParam,
   normalizeDisplayOrientationSetting,
   resolveDisplayOrientationSettingForEmbed,
+  resolveHeroEmbedFrameOrientation,
   type DisplayOrientationSetting,
 } from "@/lib/display-orientation";
 import { buildBottomGradient } from "@/lib/gradient-style";
@@ -218,14 +219,14 @@ export function VoiceExperience() {
     return query ? `?${query}` : "";
   }, [searchParams]);
   const isHeroEmbed = isHeroEmbedSearchParam(search);
+  const heroEmbedFrameOrientation = isHeroEmbed ? resolveHeroEmbedFrameOrientation(search) : null;
   const effectiveDisplayOrientationSetting = resolveDisplayOrientationSettingForEmbed(
     displayOrientationSetting,
     search,
   );
-  const resolvedDisplayOrientation = useResolvedDisplayOrientation(
-    effectiveDisplayOrientationSetting,
-    { heroEmbed: isHeroEmbed },
-  );
+  const orientationSettingForLayout =
+    heroEmbedFrameOrientation ?? effectiveDisplayOrientationSetting;
+  const resolvedDisplayOrientation = useResolvedDisplayOrientation(orientationSettingForLayout);
   const layout = getExperienceLayout(resolvedDisplayOrientation, { heroEmbed: isHeroEmbed });
   const statusOverlayClass = layout.statusOverlayClass;
 
@@ -233,7 +234,7 @@ export function VoiceExperience() {
     <main
       className={layout.shellClassName}
       data-display={resolvedDisplayOrientation}
-      data-display-setting={effectiveDisplayOrientationSetting}
+      data-display-setting={orientationSettingForLayout}
       data-embed={isHeroEmbed ? "hero" : undefined}
     >
       <div className={layout.frameClassName}>
