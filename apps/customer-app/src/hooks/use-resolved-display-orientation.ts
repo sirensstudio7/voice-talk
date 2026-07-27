@@ -8,18 +8,27 @@ import {
   type DisplayOrientationSetting,
 } from "@/lib/display-orientation";
 
-function initialResolvedOrientation(setting: DisplayOrientationSetting): DisplayOrientation {
+function initialResolvedOrientation(
+  setting: DisplayOrientationSetting,
+  heroEmbed?: boolean,
+): DisplayOrientation {
   if (setting === "auto") {
-    return isPortraitViewport() ? "portrait" : "landscape";
+    if (typeof window !== "undefined") {
+      return isPortraitViewport() ? "portrait" : "landscape";
+    }
+    // Marketing hero iframe is portrait on mobile; avoid landscape SSR flash/overlap.
+    if (heroEmbed) return "portrait";
+    return "landscape";
   }
   return setting;
 }
 
 export function useResolvedDisplayOrientation(
   setting: DisplayOrientationSetting,
+  options?: { heroEmbed?: boolean },
 ): DisplayOrientation {
   const [resolved, setResolved] = useState<DisplayOrientation>(() =>
-    initialResolvedOrientation(setting),
+    initialResolvedOrientation(setting, options?.heroEmbed),
   );
 
   useEffect(() => {

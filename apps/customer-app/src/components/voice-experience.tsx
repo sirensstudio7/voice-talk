@@ -224,6 +224,7 @@ export function VoiceExperience() {
   );
   const resolvedDisplayOrientation = useResolvedDisplayOrientation(
     effectiveDisplayOrientationSetting,
+    { heroEmbed: isHeroEmbed },
   );
   const layout = getExperienceLayout(resolvedDisplayOrientation, { heroEmbed: isHeroEmbed });
   const statusOverlayClass = layout.statusOverlayClass;
