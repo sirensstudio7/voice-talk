@@ -388,7 +388,9 @@ export function releaseKioskSession(hub: BusinessVisionHub): void {
   hub.sessionActive = false;
   hub.sessionActiveSince = 0;
   hub.triggerPendingUntil = 0;
-  // Keep pendingGreetingTrigger so a reconnecting kiosk can still receive the greeting.
+  // Clear pending triggers so an accidental PERSON_CONFIRMED cannot fire minutes later.
+  hub.pendingGreetingTrigger = null;
+  hub.lastConfirmedTrackId = null;
   notifyVisionSources(hub, { type: "vision.session.released" });
   broadcastToKiosks(hub, { type: "vision.session.ended" });
   broadcastVisionConfig(hub);

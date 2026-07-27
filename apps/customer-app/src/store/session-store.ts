@@ -246,6 +246,7 @@ interface SessionStore {
   assistantName: string;
   avatarUrl: string;
   avatarCacheBust: number;
+  forceNewAssistantBubble: boolean;
   setStatus: (status: ConnectionStatus) => void;
   setCheckoutPanelOpen: (open: boolean) => void;
   openCheckoutPanel: () => void;
@@ -261,6 +262,7 @@ interface SessionStore {
   setLanguage: (language: AiLanguage) => void;
   addTranscript: (role: "user" | "assistant", text: string) => void;
   setAssistantDisplayText: (text: string) => void;
+  markAssistantTurnBoundary: () => void;
   setOrder: (order: OrderState, options?: { source?: "server" | "local" }) => void;
   revealPaymentAfterNamePrompt: () => void;
   confirmOrder: () => void;
@@ -320,6 +322,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   assistantName: "Lorescale",
   avatarUrl: "",
   avatarCacheBust: 0,
+  forceNewAssistantBubble: false,
   setStatus: (status) => set({ status }),
   setCheckoutPanelOpen: (open) => set({ checkoutPanelOpen: open }),
   openCheckoutPanel: () => set({ checkoutPanelOpen: true }),
@@ -376,8 +379,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set((state) => {
       const last = state.transcript[state.transcript.length - 1];
       let nextTranscript: TranscriptMessage[];
+      const startNewBubble =
+        state.forceNewAssistantBubble || last?.role !== "assistant";
 
-      if (last?.role === "assistant") {
+      if (!startNewBubble && last?.role === "assistant") {
         if (last.text === text) {
           nextTranscript = state.transcript;
         } else {
@@ -398,8 +403,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
       return {
         transcript: nextTranscript,
+        forceNewAssistantBubble: false,
       };
     }),
+  markAssistantTurnBoundary: () => set({ forceNewAssistantBubble: true }),
   setOrder: (order, options) =>
     set((state) => {
       if (options?.source === "server") {
@@ -518,6 +525,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       error: null,
       transcript: [],
       conversationPhase: "complete",
+      forceNewAssistantBubble: false,
     }),
   clearTranscript: () => set({ transcript: [] }),
   setConversationPhase: (conversationPhase) => set({ conversationPhase }),
@@ -744,6 +752,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       flyAnimations: [],
       paymentCompleteRequest: 0,
       conversationPhase: "active",
+      forceNewAssistantBubble: false,
     }));
   },
 }));

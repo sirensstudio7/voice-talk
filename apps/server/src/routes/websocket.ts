@@ -23,7 +23,7 @@ import {
   resolveIdleTimeoutMs,
   resolveLanguage,
 } from "../services/config-builder.js";
-import { getOrCreateVisionSettings, ensureVisionHub, setKioskSessionActive } from "../services/vision-orchestrator.js";
+import { getOrCreateVisionSettings, ensureVisionHub, setKioskSessionActive, releaseKioskSession, getVisionHub } from "../services/vision-orchestrator.js";
 import { handleClientOrderMessage } from "../services/client-order.js";
 import {
   ACTIVITY_END,
@@ -183,6 +183,7 @@ async function handleSession(
       const silenceMs = visionSettingsCache.silenceTimeoutSeconds * 1000;
       if (visionSilenceStage === "none") {
         idleTimer = setTimeout(() => {
+          if (completionScheduled) return;
           visionSilenceStage = "follow_up";
           audioQueue.push(
             new ClientTextEvent(buildVisionSilenceFollowUpPrompt(resolvedLanguage)),
@@ -194,6 +195,7 @@ async function handleSession(
       if (visionSilenceStage === "follow_up") {
         const goodbyeMs = visionSettingsCache.autoGoodbyeTimeoutSeconds * 1000;
         idleTimer = setTimeout(() => {
+          if (completionScheduled) return;
           visionSilenceStage = "goodbye";
           audioQueue.push(
             new ClientTextEvent(
@@ -221,9 +223,28 @@ async function handleSession(
     if (completionScheduled) return;
     completionScheduled = true;
     clearIdleTimer();
+    visionSilenceStage = "none";
     endReason = reason;
     safeSendJson(socket, { type: "conversation.complete", reason });
-    setTimeout(() => audioQueue.push(SHUTDOWN), CONVERSATION_COMPLETION_GRACE_MS);
+
+    // After goodbye audio grace, free the vision hub if the kiosk never sent released.
+    setTimeout(() => {
+      audioQueue.push(SHUTDOWN);
+      if (!visionMode) return;
+      void (async () => {
+        try {
+          const hub = getVisionHub(slug) ?? (await ensureVisionHub(tenant.id, slug));
+          if (hub.sessionActive) {
+            console.info(
+              `Vision session released after conversation.complete business=${slug} reason=${reason}`,
+            );
+            releaseKioskSession(hub);
+          }
+        } catch (err) {
+          console.warn(`Vision release on conversation.complete failed business=${slug}`, err);
+        }
+      })();
+    }, CONVERSATION_COMPLETION_GRACE_MS);
   };
 
   const resolvedLanguage = resolveLanguage(tenant.aiRules, query.language);
@@ -328,15 +349,18 @@ async function handleSession(
         })();
       } else if (msgType === "session.goodbye") {
         void (async () => {
+          if (completionScheduled) return;
           visionMode = true;
           if (!visionSettingsCache) {
             visionSettingsCache = await getOrCreateVisionSettings(tenant.id);
           }
-          audioQueue.push(
-            new ClientTextEvent(
-              buildVisionGoodbyePrompt(resolvedLanguage, visionSettingsCache!.goodbyeScript),
-            ),
-          );
+          if (!completionScheduled) {
+            audioQueue.push(
+              new ClientTextEvent(
+                buildVisionGoodbyePrompt(resolvedLanguage, visionSettingsCache!.goodbyeScript),
+              ),
+            );
+          }
           completeConversation("vision_goodbye");
         })();
       } else if (

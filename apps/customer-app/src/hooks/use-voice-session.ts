@@ -221,6 +221,7 @@ export function useVoiceSession() {
     setError,
     addTranscript,
     setAssistantDisplayText,
+    markAssistantTurnBoundary,
     setOrder,
     revealPaymentAfterNamePrompt,
     reset,
@@ -279,8 +280,9 @@ export function useVoiceSession() {
 
   const bufferAssistantTranscript = useCallback(
     (incoming: string) => {
-      const lastRole = useSessionStore.getState().transcript.at(-1)?.role;
-      if (lastRole !== "assistant") {
+      const { transcript, forceNewAssistantBubble } = useSessionStore.getState();
+      const lastRole = transcript.at(-1)?.role;
+      if (lastRole !== "assistant" || forceNewAssistantBubble) {
         assistantFullTextRef.current = incoming;
       } else {
         assistantFullTextRef.current = mergeTranscriptChunk(
@@ -734,8 +736,26 @@ export function useVoiceSession() {
 
   const connect = useCallback(async (options?: ConnectOptions) => {
     const requestGreeting = options?.requestGreeting ?? false;
+    const isVisionGreeting = requestGreeting && options?.source === "vision";
     continuousListenRef.current = Boolean(options?.continuousListen);
     prefetchModeRef.current = Boolean(options?.prefetch) && !requestGreeting;
+
+    // Vision greetings always need a fresh voice session — never reuse a socket that
+    // is still OPEN during the post-conversation.complete shutdown grace window.
+    if (isVisionGreeting && wsRef.current) {
+      intentionalDisconnectRef.current = true;
+      connectGenerationRef.current += 1;
+      connectPromiseRef.current = null;
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(JSON.stringify({ type: "session.end" }));
+        } catch {
+          // ignore
+        }
+      }
+      teardownSocket();
+      intentionalDisconnectRef.current = false;
+    }
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       prefetchModeRef.current = false;
@@ -923,6 +943,15 @@ export function useVoiceSession() {
             if (continuousListenRef.current && !visionGreetingPendingRef.current) {
               signalReadyForUserTurn();
             }
+            // Finalize this assistant turn so the next turn starts a new bubble
+            // (prevents stacked goodbye scripts merging into one run-on message).
+            if (assistantFullTextRef.current.trim()) {
+              setAssistantDisplayText(assistantFullTextRef.current.trim());
+            }
+            assistantFullTextRef.current = "";
+            assistantAudioStartedRef.current = false;
+            visionGreetingTextRef.current = false;
+            markAssistantTurnBoundary();
             break;
           case "order.updated":
             if (payload.order) {
@@ -1071,7 +1100,7 @@ export function useVoiceSession() {
     } finally {
       connectPromiseRef.current = null;
     }
-  }, [addTranscript, activateMicAfterVisionGreeting, bufferAssistantTranscript, businessSlug, clearContinuousSilenceTimer, clearTranscript, deferChatReset, dispatchGreeting, ensureContinuousCapture, faqMode, finishVisionGreeting, flushPendingGreeting, markServerSessionReady, reset, resetAssistantSync, resetServerSessionReady, revealPaymentAfterNamePrompt, setAssistantDisplayText, setConversationPhase, setError, setOrder, setStatus, setTalking, signalReadyForUserTurn, startNewConversation, startRevealLoop, teardownContinuousCapture, teardownSocket]);
+  }, [addTranscript, activateMicAfterVisionGreeting, bufferAssistantTranscript, businessSlug, clearContinuousSilenceTimer, clearTranscript, deferChatReset, dispatchGreeting, ensureContinuousCapture, faqMode, finishVisionGreeting, flushPendingGreeting, markAssistantTurnBoundary, markServerSessionReady, reset, resetAssistantSync, resetServerSessionReady, revealPaymentAfterNamePrompt, setAssistantDisplayText, setConversationPhase, setError, setOrder, setStatus, setTalking, signalReadyForUserTurn, startNewConversation, startRevealLoop, teardownContinuousCapture, teardownSocket]);
 
   const reconnectForLanguageChange = useCallback(async () => {
     intentionalDisconnectRef.current = true;

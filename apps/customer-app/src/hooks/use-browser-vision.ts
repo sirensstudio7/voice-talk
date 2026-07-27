@@ -9,12 +9,14 @@ import {
 import { PresenceStateMachine } from "@/lib/browser-vision/state-machine";
 import type { BrowserVisionEventType } from "@/lib/browser-vision/types";
 import type { VisionConfig } from "@/types/kiosk";
+import { useKioskStore } from "@/store/kiosk-store";
 
 const FRAME_INTERVAL_MS = 125; // ~8 FPS
 const AUTO_GRACE_MS = 2000;
 
 type UseBrowserVisionOptions = {
   visionEnabled: boolean;
+  visionConfigSynced: boolean;
   kioskConnected: boolean;
   pythonVisionConnected: boolean;
   visionConfig: VisionConfig;
@@ -26,13 +28,16 @@ type UseBrowserVisionOptions = {
 
 function shouldRunBrowserVision(
   visionEnabled: boolean,
+  visionConfigSynced: boolean,
   kioskConnected: boolean,
   pythonVisionConnected: boolean,
   visionSource: VisionConfig["vision_source"],
   autoGraceElapsed: boolean,
   sessionActive: boolean,
 ): boolean {
-  if (!visionEnabled || !kioskConnected || sessionActive) return false;
+  if (!visionEnabled || !visionConfigSynced || !kioskConnected || sessionActive) {
+    return false;
+  }
   if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
     return false;
   }
@@ -67,6 +72,7 @@ function browserCameraErrorMessage(err: unknown): string {
 
 export function useBrowserVision({
   visionEnabled,
+  visionConfigSynced,
   kioskConnected,
   pythonVisionConnected,
   visionConfig,
@@ -90,9 +96,12 @@ export function useBrowserVision({
   onCameraReadyRef.current = onCameraReady;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const setBrowserVisionReady = useKioskStore((s) => s.setBrowserVisionReady);
 
   const visionConfigRef = useRef(visionConfig);
   visionConfigRef.current = visionConfig;
+  const sendVisionEventRef = useRef(sendVisionEvent);
+  sendVisionEventRef.current = sendVisionEvent;
 
   useEffect(() => {
     if (graceTimerRef.current) {
@@ -100,7 +109,7 @@ export function useBrowserVision({
       graceTimerRef.current = null;
     }
 
-    if (!visionEnabled) {
+    if (!visionEnabled || !visionConfigSynced) {
       setAutoGraceReady(false);
       return;
     }
@@ -134,6 +143,7 @@ export function useBrowserVision({
     };
   }, [
     visionEnabled,
+    visionConfigSynced,
     visionConfig.vision_source,
     pythonVisionConnected,
     kioskConnected,
@@ -149,13 +159,11 @@ export function useBrowserVision({
       }
     };
 
-    const releaseCamera = () => {
+    /** Stop camera tracks for mic handoff; keep MediaPipe detectors warm for session 2. */
+    const pauseCamera = () => {
       stopLoop();
-      gestureRef.current?.close();
-      gestureRef.current = null;
-      presenceRef.current?.close();
-      presenceRef.current = null;
       stateMachineRef.current = null;
+      setBrowserVisionReady(false);
 
       if (streamRef.current) {
         for (const track of streamRef.current.getTracks()) {
@@ -169,12 +177,22 @@ export function useBrowserVision({
       }
     };
 
-    releaseCameraRef.current = releaseCamera;
+    /** Full teardown (page leave / vision disabled). */
+    const destroyDetectors = () => {
+      pauseCamera();
+      gestureRef.current?.close();
+      gestureRef.current = null;
+      presenceRef.current?.close();
+      presenceRef.current = null;
+    };
+
+    releaseCameraRef.current = pauseCamera;
 
     const run = async () => {
       const cfg = visionConfigRef.current;
       const active = shouldRunBrowserVision(
         visionEnabled,
+        visionConfigSynced,
         kioskConnected,
         pythonVisionConnected,
         cfg.vision_source,
@@ -183,8 +201,15 @@ export function useBrowserVision({
       );
 
       if (!active) {
-        releaseCamera();
+        if (sessionActive) {
+          pauseCamera();
+        } else if (!visionEnabled || !visionConfigSynced) {
+          destroyDetectors();
+        } else {
+          pauseCamera();
+        }
         onErrorRef.current(null);
+        setBrowserVisionReady(false);
         return;
       }
 
@@ -241,26 +266,39 @@ export function useBrowserVision({
         video.srcObject = stream;
         await video.play();
 
-        const presence = new BrowserPresenceDetector();
-        await presence.init();
+        if (!presenceRef.current) {
+          const presence = new BrowserPresenceDetector();
+          await presence.init();
+          presenceRef.current = presence;
+        }
+        const presence = presenceRef.current;
         presence.setDetectionDistanceM(cfg.detection_distance_m);
-        presenceRef.current = presence;
 
         const usesHands =
           cfg.greeting_trigger_mode === "gesture" ||
           cfg.greeting_trigger_mode === "raise_hand";
 
-        if (usesHands) {
+        if (usesHands && !gestureRef.current) {
           const gesture = new BrowserGestureDetector();
           await gesture.init();
           gestureRef.current = gesture;
+        } else if (!usesHands && gestureRef.current) {
+          gestureRef.current.close();
+          gestureRef.current = null;
+        }
+
+        if (cancelled || !streamRef.current) {
+          return;
         }
 
         const stateMachine = new PresenceStateMachine(
           cfg.greeting_delay_seconds,
           (event) => {
             if (sessionActiveRef.current) return;
-            sendVisionEvent(event.type as BrowserVisionEventType, event.track_id);
+            sendVisionEventRef.current(
+              event.type as BrowserVisionEventType,
+              event.track_id,
+            );
             if (event.type === "PERSON_CONFIRMED") {
               stateMachine.notifySessionActive();
             }
@@ -270,14 +308,15 @@ export function useBrowserVision({
         stateMachineRef.current = stateMachine;
 
         const tick = () => {
-          if (cancelled || !streamRef.current) return;
+          if (cancelled || !streamRef.current || !presenceRef.current) return;
 
           const currentCfg = visionConfigRef.current;
-          presence.setDetectionDistanceM(currentCfg.detection_distance_m);
+          const presenceDetector = presenceRef.current;
+          presenceDetector.setDetectionDistanceM(currentCfg.detection_distance_m);
           stateMachine.setGreetingDelaySeconds(currentCfg.greeting_delay_seconds);
           stateMachine.setTriggerMode(currentCfg.greeting_trigger_mode);
 
-          let primary = presence.detectPrimary(video);
+          let primary = presenceDetector.detectPrimary(video);
           let waveDetected = false;
           let handRaised = false;
 
@@ -298,14 +337,16 @@ export function useBrowserVision({
           loopTimerRef.current = setTimeout(tick, FRAME_INTERVAL_MS);
         };
 
+        setBrowserVisionReady(true);
         tick();
       } catch (err) {
-        releaseCamera();
+        pauseCamera();
         if (cancelled) return;
         const message = browserCameraErrorMessage(err);
         if (message) {
           onErrorRef.current(message);
         }
+        setBrowserVisionReady(false);
       }
     };
 
@@ -313,10 +354,17 @@ export function useBrowserVision({
 
     return () => {
       cancelled = true;
-      releaseCamera();
+      // On dependency change while still enabled, pause camera but keep detectors.
+      // Full destroy only when vision is turned off or the hook unmounts with vision off.
+      if (!visionEnabled || !visionConfigSynced) {
+        destroyDetectors();
+      } else {
+        pauseCamera();
+      }
     };
   }, [
     visionEnabled,
+    visionConfigSynced,
     kioskConnected,
     pythonVisionConnected,
     visionConfig.vision_source,
@@ -325,17 +373,28 @@ export function useBrowserVision({
     visionConfig.greeting_delay_seconds,
     sessionActive,
     autoGraceReady,
-    sendVisionEvent,
+    setBrowserVisionReady,
   ]);
 
   useEffect(() => {
     if (sessionActive) {
       stateMachineRef.current?.notifySessionActive();
+      setBrowserVisionReady(false);
     } else {
       stateMachineRef.current?.notifySessionEnded();
       gestureRef.current?.reset();
     }
-  }, [sessionActive]);
+  }, [sessionActive, setBrowserVisionReady]);
+
+  useEffect(() => {
+    return () => {
+      gestureRef.current?.close();
+      gestureRef.current = null;
+      presenceRef.current?.close();
+      presenceRef.current = null;
+      setBrowserVisionReady(false);
+    };
+  }, [setBrowserVisionReady]);
 
   const releaseCamera = useCallback(() => {
     releaseCameraRef.current();

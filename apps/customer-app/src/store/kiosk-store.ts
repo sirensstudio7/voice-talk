@@ -35,6 +35,8 @@ interface KioskStore {
   visionConfig: VisionConfig;
   kioskPhase: KioskPhase;
   visionEnabled: boolean;
+  visionConfigSynced: boolean;
+  browserVisionReady: boolean;
   kioskConnected: boolean;
   pythonVisionConnected: boolean;
   browserVisionError: string | null;
@@ -43,12 +45,15 @@ interface KioskStore {
   setKioskConnected: (connected: boolean) => void;
   setPythonVisionConnected: (connected: boolean) => void;
   setBrowserVisionError: (error: string | null) => void;
+  setBrowserVisionReady: (ready: boolean) => void;
 }
 
 export const useKioskStore = create<KioskStore>((set) => ({
   visionConfig: DEFAULT_VISION_CONFIG,
   kioskPhase: "idle",
   visionEnabled: false,
+  visionConfigSynced: false,
+  browserVisionReady: false,
   kioskConnected: false,
   pythonVisionConnected: false,
   browserVisionError: null,
@@ -64,6 +69,7 @@ export const useKioskStore = create<KioskStore>((set) => ({
       return {
         visionConfig: normalizeVisionConfig(config),
         visionEnabled: Boolean(config.camera_trigger_enabled),
+        visionConfigSynced: true,
         kioskPhase: keepPhase ? state.kioskPhase : "idle",
       };
     }),
@@ -71,4 +77,5 @@ export const useKioskStore = create<KioskStore>((set) => ({
   setKioskConnected: (kioskConnected) => set({ kioskConnected }),
   setPythonVisionConnected: (pythonVisionConnected) => set({ pythonVisionConnected }),
   setBrowserVisionError: (browserVisionError) => set({ browserVisionError }),
+  setBrowserVisionReady: (browserVisionReady) => set({ browserVisionReady }),
 }));

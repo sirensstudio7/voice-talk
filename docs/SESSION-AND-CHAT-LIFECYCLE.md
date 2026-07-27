@@ -137,17 +137,32 @@ On `connect()`:
 
 ### Vision kiosk re-arm (camera can trigger again)
 
-The camera sidecar **keeps scanning at all times** — detection is not paused during voice sessions. The server only suppresses duplicate greeting triggers while a session is active.
+Applies to **every business** using the shared customer app — not tenant-specific.
+
+**Browser camera mode:** during a voice session the browser camera is paused (mic handoff). After the conversation ends, the camera restarts; MediaPipe detectors stay warm on the same page for faster session 2+.
+
+**Python sidecar:** keeps scanning at all times — detection is not paused during voice sessions. The server only suppresses duplicate greeting triggers while a session is active.
 
 When a conversation finishes:
 
 1. `conversationPhase` becomes `"complete"`
 2. If a vision session was active → `notifySessionEnded()`
-3. Client sends `kiosk.session.released` to the server (not `kiosk.session.ended`)
-4. Server clears session state **without** post-conversation cooldown
-5. Python resets its presence state machine and continues scanning for the next visitor
+3. Client sends `kiosk.session.released` to the server (not `kiosk.session.ended`); retries on kiosk WS reconnect if the send was dropped
+4. Server clears session state **without** post-conversation cooldown (also clears pending greeting triggers)
+5. On `conversation.complete`, the voice server also releases the vision hub if it is still marked active (fallback)
+6. Detection re-arms for the next visitor
 
 `kiosk.session.ended` (with cooldown) is reserved for explicit end-of-shift flows if needed later. Failed greetings also use `kiosk.session.released`.
+
+### Vision source (browser-camera kiosks)
+
+For any business using the kiosk’s built-in camera, set **Admin → Vision Settings → Vision source = `browser`**. Prefer this over `auto` when a Python vision sidecar may also be connected — otherwise browser raise-hand/gesture events can be ignored while the sidecar still runs on a different trigger mode.
+
+### Vision goodbye vs FAQ closing
+
+- FAQ / AI rules: the model gives one short closing and calls `end_conversation`
+- Vision **goodbye script** (Admin): used for silence timeout and person-lost (`session.goodbye`) only
+- These must not stack: once `conversation.complete` is scheduled, the server skips further silence/goodbye prompt injection
 
 ---
 

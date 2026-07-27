@@ -77,6 +77,7 @@ export function useKioskOrchestrator(
 ) {
   const businessSlug = useBusinessSlug();
   const visionEnabled = useKioskStore((s) => s.visionEnabled);
+  const visionConfigSynced = useKioskStore((s) => s.visionConfigSynced);
   const visionConfig = useKioskStore((s) => s.visionConfig);
   const kioskConnected = useKioskStore((s) => s.kioskConnected);
   const pythonVisionConnected = useKioskStore((s) => s.pythonVisionConnected);
@@ -123,6 +124,7 @@ export function useKioskOrchestrator(
 
   const { releaseCamera: releaseBrowserCamera } = useBrowserVision({
     visionEnabled,
+    visionConfigSynced,
     kioskConnected,
     pythonVisionConnected,
     visionConfig,
@@ -140,10 +142,12 @@ export function useKioskOrchestrator(
   }, []);
 
   const sessionStartedAckPendingRef = useRef(false);
+  const sessionReleasePendingRef = useRef(false);
 
   const sendSessionStartedAck = useCallback(() => {
     hadVisionSessionRef.current = true;
     sessionReleaseSentRef.current = false;
+    sessionReleasePendingRef.current = false;
     sessionActiveRef.current = true;
     setVisionSessionActive(true);
 
@@ -169,6 +173,15 @@ export function useKioskOrchestrator(
     sessionStartedAckPendingRef.current = false;
   }, []);
 
+  const flushPendingSessionRelease = useCallback(() => {
+    if (!sessionReleasePendingRef.current) return;
+    const ws = wsRef.current;
+    if (ws?.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: "kiosk.session.released" }));
+    sessionReleasePendingRef.current = false;
+    sessionReleaseSentRef.current = true;
+  }, []);
+
   const notifySessionEnded = useCallback(() => {
     const shouldSendRelease = !sessionReleaseSentRef.current;
     sessionReleaseSentRef.current = true;
@@ -178,9 +191,16 @@ export function useKioskOrchestrator(
     setVisionSessionActive(false);
     greetingStartedRef.current = false;
     prefetchActiveRef.current = false;
-    if (shouldSendRelease && wsRef.current?.readyState === WebSocket.OPEN) {
-      // released (not ended) — keep camera detection armed without post-session cooldown
-      wsRef.current.send(JSON.stringify({ type: "kiosk.session.released" }));
+    if (shouldSendRelease) {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        // released (not ended) — keep camera detection armed without post-session cooldown
+        wsRef.current.send(JSON.stringify({ type: "kiosk.session.released" }));
+        sessionReleasePendingRef.current = false;
+      } else {
+        // Retry on kiosk WS reconnect so the server does not stay sessionActive.
+        sessionReleasePendingRef.current = true;
+        sessionReleaseSentRef.current = false;
+      }
     }
     setKioskPhase("idle");
   }, [setKioskPhase]);
@@ -322,6 +342,7 @@ export function useKioskOrchestrator(
       ws.onopen = () => {
         if (!active) return;
         setKioskConnected(true);
+        flushPendingSessionRelease();
         flushPendingSessionStartedAck();
       };
 
@@ -441,6 +462,7 @@ export function useKioskOrchestrator(
 
           if (type === "vision.session.ended") {
             sessionReleaseSentRef.current = true;
+            sessionReleasePendingRef.current = false;
             hadVisionSessionRef.current = false;
             sessionActiveRef.current = false;
             sessionStartedAckPendingRef.current = false;
@@ -505,6 +527,7 @@ export function useKioskOrchestrator(
   }, [
     businessSlug,
     clearLostTimer,
+    flushPendingSessionRelease,
     flushPendingSessionStartedAck,
     scheduleLostTimeout,
     setKioskConnected,

@@ -41,8 +41,14 @@ function kioskPhaseToAvatarMode(phase: KioskPhase) {
 
 function visionIdlePrompt(
   mode: GreetingTriggerMode,
-  phase: "waiting" | "ready",
+  phase: "waiting" | "ready" | "loading" | "starting_camera",
 ): string {
+  if (phase === "loading") {
+    return "Loading vision settings…";
+  }
+  if (phase === "starting_camera") {
+    return "Starting camera…";
+  }
   if (mode === "gesture") {
     return phase === "waiting"
       ? "Wave your hand when you're ready…"
@@ -73,8 +79,14 @@ export function VoiceExperience() {
   const kioskPhase = useKioskStore((s) => s.kioskPhase);
   const visionConfig = useKioskStore((s) => s.visionConfig);
   const kioskConnected = useKioskStore((s) => s.kioskConnected);
+  const visionConfigSynced = useKioskStore((s) => s.visionConfigSynced);
+  const browserVisionReady = useKioskStore((s) => s.browserVisionReady);
+  const pythonVisionConnected = useKioskStore((s) => s.pythonVisionConnected);
   const browserVisionError = useKioskStore((s) => s.browserVisionError);
   const greetingTriggerMode = visionConfig.greeting_trigger_mode;
+  const expectBrowserVision =
+    visionConfig.vision_source === "browser" ||
+    (visionConfig.vision_source === "auto" && !pythonVisionConnected);
 
   const voiceSession = useVoiceSession();
   const {
@@ -331,9 +343,13 @@ export function VoiceExperience() {
             <p className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 backdrop-blur">
               {kioskPhase === "waiting"
                 ? visionIdlePrompt(greetingTriggerMode, "waiting")
-                : kioskConnected
-                  ? visionIdlePrompt(greetingTriggerMode, "ready")
-                  : "Connecting to vision hub…"}
+                : !kioskConnected
+                  ? "Connecting to vision hub…"
+                  : !visionConfigSynced
+                    ? visionIdlePrompt(greetingTriggerMode, "loading")
+                    : expectBrowserVision && !browserVisionReady
+                      ? visionIdlePrompt(greetingTriggerMode, "starting_camera")
+                      : visionIdlePrompt(greetingTriggerMode, "ready")}
             </p>
           </div>
         ) : null}
