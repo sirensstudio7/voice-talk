@@ -737,8 +737,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       pendingNamePaymentReveal: false,
       flyAnimations: [],
       paymentCompleteRequest: 0,
-      menuCache: null,
-      menuCacheSlug: null,
       conversationPhase: "active",
     }));
   },
