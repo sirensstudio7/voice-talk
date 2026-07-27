@@ -34,8 +34,8 @@ const FOOD_CHECKOUT_CLOSING_EN =
   "1. After confirm_order, ask loyalty card and any other checkout questions from your knowledge base first — one topic per turn.\n" +
   "2. Always ask for the customer's name last — in its own separate turn, immediately before payment.\n" +
   "3. The name question must be the ONLY sentence/question in that turn. Do not mention loyalty, upsell, phone, or anything else in the same turn.\n" +
-  "4. In that same turn as the standalone name question, call prompt_payment — the Pay your order screen opens immediately.\n" +
-  "5. When the customer answers with their name, call set_customer_name immediately.\n" +
+  "4. In that same turn as the standalone name question, call prompt_payment to prepare checkout.\n" +
+  "5. When the customer answers with their name, call set_customer_name immediately — the Pay your order screen opens then.\n" +
   "Never call prompt_payment before confirm_order.\n" +
   "Never call prompt_payment while still asking loyalty or other checkout questions.\n" +
   "Never ask for the name before loyalty card or other checkout questions.\n" +
@@ -48,8 +48,8 @@ const FOOD_CHECKOUT_CLOSING_ID =
   "1. Setelah confirm_order, tanyakan kartu loyalitas dan pertanyaan checkout lain dari basis pengetahuan dulu — satu topik per turn.\n" +
   "2. Selalu tanyakan nama pelanggan terakhir — di turn terpisah, tepat sebelum pembayaran.\n" +
   "3. Pertanyaan nama harus SATU-SATUNYA kalimat/pertanyaan di turn itu. Jangan sebut loyalitas, upsell, telepon, atau hal lain di turn yang sama.\n" +
-  "4. Di turn yang sama dengan pertanyaan nama standalone, panggil prompt_payment — layar Bayar pesanan Anda terbuka segera.\n" +
-  "5. Saat pelanggan menjawab dengan nama mereka, segera panggil set_customer_name.\n" +
+  "4. Di turn yang sama dengan pertanyaan nama standalone, panggil prompt_payment untuk menyiapkan checkout.\n" +
+  "5. Saat pelanggan menjawab dengan nama mereka, segera panggil set_customer_name — layar Bayar pesanan Anda terbuka saat itu.\n" +
   "Jangan panggil prompt_payment sebelum confirm_order.\n" +
   "Jangan panggil prompt_payment saat masih menanyakan kartu loyalitas atau pertanyaan checkout lain.\n" +
   "Jangan tanyakan nama sebelum kartu loyalitas atau pertanyaan checkout lainnya.\n" +
@@ -270,16 +270,16 @@ export function buildCombinedNameAskCorrectionPrompt(language: string): string {
       "You combined the customer's name with another question in the same turn. " +
       "That is not allowed. In your NEXT turn, ask ONLY for their name — one short question, nothing else. " +
       'Example: "May I have your name?" Do not mention loyalty, upsell, or anything else. ' +
-      "In that same turn, call prompt_payment — the Pay your order screen opens. " +
-      "After they answer, call set_customer_name."
+      "In that same turn, call prompt_payment to prepare checkout. " +
+      "After they answer, call set_customer_name — the Pay your order screen opens then."
     );
   }
   return (
     "Kamu menggabungkan pertanyaan nama dengan pertanyaan lain dalam turn yang sama. " +
     "Itu tidak diperbolehkan. Di turn BERIKUTNYA, tanyakan HANYA nama pelanggan — satu pertanyaan singkat, tidak ada yang lain. " +
     'Contoh: "Boleh tahu nama Anda?" Jangan sebut loyalitas, upsell, atau hal lain. ' +
-    "Di turn yang sama, panggil prompt_payment — layar Bayar pesanan Anda terbuka. " +
-    "Setelah mereka menjawab, panggil set_customer_name."
+    "Di turn yang sama, panggil prompt_payment untuk menyiapkan checkout. " +
+    "Setelah mereka menjawab, panggil set_customer_name — layar Bayar pesanan Anda terbuka saat itu."
   );
 }
 
@@ -344,8 +344,8 @@ export function buildSystemInstruction(
         "1. Ask any checkout extras first (loyalty card, upsell, or other questions from your knowledge base) — one topic per turn.\n" +
         "2. Always ask for the customer's name last — in its own separate turn, immediately before payment.\n" +
         "3. The name question must be the only question in that turn — never combine it with loyalty card, upsell, or any other question.\n" +
-        "4. In that same turn as the standalone name question, call prompt_payment — the Pay your order screen opens immediately.\n" +
-        "5. When the customer answers with their name, call set_customer_name immediately.\n" +
+        "4. In that same turn as the standalone name question, call prompt_payment to prepare checkout.\n" +
+        "5. When the customer answers with their name, call set_customer_name immediately — the Pay your order screen opens then.\n" +
         "Never call prompt_payment before confirm_order or before finishing checkout questions.\n" +
         "Never ask for the name before loyalty card or other checkout questions.\n" +
         "Never bundle the name question with any other question.\n" +
@@ -377,8 +377,8 @@ export function buildSystemInstruction(
       "1. Tanyakan hal checkout lain dulu (kartu loyalitas, upsell, atau pertanyaan dari basis pengetahuan) — satu topik per turn.\n" +
       "2. Selalu tanyakan nama pelanggan terakhir — di turn terpisah, tepat sebelum pembayaran.\n" +
       "3. Pertanyaan nama harus satu-satunya pertanyaan di turn itu — jangan gabungkan dengan kartu loyalitas, upsell, atau pertanyaan lain.\n" +
-      "4. Di turn yang sama dengan pertanyaan nama standalone, panggil prompt_payment — layar Bayar pesanan Anda terbuka segera.\n" +
-      "5. Saat pelanggan menjawab dengan nama mereka, segera panggil set_customer_name.\n" +
+      "4. Di turn yang sama dengan pertanyaan nama standalone, panggil prompt_payment untuk menyiapkan checkout.\n" +
+      "5. Saat pelanggan menjawab dengan nama mereka, segera panggil set_customer_name — layar Bayar pesanan Anda terbuka saat itu.\n" +
       "Jangan panggil prompt_payment sebelum confirm_order atau sebelum selesai menanyakan hal checkout lain.\n" +
       "Jangan tanyakan nama sebelum kartu loyalitas atau pertanyaan checkout lainnya.\n" +
       "Jangan gabungkan pertanyaan nama dengan pertanyaan lain.\n" +

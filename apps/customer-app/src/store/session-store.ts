@@ -467,8 +467,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set((state) => {
       if (state.order.status !== "confirmed") return state;
       if (state.checkoutPhase === "paid") return state;
-      const paymentPatch = tryRevealPaymentModal(state);
-      return paymentPatch ?? state;
+
+      if (state.order.customer_name?.trim()) {
+        const paymentPatch = tryRevealPaymentModal(state);
+        return paymentPatch ?? state;
+      }
+
+      // Standalone name question asked — wait for set_customer_name before opening Pay modal.
+      return { pendingNamePaymentReveal: true };
     }),
   confirmOrder: () =>
     set((state) => {

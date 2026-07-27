@@ -156,7 +156,7 @@ export function buildToolDeclarations(
         {
           name: "set_customer_name",
           description:
-            "Save the customer's name on the order receipt. Call ONLY after confirm_order, after all checkout questions, and after the customer has spoken their name in response to your standalone name question. The payment screen opens automatically after this succeeds.",
+            "Save the customer's name on the order receipt. Call ONLY after confirm_order, after all other checkout questions, after your standalone name question, and after the customer has spoken their name. The Pay your order screen opens automatically when this succeeds.",
           parameters: {
             type: Type.OBJECT,
             properties: {
@@ -168,7 +168,7 @@ export function buildToolDeclarations(
         {
           name: "prompt_payment",
           description:
-            "Open the Pay your order screen. Call in the SAME turn as your standalone name question — after all other checkout questions are done. Never call before confirm_order or while asking loyalty or other checkout questions.",
+            "Prepare the Pay your order screen after your standalone name question. Call in the SAME turn as that name question — after all other checkout questions are done. The screen opens when set_customer_name succeeds. Never call before confirm_order or while asking loyalty or other checkout questions.",
           parameters: { type: Type.OBJECT, properties: {} },
         },
       ],
@@ -231,7 +231,7 @@ export function buildToolMapping(
         return {
           ...result,
           next_step:
-            "Order confirmed. Do NOT call prompt_payment yet. Ask loyalty card and any other checkout questions from your knowledge first — one topic per turn, one question only per turn. Then ask for the customer's name alone as the ONLY question in that turn and call prompt_payment in that same turn — the Pay your order screen opens. Wait for their answer, then call set_customer_name. BAD: \"Punya kartu loyalitas? Boleh tahu nama?\" GOOD: \"Boleh tahu nama Anda?\" + prompt_payment",
+            "Order confirmed. Do NOT call prompt_payment yet. Ask loyalty card and any other checkout questions from your knowledge first — one topic per turn, one question only per turn. Then ask for the customer's name alone as the ONLY question in that turn and call prompt_payment in that same turn to prepare checkout. Wait for their answer, then call set_customer_name — the Pay your order screen opens then. BAD: \"Punya kartu loyalitas? Boleh tahu nama?\" GOOD: \"Boleh tahu nama Anda?\" + prompt_payment, then set_customer_name after they answer.",
         };
       }
       return result;

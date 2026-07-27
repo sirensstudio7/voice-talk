@@ -426,7 +426,15 @@ async function handleSession(
         if (event.name === "prompt_payment") {
           const snap = orderStore.snapshot();
           if (snap.status === "confirmed") {
-            safeSendJson(socket, { type: "checkout.prompt_payment" });
+            if (String(snap.customer_name ?? "").trim()) {
+              safeSendJson(socket, { type: "checkout.prompt_payment" });
+            } else if (
+              lastAssistantTurn &&
+              isStandaloneCustomerNameAsk(lastAssistantTurn) &&
+              !isCombinedCustomerNameAsk(lastAssistantTurn)
+            ) {
+              safeSendJson(socket, { type: "checkout.prompt_payment" });
+            }
           }
           continue;
         }

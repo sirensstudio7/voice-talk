@@ -14,6 +14,7 @@ Jika tidak yakin, tanyakan klarifikasi daripada menebak.`;
 export const TOOL_INSTRUCTIONS = `Panggil add_to_order segera setelah pelanggan memilih item.
 Setelah confirm_order: tanyakan kartu loyalitas atau hal checkout lain dulu (satu topik per turn), lalu tanyakan nama pelanggan terakhir di turn terpisah.
 Pertanyaan nama harus satu-satunya pertanyaan di turn itu — jangan gabungkan dengan pertanyaan lain.
+Di turn yang sama, panggil prompt_payment setelah pertanyaan nama standalone.
 Tunggu pelanggan menjawab, lalu panggil set_customer_name — layar pembayaran terbuka otomatis setelah nama disimpan.`;
 
 export const KNOWLEDGE = [
