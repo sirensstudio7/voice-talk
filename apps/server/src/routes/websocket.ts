@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import {
   getBusinessCapabilities,
+  getVoicePresetGeminiVoice,
   isCombinedCustomerNameAsk,
   isStandaloneCustomerNameAsk,
   mergeTranscriptChunk,
@@ -423,6 +424,7 @@ async function handleSession(
         faqEnabled,
         businessId: tenant.id,
         voiceSessionId,
+        voiceName: getVoicePresetGeminiVoice(tenant.aiRules?.voicePreset),
         onConfirm,
         onSetCustomerName,
       },

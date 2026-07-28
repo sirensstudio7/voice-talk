@@ -1,0 +1,2 @@
+ALTER TABLE ai_rules
+  ADD COLUMN IF NOT EXISTS voice_preset VARCHAR(30) NOT NULL DEFAULT 'natural';

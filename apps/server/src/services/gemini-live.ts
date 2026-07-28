@@ -42,6 +42,8 @@ export interface GeminiLiveOptions {
   faqEnabled?: boolean;
   businessId?: string;
   voiceSessionId?: string;
+  /** Gemini Live prebuilt TTS voice name (e.g. Aoede, Algenib). */
+  voiceName?: string;
   onConfirm?: (order: Record<string, unknown>) => void;
   onSetCustomerName?: (name: string) => void;
   inputSampleRate?: number;
@@ -174,7 +176,9 @@ async function* runSingleSession(
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
-          voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } },
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: options.voiceName?.trim() || "Aoede" },
+          },
         },
         systemInstruction: options.systemInstruction,
         inputAudioTranscription: {},

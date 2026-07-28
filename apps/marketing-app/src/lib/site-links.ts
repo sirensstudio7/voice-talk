@@ -52,3 +52,4 @@ export const demoUrl = `${customerAppUrl}/b/${demoSlug}`;
 export const heroDemoUrl = `${customerAppUrl}/b/${heroDemoSlug}?embed=hero`;
 export const adminLoginUrl = `${adminAppUrl}/login?fresh=1`;
 export const adminSignupUrl = `${adminAppUrl}/signup`;
+export const requestDemoUrl = "/request-demo";

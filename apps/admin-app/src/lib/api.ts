@@ -60,6 +60,7 @@ export type KnowledgeEntry = {
 
 export type AiTone = "friendly" | "professional" | "casual";
 export type AiLanguage = "id" | "en";
+export type VoicePreset = "natural" | "dark_beast" | "deep" | "robot" | "bright";
 
 export type AiRules = {
   id: string;
@@ -71,6 +72,7 @@ export type AiRules = {
   behavioral_rules: string;
   tool_instructions: string;
   idle_timeout_seconds: number;
+  voice_preset: VoicePreset;
 };
 
 export type OrderItem = {
@@ -318,7 +320,14 @@ export async function signup(email: string, password: string, name?: string) {
     const text = await response.text();
     throw new ApiRequestError(parseErrorMessage(text, "Sign up failed"), response.status);
   }
-  return response.json() as Promise<{ access_token: string; user: { id: string; email: string; name: string } }>;
+  return response.json() as Promise<
+    | {
+        status: "pending";
+        message: string;
+        user: { id: string; email: string; name: string };
+      }
+    | { access_token: string; user: { id: string; email: string; name: string } }
+  >;
 }
 
 export type SlugCheckResult =

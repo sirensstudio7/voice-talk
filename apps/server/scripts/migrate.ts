@@ -29,6 +29,13 @@ async function migrate() {
     "014_greeting_trigger_mode.sql",
     "015_raise_hand_trigger_mode.sql",
     "016_vision_source.sql",
+    "017_ai_rules_voice_preset.sql",
+    "018_dark_beast_voice_preset.sql",
+    "019_platform_admin.sql",
+    "020_registration_approval.sql",
+    "021_demo_requests.sql",
+    "022_demo_requests_country.sql",
+    "023_demo_requests_schedule.sql",
   ];
 
   for (const file of migrationFiles) {
@@ -43,6 +50,16 @@ async function migrate() {
             ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT '';
         `);
         console.log(`Applied ${file} (schema only; skipped Supabase storage policies).`);
+        continue;
+      }
+      // Idempotent re-runs: skip known "already applied" / conflicting check constraints
+      // from older migrations when columns already exist.
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? String((err as { code?: string }).code)
+          : "";
+      if (code === "42701" || code === "42P07" || code === "23514") {
+        console.log(`Skipped ${file} (${code}; already applied or conflicting).`);
         continue;
       }
       throw err;

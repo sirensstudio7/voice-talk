@@ -71,7 +71,27 @@ export async function getCurrentUser(request: FastifyRequest): Promise<User> {
   const userId = getAuthUserId(request);
   const user = await getCachedUser(userId);
   if (!user) throw authError("User not found");
+  if (user.status === "suspended") {
+    clearUserCache(userId);
+    throw authError("Account suspended");
+  }
+  if (user.status === "pending") {
+    clearUserCache(userId);
+    const err = new Error("Your account is awaiting admin approval.") as Error & {
+      statusCode: number;
+    };
+    err.statusCode = 403;
+    throw err;
+  }
   return user;
+}
+
+export function clearUserCache(userId?: string): void {
+  if (userId) {
+    userCache.delete(userId);
+    return;
+  }
+  userCache.clear();
 }
 
 function publicErrorDetail(error: unknown): string {

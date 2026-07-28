@@ -20,6 +20,7 @@ import {
   TranscriptMessage,
   emptyOrder,
 } from "@/types/voice";
+import { normalizeVoicePreset, type VoicePreset } from "@voicetalk/shared";
 
 const LANGUAGE_STORAGE_KEY = "voicetalk-language";
 
@@ -246,6 +247,7 @@ interface SessionStore {
   assistantName: string;
   avatarUrl: string;
   avatarCacheBust: number;
+  voicePreset: VoicePreset;
   forceNewAssistantBubble: boolean;
   setStatus: (status: ConnectionStatus) => void;
   setCheckoutPanelOpen: (open: boolean) => void;
@@ -286,6 +288,7 @@ interface SessionStore {
   refreshMenuCache: (slug: string) => Promise<boolean>;
   setAssistantName: (name: string) => void;
   setAvatarUrl: (url: string) => void;
+  setVoicePreset: (preset: VoicePreset | string | null | undefined) => void;
   hydrateLanguageFromStorage: () => void;
   decrementItemFromOrder: (productId: string) => void;
   removeItemFromOrder: (productId: string) => void;
@@ -322,6 +325,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   assistantName: "Lorescale",
   avatarUrl: "",
   avatarCacheBust: 0,
+  voicePreset: "natural",
   forceNewAssistantBubble: false,
   setStatus: (status) => set({ status }),
   setCheckoutPanelOpen: (open) => set({ checkoutPanelOpen: open }),
@@ -651,6 +655,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         menuCache: menu,
         menuCacheSlug: slug,
         menuProductMeta,
+        voicePreset: normalizeVoicePreset(menu.voice_preset),
         orderingEnabled: menu.capabilities?.ordering_enabled ?? true,
         menuEnabled:
           menu.capabilities?.menu_enabled ?? (menu.capabilities?.ordering_enabled ?? true),
@@ -674,6 +679,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set({ assistantName: name.trim() || "Lorescale" }),
   setAvatarUrl: (url) =>
     set({ avatarUrl: url, avatarCacheBust: url ? Date.now() : 0 }),
+  setVoicePreset: (preset) =>
+    set({ voicePreset: normalizeVoicePreset(preset) }),
   hydrateLanguageFromStorage: () => {
     const stored = readStoredLanguage();
     if (stored) {

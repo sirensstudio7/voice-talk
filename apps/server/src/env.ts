@@ -22,6 +22,10 @@ const envSchema = z.object({
   ADMIN_PASSWORD: z.string().default("admin123"),
   LORESCALE_ADMIN_EMAIL: z.string().default("admin@lorescale.com"),
   LORESCALE_ADMIN_PASSWORD: z.string().default("lorescale123"),
+  PLATFORM_ADMIN_EMAIL: z.string().default("superadmin@lorescale.com"),
+  PLATFORM_ADMIN_PASSWORD: z.string().default("superadmin123"),
+  /** Merchant admin app URL used for impersonation redirects. */
+  MERCHANT_ADMIN_URL: z.string().default("http://localhost:6680"),
   SUPABASE_URL: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   /** Comma-separated origins for CORS, e.g. https://app.example.com,https://admin.example.com */

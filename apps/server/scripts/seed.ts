@@ -2,6 +2,7 @@ import { config } from "dotenv";
 import { and, eq } from "drizzle-orm";
 import { resolve } from "node:path";
 import { hashPassword } from "../src/auth/jwt.js";
+import { ensurePlatformAdminSeed } from "../src/auth/platform-auth.js";
 import { db, closeDb } from "../src/db/client.js";
 import {
   aiRules,
@@ -47,6 +48,34 @@ async function ensureUser(email: string, password: string, name: string) {
       .returning();
     console.log(`Created admin user: ${email} / ${password}`);
   }
+  return user!;
+}
+
+async function ensurePendingUser(email: string, password: string, name: string) {
+  let user = await db.query.users.findFirst({ where: eq(users.email, email) });
+  if (!user) {
+    [user] = await db
+      .insert(users)
+      .values({
+        email,
+        passwordHash: await hashPassword(password),
+        name,
+        status: "pending",
+      })
+      .returning();
+    console.log(`Created pending demo user: ${email} / ${password}`);
+    return user!;
+  }
+
+  if (user.status !== "pending") {
+    [user] = await db
+      .update(users)
+      .set({ status: "pending" })
+      .where(eq(users.id, user.id))
+      .returning();
+    console.log(`Updated demo user to pending: ${email}`);
+  }
+
   return user!;
 }
 
@@ -224,6 +253,14 @@ async function seed() {
 
   await removeMembership(sunriseAdmin.id, lorescaleBusiness!.id, "lorescale");
   await ensureMembership(lorescaleAdmin.id, lorescaleBusiness!.id, "lorescale");
+
+  await ensurePlatformAdminSeed();
+
+  await ensurePendingUser(
+    "demo.pending@lorescale.com",
+    "pendingdemo123",
+    "Demo Pending User",
+  );
 
   console.log("Database seed complete.");
   await closeDb();

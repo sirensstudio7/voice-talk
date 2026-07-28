@@ -4,7 +4,6 @@ import { ContainerScroll } from "@/components/landing/container-scroll";
 import { GradientCtaButton } from "@/components/landing/gradient-cta-button";
 import { HeroBrandTicker } from "@/components/landing/hero-brand-ticker";
 import { HeroVoicePreview } from "@/components/landing/hero-voice-preview";
-import { adminLoginUrl } from "@/lib/site-links";
 
 const GRAPH_BG =
   "https://framerusercontent.com/images/moVvtNfD7ggIlDd44uwH5HnZY.svg?width=1262&height=546";
@@ -49,7 +48,7 @@ export function HeroSection() {
                 </p>
 
                 <div className="mt-6 flex flex-col items-center gap-3 sm:mt-10">
-                  <GradientCtaButton href={adminLoginUrl}>Get started</GradientCtaButton>
+                  <GradientCtaButton href="/request-demo">Request demo</GradientCtaButton>
                 </div>
               </div>
             }

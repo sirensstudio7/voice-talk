@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "npm run api:ensure && npm run dev --workspace=customer-app",
     "dev:admin": "npm run api:ensure && npm run dev --workspace=admin-app",
+    "dev:super-admin": "npm run api:ensure && npm run dev --workspace=super-admin-app",
     "dev:marketing": "npm run dev --workspace=marketing-app",
     "dev:api": "bash scripts/dev-api.sh start",
     "api:restart": "bash scripts/dev-api.sh restart",
@@ -16,7 +17,7 @@
     "api:ensure": "bash scripts/dev-api.sh ensure",
     "vision:ensure": "bash scripts/dev-vision.sh ensure",
     "vision:restart": "VISION_DEBUG=1 bash scripts/dev-vision.sh restart",
-    "dev:all": "concurrently \"npm run dev:api\" \"npm run dev\" \"npm run dev:admin\" \"npm run dev:marketing\"",
+    "dev:all": "concurrently \"npm run dev:api\" \"npm run dev\" \"npm run dev:admin\" \"npm run dev:super-admin\" \"npm run dev:marketing\"",
     "seed:db": "npm run db:migrate --workspace=server && npm run seed --workspace=server",
     "seed:demo-analytics": "npm run seed:demo-analytics --workspace=server",
     "seed:demo-analytics:force": "npm run seed:demo-analytics:force --workspace=server",

@@ -6,7 +6,8 @@ Example layout (replace `yourdomain.com` with yours):
 |---|---|---|
 | `api.yourdomain.com` | Render | Fastify (`apps/server`) — REST + WebSocket |
 | `app.yourdomain.com` | Vercel | Customer voice UI (`apps/customer-app`) |
-| `admin.yourdomain.com` | Vercel | Admin dashboard (`apps/admin-app`) |
+| `dashboard.yourdomain.com` | Vercel | Merchant admin (`apps/admin-app`) |
+| `admin.yourdomain.com` | Vercel | Super Admin / platform ops (`apps/super-admin-app`) |
 | `yourdomain.com` | Vercel (optional) | Marketing site (`apps/marketing-app`) |
 
 ```mermaid
@@ -47,7 +48,10 @@ SUPABASE_SERVICE_ROLE_KEY=eyJ...
 GEMINI_API_KEY=...
 JWT_SECRET=<long-random-string>
 GEMINI_MODEL=gemini-3.1-flash-live-preview
-ALLOWED_ORIGINS=https://app.yourdomain.com,https://admin.yourdomain.com,yourdomain.com
+PLATFORM_ADMIN_EMAIL=superadmin@lorescale.com
+PLATFORM_ADMIN_PASSWORD=<strong-password>
+MERCHANT_ADMIN_URL=https://dashboard.yourdomain.com
+ALLOWED_ORIGINS=https://app.yourdomain.com,https://dashboard.yourdomain.com,https://admin.yourdomain.com,yourdomain.com
 ```
 
 Domain-only entries (e.g. `yourdomain.com`) allow any `https://` subdomain. Host-only entries (e.g. `app.yourdomain.com`) match that host exactly.
@@ -91,7 +95,7 @@ app  CNAME  cname.vercel-dns.com
 
 ---
 
-## Step 3 — Deploy admin app on Vercel
+## Step 3 — Deploy merchant admin on Vercel
 
 1. New Vercel project, **Root Directory:** `apps/admin-app`
 2. **Environment variables:**
@@ -101,7 +105,21 @@ NEXT_PUBLIC_API_URL=https://api.yourdomain.com
 NEXT_PUBLIC_CUSTOMER_APP_URL=https://app.yourdomain.com
 ```
 
-3. **Domains** → `admin.yourdomain.com`
+3. **Domains** → `dashboard.yourdomain.com`
+
+---
+
+## Step 3b — Deploy Super Admin on Vercel
+
+1. New Vercel project, **Root Directory:** `apps/super-admin-app`
+2. **Environment variables:**
+
+```env
+NEXT_PUBLIC_API_URL=https://api.yourdomain.com
+```
+
+3. **Domains** → `admin.yourdomain.com` (LORESCALE: `admin.lorescale.com`)
+4. After API deploy + migration `019_platform_admin.sql`, seed creates the first Super Admin from `PLATFORM_ADMIN_EMAIL` / `PLATFORM_ADMIN_PASSWORD`. First login requires TOTP setup.
 
 ---
 
@@ -114,7 +132,7 @@ NEXT_PUBLIC_CUSTOMER_APP_URL=https://app.yourdomain.com
 # Use real URLs only — template placeholders break the landing-page hero iframe.
 # Leave unset to use defaults: voice-talk-customer.vercel.app + app.lorescale.com
 NEXT_PUBLIC_CUSTOMER_APP_URL=https://app.yourdomain.com
-NEXT_PUBLIC_ADMIN_APP_URL=https://admin.yourdomain.com
+NEXT_PUBLIC_ADMIN_APP_URL=https://dashboard.yourdomain.com
 ```
 
 3. Domain: `yourdomain.com` or `www.yourdomain.com`
@@ -128,7 +146,8 @@ NEXT_PUBLIC_ADMIN_APP_URL=https://admin.yourdomain.com
 | API health | `https://api.yourdomain.com/health` |
 | Menu | `https://api.yourdomain.com/menu?business=sunrise-coffee` |
 | Customer voice | `https://app.yourdomain.com/b/sunrise-coffee` |
-| Admin login | `https://admin.yourdomain.com` |
+| Merchant admin | `https://dashboard.yourdomain.com` |
+| Super Admin | `https://admin.yourdomain.com` |
 
 Voice WebSocket must use `wss://` (not `ws://`) on HTTPS sites.
 

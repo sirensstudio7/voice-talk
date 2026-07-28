@@ -19,7 +19,7 @@ export const ASSISTANT_TEMPLATES: AssistantTemplate[] = [
   {
     id: "lorescale-friendly-id",
     label: "Lorescale",
-    description: "Friendly · Bahasa Indonesia",
+    description: "Friendly cashier · Bahasa Indonesia · F&B",
     modelPath: DEFAULT_MODEL_PATH,
     assistant_name: "Lorescale",
     tone: "friendly",
@@ -36,9 +36,30 @@ Pertanyaan nama harus satu-satunya pertanyaan di turn itu — jangan gabungkan d
 Panggil set_customer_name saat mereka menyebutkan nama.`,
   },
   {
+    id: "alya-faq-id",
+    label: "Alya",
+    description: "Customer service · Bahasa Indonesia · FAQ",
+    modelPath: DEFAULT_MODEL_PATH,
+    assistant_name: "Alya",
+    tone: "friendly",
+    language: "id",
+    personality: `Kamu adalah Alya, agen layanan pelanggan AI yang ramah.
+Jawab pertanyaan dengan jelas menggunakan basis pengetahuan bisnis.
+Jangan menerima pesanan makanan/kopi, menawarkan menu, atau mengarang produk.
+Fokus pada layanan, kebijakan, jam operasional, dan informasi organisasi.`,
+    behavioral_rules: `Sapa pelanggan dengan hangat dan profesional.
+Jawab berdasarkan pengetahuan bisnis; jika tidak tahu, akui dan tawarkan bantuan lanjutan.
+Jangan mengarahkan percakapan ke pesanan kopi, makanan, atau checkout kecuali itu memang layanan bisnis ini.
+Akhir percakapan dengan sopan saat pelanggan selesai.`,
+    tool_instructions: `Mode FAQ — jangan menerima pesanan atau memproses pembayaran.
+Jawab pertanyaan dari basis pengetahuan.
+Saat pelanggan tidak ada pertanyaan lagi atau mengucapkan selamat tinggal, berikan penutup singkat lalu panggil end_conversation.
+Jangan mengucapkan tool call secara lisan.`,
+  },
+  {
     id: "alex-professional-en",
     label: "Alex",
-    description: "Professional · English",
+    description: "Professional cashier · English · F&B",
     modelPath: DEFAULT_MODEL_PATH,
     assistant_name: "Alex",
     tone: "professional",
@@ -57,7 +78,7 @@ Call set_customer_name when they give their name.`,
   {
     id: "maya-casual-id",
     label: "Maya",
-    description: "Casual · Bahasa Indonesia",
+    description: "Casual barista · Bahasa Indonesia · F&B",
     modelPath: DEFAULT_MODEL_PATH,
     assistant_name: "Maya",
     tone: "casual",
@@ -83,7 +104,7 @@ export function getAssistantTemplate(id: string): AssistantTemplate | undefined 
 
 export function templateToAiRules(
   template: AssistantTemplate,
-  existing: Pick<AiRules, "id" | "avatar_url" | "idle_timeout_seconds">,
+  existing: Pick<AiRules, "id" | "avatar_url" | "idle_timeout_seconds" | "voice_preset">,
 ): AiRules {
   return {
     id: existing.id,
@@ -95,5 +116,6 @@ export function templateToAiRules(
     behavioral_rules: template.behavioral_rules,
     tool_instructions: template.tool_instructions,
     idle_timeout_seconds: existing.idle_timeout_seconds ?? 30,
+    voice_preset: existing.voice_preset ?? "natural",
   };
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { mergeTranscriptMessages } from "@voicetalk/shared";
+import { mergeTranscriptMessages, normalizeVoicePreset } from "@voicetalk/shared";
 import { and, count, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   businessOut,
@@ -21,6 +21,7 @@ import {
   knowledgeEntries,
   orderItems,
   orders,
+  platformSettings,
   products,
   transcriptMessages,
   users,
@@ -30,6 +31,7 @@ import {
 import { buildSystemInstruction, normalizeIdleTimeoutSeconds } from "../services/config-builder.js";
 import {
   buildOnboardingAiRules,
+  defaultAssistantPersonality,
   isValidSlug,
   slugSuggestions,
   type BusinessType,
@@ -150,6 +152,7 @@ function aiRulesOut(r: typeof aiRules.$inferSelect) {
     behavioral_rules: r.behavioralRules,
     tool_instructions: r.toolInstructions,
     idle_timeout_seconds: r.idleTimeoutSeconds,
+    voice_preset: normalizeVoicePreset(r.voicePreset),
   };
 }
 
@@ -164,6 +167,13 @@ function parseDateFilter(date: string, tzOffset?: number) {
   const start = new Date(day.getTime() + offset * 60 * 1000);
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
   return { start, end };
+}
+
+async function isRegistrationApprovalRequired(): Promise<boolean> {
+  const row = await db.query.platformSettings.findFirst({
+    where: eq(platformSettings.key, "require_registration_approval"),
+  });
+  return ["true", "1", "yes", "on"].includes((row?.value ?? "false").toLowerCase());
 }
 
 type ConversationSessionRow = typeof voiceSessions.$inferSelect;
@@ -211,6 +221,17 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
       return reply.status(401).send({ detail: "Invalid credentials" });
     }
+    if (user.status === "suspended") {
+      return reply.status(403).send({
+        detail: user.lastLoginAt
+          ? "Account suspended"
+          : "Your registration was not approved.",
+      });
+    }
+    if (user.status === "pending") {
+      return reply.status(403).send({ detail: "Your account is awaiting admin approval." });
+    }
+    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
     return {
       access_token: createAccessToken(user.id),
       token_type: "bearer",
@@ -240,14 +261,24 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const name = body.name?.trim() || email.split("@")[0] || "User";
+    const approvalRequired = await isRegistrationApprovalRequired();
     const [user] = await db
       .insert(users)
       .values({
         email,
         passwordHash: await hashPassword(password),
         name,
+        status: approvalRequired ? "pending" : "active",
       })
       .returning();
+
+    if (approvalRequired) {
+      return reply.status(201).send({
+        status: "pending",
+        message: "Your account is awaiting admin approval. You'll be able to sign in once approved.",
+        user: userOut(user!),
+      });
+    }
 
     return reply.status(201).send({
       access_token: createAccessToken(user!.id),
@@ -329,7 +360,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       await db.insert(aiRules).values({
         businessId: business!.id,
         assistantName: "Lorescale",
-        personality: `Kamu adalah kasir AI yang ramah di ${body.name}. Selalu berbicara dalam Bahasa Indonesia.`,
+        personality: defaultAssistantPersonality({
+          businessName: String(body.name ?? business!.name),
+          language: "id",
+          primaryUseCase: "both",
+          businessType: "other",
+          assistantName: "Lorescale",
+        }),
         tone: "friendly",
       });
 
@@ -836,7 +873,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           .values({
             businessId,
             assistantName: "Lorescale",
-            personality: `Kamu adalah kasir AI yang ramah di ${business.name}. Selalu berbicara dalam Bahasa Indonesia.`,
+            personality: defaultAssistantPersonality({
+              businessName: business.name,
+              language: "id",
+              primaryUseCase: business.primaryUseCase,
+              businessType: business.businessType,
+              assistantName: "Lorescale",
+            }),
             tone: "friendly",
           })
           .returning();
@@ -858,7 +901,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           .values({
             businessId,
             assistantName: "Lorescale",
-            personality: `Kamu adalah kasir AI yang ramah di ${business.name}. Selalu berbicara dalam Bahasa Indonesia.`,
+            personality: defaultAssistantPersonality({
+              businessName: business.name,
+              language: "id",
+              primaryUseCase: business.primaryUseCase,
+              businessType: business.businessType,
+              assistantName: "Lorescale",
+            }),
             tone: "friendly",
           })
           .returning();
@@ -873,6 +922,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       if (body.tool_instructions !== undefined) updates.toolInstructions = String(body.tool_instructions);
       if (body.idle_timeout_seconds !== undefined) {
         updates.idleTimeoutSeconds = normalizeIdleTimeoutSeconds(body.idle_timeout_seconds);
+      }
+      if (body.voice_preset !== undefined) {
+        updates.voicePreset = normalizeVoicePreset(body.voice_preset);
       }
 
       const [updated] = await db
@@ -914,7 +966,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           .values({
             businessId,
             assistantName: "Lorescale",
-            personality: `Kamu adalah kasir AI yang ramah di ${business.name}. Selalu berbicara dalam Bahasa Indonesia.`,
+            personality: defaultAssistantPersonality({
+              businessName: business.name,
+              language: "id",
+              primaryUseCase: business.primaryUseCase,
+              businessType: business.businessType,
+              assistantName: "Lorescale",
+            }),
             tone: "friendly",
           })
           .returning();
@@ -1224,7 +1282,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           .values({
             businessId,
             assistantName: "Lorescale",
-            personality: `Kamu adalah kasir AI yang ramah di ${business.name}. Selalu berbicara dalam Bahasa Indonesia.`,
+            personality: defaultAssistantPersonality({
+              businessName: business.name,
+              language: "id",
+              primaryUseCase: business.primaryUseCase,
+              businessType: business.businessType,
+              assistantName: "Lorescale",
+            }),
             tone: "friendly",
           })
           .returning();

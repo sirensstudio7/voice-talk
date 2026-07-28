@@ -1,3 +1,12 @@
+import {
+  connectVoiceEffectChain,
+  getVoicePresetConfig,
+  normalizeVoicePreset,
+  scheduleVoicePresetChunk,
+  type VoicePreset,
+  type VoicePresetConfig,
+} from "@voicetalk/shared";
+
 function downsampleBuffer(
   buffer: Float32Array,
   sampleRate: number,
@@ -45,19 +54,72 @@ export class VoiceAudioEngine {
   private playbackStartTime = 0;
   private totalScheduledDuration = 0;
   private scheduledSources: AudioBufferSourceNode[] = [];
+  private ephemeralNodes: AudioNode[] = [];
   private recording = false;
   private micReady = false;
   private prepareMicrophonePromise: Promise<void> | null = null;
+  private voicePreset: VoicePreset = "natural";
+  private playbackInput: GainNode | null = null;
+  private effectNodes: AudioNode[] = [];
 
   async initialize(): Promise<void> {
     if (!this.audioContext) {
       this.audioContext = new AudioContext();
       await this.audioContext.audioWorklet.addModule("/pcm-processor.js");
+      this.rebuildPlaybackChain();
     }
 
     if (this.audioContext.state === "suspended") {
       await this.audioContext.resume();
     }
+  }
+
+  setVoicePreset(preset: VoicePreset | string | null | undefined): void {
+    const next = normalizeVoicePreset(preset);
+    if (next === this.voicePreset && this.playbackInput) return;
+    this.voicePreset = next;
+    if (this.audioContext) {
+      this.rebuildPlaybackChain();
+    }
+  }
+
+  getVoicePreset(): VoicePreset {
+    return this.voicePreset;
+  }
+
+  private teardownPlaybackChain(): void {
+    for (const node of this.effectNodes) {
+      try {
+        node.disconnect();
+      } catch {
+        // no-op
+      }
+    }
+    this.effectNodes = [];
+    this.playbackInput = null;
+  }
+
+  private rebuildPlaybackChain(): void {
+    if (!this.audioContext) return;
+
+    this.teardownPlaybackChain();
+
+    const config = getVoicePresetConfig(this.voicePreset);
+    const graph = connectVoiceEffectChain(this.audioContext, config);
+    this.playbackInput = graph.input;
+    this.effectNodes = graph.nodes;
+  }
+
+  private ensurePlaybackChain(): GainNode | null {
+    if (!this.audioContext) return null;
+    if (!this.playbackInput) {
+      this.rebuildPlaybackChain();
+    }
+    return this.playbackInput;
+  }
+
+  private getPresetConfig(): VoicePresetConfig {
+    return getVoicePresetConfig(this.voicePreset);
   }
 
   async prepareMicrophone(): Promise<void> {
@@ -154,6 +216,9 @@ export class VoiceAudioEngine {
   }
 
   async playPcmAsync(arrayBuffer: ArrayBuffer, sampleRate = 24000): Promise<void> {
+    if (!this.audioContext) {
+      await this.initialize();
+    }
     if (!this.audioContext) return;
 
     if (this.audioContext.state === "suspended") {
@@ -164,19 +229,16 @@ export class VoiceAudioEngine {
       }
     }
 
+    const playbackInput = this.ensurePlaybackChain();
+    if (!playbackInput) return;
+
     const pcmData = new Int16Array(arrayBuffer);
     const float32Data = new Float32Array(pcmData.length);
     for (let i = 0; i < pcmData.length; i++) {
       float32Data[i] = pcmData[i] / 32768;
     }
 
-    const buffer = this.audioContext.createBuffer(1, float32Data.length, sampleRate);
-    buffer.getChannelData(0).set(float32Data);
-
-    const source = this.audioContext.createBufferSource();
-    source.buffer = buffer;
-    source.connect(this.audioContext.destination);
-
+    const config = this.getPresetConfig();
     const now = this.audioContext.currentTime;
     const wasIdle = this.scheduledSources.length === 0;
     this.nextStartTime = Math.max(now, this.nextStartTime);
@@ -186,14 +248,26 @@ export class VoiceAudioEngine {
       this.totalScheduledDuration = 0;
     }
 
-    source.start(this.nextStartTime);
-    this.nextStartTime += buffer.duration;
-    this.totalScheduledDuration += buffer.duration;
+    const startAt = this.nextStartTime;
+    const scheduled = scheduleVoicePresetChunk(
+      this.audioContext,
+      float32Data,
+      sampleRate,
+      config,
+      playbackInput,
+      startAt,
+    );
 
-    this.scheduledSources.push(source);
-    source.onended = () => {
-      this.scheduledSources = this.scheduledSources.filter((node) => node !== source);
-    };
+    this.ephemeralNodes.push(...scheduled.nodes);
+    for (const source of scheduled.sources) {
+      this.scheduledSources.push(source);
+      source.onended = () => {
+        this.scheduledSources = this.scheduledSources.filter((node) => node !== source);
+      };
+    }
+
+    this.nextStartTime += scheduled.duration;
+    this.totalScheduledDuration += scheduled.duration;
   }
 
   hasActivePlayback(): boolean {
@@ -221,6 +295,14 @@ export class VoiceAudioEngine {
       }
     });
     this.scheduledSources = [];
+    for (const node of this.ephemeralNodes) {
+      try {
+        node.disconnect();
+      } catch {
+        // no-op
+      }
+    }
+    this.ephemeralNodes = [];
     this.totalScheduledDuration = 0;
     this.playbackStartTime = 0;
     if (this.audioContext) {
@@ -231,6 +313,7 @@ export class VoiceAudioEngine {
   dispose(): void {
     this.stopCapture();
     this.stopPlayback();
+    this.teardownPlaybackChain();
     void this.audioContext?.close();
     this.audioContext = null;
   }

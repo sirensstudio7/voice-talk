@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   boolean,
+  date,
   doublePrecision,
   integer,
   pgTable,
@@ -17,7 +18,85 @@ export const users = pgTable("users", {
   email: varchar("email", { length: 255 }).notNull().unique(),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   name: varchar("name", { length: 255 }).notNull().default(""),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  phone: varchar("phone", { length: 50 }).notNull().default(""),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const platformAdmins = pgTable("platform_admins", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  name: varchar("name", { length: 255 }).notNull().default(""),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+  role: varchar("role", { length: 30 }).notNull().default("readonly"),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  totpSecret: varchar("totp_secret", { length: 255 }).notNull().default(""),
+  totpEnabled: boolean("totp_enabled").notNull().default(false),
+  forcePasswordReset: boolean("force_password_reset").notNull().default(false),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const platformSettings = pgTable("platform_settings", {
+  key: varchar("key", { length: 100 }).primaryKey(),
+  value: text("value").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const subscriptions = pgTable("subscriptions", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  businessId: varchar("business_id", { length: 36 })
+    .notNull()
+    .unique()
+    .references(() => businesses.id),
+  planName: varchar("plan_name", { length: 50 }).notNull().default("starter"),
+  billingCycle: varchar("billing_cycle", { length: 20 }).notNull().default("monthly"),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  startDate: timestamp("start_date", { withTimezone: true }),
+  endDate: timestamp("end_date", { withTimezone: true }),
+  notes: text("notes").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const auditLogs = pgTable("audit_logs", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  adminId: varchar("admin_id", { length: 36 })
+    .notNull()
+    .references(() => platformAdmins.id),
+  action: varchar("action", { length: 100 }).notNull(),
+  entityType: varchar("entity_type", { length: 50 }).notNull().default(""),
+  entityId: varchar("entity_id", { length: 36 }).notNull().default(""),
+  metadataJson: text("metadata_json").notNull().default("{}"),
+  ipAddress: varchar("ip_address", { length: 64 }).notNull().default(""),
+  userAgent: text("user_agent").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const demoRequests = pgTable("demo_requests", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  email: varchar("email", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 50 }).notNull(),
+  companyName: varchar("company_name", { length: 255 }).notNull(),
+  city: varchar("city", { length: 120 }).notNull(),
+  country: varchar("country", { length: 120 }).notNull().default(""),
+  businessIndustry: varchar("business_industry", { length: 100 }).notNull(),
+  branchTotal: integer("branch_total").notNull(),
+  preferredDate: date("preferred_date", { mode: "date" }),
+  preferredTime: varchar("preferred_time", { length: 10 }).notNull().default(""),
+  status: varchar("status", { length: 20 }).notNull().default("new"),
+  notes: text("notes").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const businesses = pgTable("businesses", {
@@ -189,6 +268,7 @@ export const aiRules = pgTable("ai_rules", {
   behavioralRules: text("behavioral_rules").notNull().default(""),
   toolInstructions: text("tool_instructions").notNull().default(""),
   idleTimeoutSeconds: integer("idle_timeout_seconds").notNull().default(30),
+  voicePreset: varchar("voice_preset", { length: 30 }).notNull().default("natural"),
 });
 
 export const voiceSessions = pgTable("voice_sessions", {
@@ -245,6 +325,11 @@ export const orderItems = pgTable("order_items", {
 });
 
 export type User = typeof users.$inferSelect;
+export type PlatformAdmin = typeof platformAdmins.$inferSelect;
+export type PlatformSetting = typeof platformSettings.$inferSelect;
+export type Subscription = typeof subscriptions.$inferSelect;
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type DemoRequest = typeof demoRequests.$inferSelect;
 export type Business = typeof businesses.$inferSelect;
 export type Product = typeof products.$inferSelect;
 export type KnowledgeEntry = typeof knowledgeEntries.$inferSelect;

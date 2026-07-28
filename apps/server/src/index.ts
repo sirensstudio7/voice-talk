@@ -10,6 +10,7 @@ import { warmDbConnection } from "./db/health.js";
 import { env, getProductionDomains, hasSupabaseStorage, isAllowedOrigin } from "./env.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerHealthRoutes } from "./routes/health.js";
+import { registerPlatformRoutes } from "./routes/platform.js";
 import { registerPublicRoutes } from "./routes/public.js";
 import { registerWebSocketRoutes } from "./routes/websocket.js";
 import { registerVisionWebSocketRoutes } from "./routes/vision-ws.js";
@@ -47,6 +48,7 @@ if (!hasSupabaseStorage()) {
 await registerHealthRoutes(app);
 await registerPublicRoutes(app);
 await registerAdminRoutes(app);
+await registerPlatformRoutes(app);
 await registerWebSocketRoutes(app);
 await registerVisionWebSocketRoutes(app);
 await initVisionEventBus();

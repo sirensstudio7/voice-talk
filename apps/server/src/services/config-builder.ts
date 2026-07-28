@@ -1,13 +1,23 @@
 import type { AiRules, Business, KnowledgeEntry, Product } from "../db/schema.js";
-import { getBusinessCapabilities } from "@voicetalk/shared";
+import { getBusinessCapabilities, getVoicePresetSpeakingStyle } from "@voicetalk/shared";
 import { effectivePrice } from "./pricing.js";
 
-const LANGUAGE_PRESETS: Record<string, string> = {
+const LANGUAGE_PRESETS_ORDERING: Record<string, string> = {
   id: "Selalu gunakan Bahasa Indonesia saat berbicara dengan pelanggan. Gunakan bahasa yang natural, sopan, dan ramah seperti kasir di Indonesia. Jika pelanggan berbicara dalam bahasa lain, tetap balas dalam Bahasa Indonesia kecuali mereka meminta sebaliknya.",
   en: "Always speak English with customers. Use natural, polite, and friendly language like a real cashier. If the customer speaks another language, still reply in English unless they ask otherwise.",
 };
 
-const TONE_PRESETS: Record<string, Record<string, string>> = {
+const LANGUAGE_PRESETS_FAQ: Record<string, string> = {
+  id: "Selalu gunakan Bahasa Indonesia saat berbicara dengan pelanggan. Gunakan bahasa yang natural, sopan, dan ramah seperti agen layanan pelanggan. Jika pelanggan berbicara dalam bahasa lain, tetap balas dalam Bahasa Indonesia kecuali mereka meminta sebaliknya. Jangan mengarahkan percakapan ke pesanan kopi, makanan, atau menu kecuali itu memang bagian dari layanan bisnis ini.",
+  en: "Always speak English with customers. Use natural, polite, and friendly language like a customer service agent. If the customer speaks another language, still reply in English unless they ask otherwise. Do not steer the conversation toward coffee, food, or menu orders unless that is part of this business.",
+};
+
+const LANGUAGE_PRESETS_BOOKING: Record<string, string> = {
+  id: "Selalu gunakan Bahasa Indonesia saat berbicara dengan pelanggan. Gunakan bahasa yang natural, sopan, dan ramah seperti resepsionis. Jika pelanggan berbicara dalam bahasa lain, tetap balas dalam Bahasa Indonesia kecuali mereka meminta sebaliknya.",
+  en: "Always speak English with customers. Use natural, polite, and friendly language like a receptionist. If the customer speaks another language, still reply in English unless they ask otherwise.",
+};
+
+const TONE_PRESETS_ORDERING: Record<string, Record<string, string>> = {
   id: {
     friendly:
       "Gaya bicara: Ramah dan hangat.\nSapa pelanggan dengan senyum dalam suara — gunakan sapaan yang akrab seperti \"Halo!\" atau \"Selamat datang!\".\nTunjukkan antusiasme saat membantu dan konfirmasi pesanan dengan nada positif.\nTetap ringkas dan jelas, jangan terlalu panjang.",
@@ -26,8 +36,49 @@ const TONE_PRESETS: Record<string, Record<string, string>> = {
   },
 };
 
+const TONE_PRESETS_FAQ: Record<string, Record<string, string>> = {
+  id: {
+    friendly:
+      "Gaya bicara: Ramah dan hangat.\nSapa pelanggan dengan senyum dalam suara — gunakan sapaan seperti \"Halo!\" atau \"Selamat datang!\".\nBantu menjawab pertanyaan dengan jelas. Jangan menawarkan pesanan kopi/makanan atau upsell menu.\nTetap ringkas dan jelas.",
+    professional:
+      "Gaya bicara: Profesional dan sopan.\nGunakan bahasa formal dan terstruktur.\nSapa pelanggan dengan \"Selamat datang\" atau \"Baik, Bapak/Ibu\".\nFokus menjawab pertanyaan layanan, kebijakan, dan informasi bisnis secara langsung.",
+    casual:
+      "Gaya bicara: Santai dan akrab.\nNada ringan, natural, dan tidak kaku — seperti agen CS yang ramah.\nBoleh gunakan ekspresi sehari-hari yang sopan.\nJaga respons singkat; jangan mengarahkan ke pesanan makanan atau kopi.",
+  },
+  en: {
+    friendly:
+      "Speaking style: Warm and friendly.\nGreet customers with \"Hi there!\" or \"Welcome!\".\nAnswer questions clearly. Do not offer coffee/food orders or menu upsells.\nKeep responses concise.",
+    professional:
+      "Speaking style: Professional and polite.\nUse formal, structured language.\nGreet customers with \"Welcome\" or \"Good day\".\nFocus on answering service, policy, and business questions directly.",
+    casual:
+      "Speaking style: Relaxed and approachable.\nTalk like a friendly support agent — light and natural.\nEveryday expressions are fine if polite.\nKeep responses short; do not steer toward food or coffee orders.",
+  },
+};
+
+const TONE_PRESETS_BOOKING: Record<string, Record<string, string>> = {
+  id: {
+    friendly:
+      "Gaya bicara: Ramah dan hangat.\nSapa pelanggan dengan \"Halo!\" atau \"Selamat datang!\".\nBantu memilih layanan dan jadwal dengan nada positif.\nTetap ringkas dan jelas.",
+    professional:
+      "Gaya bicara: Profesional dan sopan.\nGunakan bahasa formal dan terstruktur.\nSapa pelanggan dengan \"Selamat datang\" atau \"Baik, Bapak/Ibu\".\nFokus pada efisiensi booking dan informasi layanan.",
+    casual:
+      "Gaya bicara: Santai dan akrab.\nNada ringan dan natural seperti resepsionis yang ramah.\nJaga respons singkat dan conversational.",
+  },
+  en: {
+    friendly:
+      "Speaking style: Warm and friendly.\nGreet customers with \"Hi there!\" or \"Welcome!\".\nHelp with services and scheduling in a positive tone.\nKeep responses concise.",
+    professional:
+      "Speaking style: Professional and polite.\nUse formal, structured language.\nGreet customers with \"Welcome\" or \"Good day\".\nFocus on efficient booking and service information.",
+    casual:
+      "Speaking style: Relaxed and approachable.\nTalk like a friendly receptionist — light and natural.\nKeep responses short and conversational.",
+  },
+};
+
 const DEFAULT_TONE = "friendly";
 const DEFAULT_LANGUAGE = "id";
+
+/** Kept for resolveLanguage validation of known language codes. */
+const LANGUAGE_PRESETS = LANGUAGE_PRESETS_ORDERING;
 
 const FOOD_CHECKOUT_CLOSING_EN =
   "Checkout closing order (mandatory):\n" +
@@ -95,6 +146,23 @@ export function resolveLanguage(
 export function resolveAssistantName(rules: AiRules | null | undefined): string {
   const name = (rules?.assistantName ?? DEFAULT_ASSISTANT_NAME).trim();
   return name || DEFAULT_ASSISTANT_NAME;
+}
+
+function looksLikeOrderingOrCoffeePersonality(text: string): boolean {
+  const p = text.toLowerCase();
+  return (
+    p.includes("kasir ai") ||
+    p.includes("ai cashier") ||
+    p.includes("toko kopi") ||
+    p.includes("barista") ||
+    p.includes("warung kopi") ||
+    p.includes("coffee shop") ||
+    p.includes("sunrise coffee")
+  );
+}
+
+function looksLikeOrderingToolInstructions(text: string): boolean {
+  return /add_to_order|confirm_order|prompt_payment|remove_from_order/.test(text);
 }
 
 export function buildTranscriptContext(
@@ -300,6 +368,18 @@ export function buildSystemInstruction(
   );
   const orderingEnabled = capabilities.ordering_enabled;
   const bookingEnabled = capabilities.booking_enabled;
+  const faqOnly = !orderingEnabled && !bookingEnabled;
+
+  const languagePresets = bookingEnabled
+    ? LANGUAGE_PRESETS_BOOKING
+    : faqOnly
+      ? LANGUAGE_PRESETS_FAQ
+      : LANGUAGE_PRESETS_ORDERING;
+  const tonePresets = (bookingEnabled
+    ? TONE_PRESETS_BOOKING
+    : faqOnly
+      ? TONE_PRESETS_FAQ
+      : TONE_PRESETS_ORDERING)[language]!;
 
   const defaultPersonality =
     language === "en"
@@ -307,19 +387,29 @@ export function buildSystemInstruction(
         ? `You are ${assistantName}, a friendly AI salon receptionist.`
         : orderingEnabled
           ? `You are ${assistantName}, a friendly AI cashier.`
-          : `You are ${assistantName}, a friendly AI assistant.`
+          : `You are ${assistantName}, a friendly AI customer service agent for ${business.name}. Do not invent a coffee shop or restaurant context.`
       : bookingEnabled
         ? `Kamu adalah ${assistantName}, resepsionis AI salon yang ramah.`
         : orderingEnabled
           ? `Kamu adalah ${assistantName}, kasir AI yang ramah.`
-          : `Kamu adalah ${assistantName}, asisten AI yang ramah.`;
+          : `Kamu adalah ${assistantName}, agen layanan pelanggan AI yang ramah di ${business.name}. Jangan mengarang konteks kafe, kopi, atau restoran.`;
 
-  const personality = rules?.personality ?? defaultPersonality;
+  const personalityRaw = (rules?.personality ?? "").trim();
+  const personality =
+    !personalityRaw
+      ? defaultPersonality
+      : faqOnly && looksLikeOrderingOrCoffeePersonality(personalityRaw)
+        ? defaultPersonality
+        : personalityRaw;
   let tone = (rules?.tone ?? DEFAULT_TONE).trim().toLowerCase();
-  const tonePresets = TONE_PRESETS[language]!;
   if (!(tone in tonePresets)) tone = DEFAULT_TONE;
   const behavioral = rules?.behavioralRules ?? "";
-  const toolInstructions = rules?.toolInstructions ?? "";
+  const toolInstructionsRaw = (rules?.toolInstructions ?? "").trim();
+  const toolInstructions =
+    faqOnly && toolInstructionsRaw && looksLikeOrderingToolInstructions(toolInstructionsRaw)
+      ? ""
+      : toolInstructionsRaw;
+  const voiceSpeakingStyle = getVoicePresetSpeakingStyle(rules?.voicePreset);
 
   const productLines = productList.map(formatProductLine).join("\n");
   const knowledgeLines = knowledge
@@ -402,7 +492,7 @@ export function buildSystemInstruction(
       `Your name is ${assistantName}. Use this name when introducing yourself.`,
       personality.trim(),
       tonePresets[tone]!,
-      `Language:\n${LANGUAGE_PRESETS[language]}`,
+      `Language:\n${languagePresets[language]}`,
       `Store: ${business.name} — ${business.tagline}`,
     );
     if (orderingEnabled || bookingEnabled) {
@@ -426,7 +516,7 @@ export function buildSystemInstruction(
       `Namamu adalah ${assistantName}. Gunakan nama ini saat memperkenalkan diri.`,
       personality.trim(),
       tonePresets[tone]!,
-      `Bahasa:\n${LANGUAGE_PRESETS[language]}`,
+      `Bahasa:\n${languagePresets[language]}`,
       `Toko: ${business.name} — ${business.tagline}`,
     );
     if (orderingEnabled || bookingEnabled) {
@@ -445,6 +535,10 @@ export function buildSystemInstruction(
           : "";
       sections.push(toolsSection + checkoutClosing);
     }
+  }
+
+  if (voiceSpeakingStyle) {
+    sections.push(voiceSpeakingStyle);
   }
 
   return sections.join("\n\n");

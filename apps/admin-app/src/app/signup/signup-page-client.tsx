@@ -33,8 +33,8 @@ export function SignupPageClient() {
     setLoading(true);
     setError(null);
     try {
-      await signup(email, password);
-      router.push("/onboarding/workspace");
+      const outcome = await signup(email, password);
+      router.push(outcome === "pending" ? "/signup/pending" : "/onboarding/workspace");
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "Sign up failed. Please try again.");
     } finally {

@@ -229,7 +229,20 @@ export function useVoiceSession() {
     setConversationPhase,
     clearTranscript,
     startNewConversation,
+    voicePreset,
   } = useSessionStore();
+
+  const ensureAudioEngine = useCallback((): VoiceAudioEngine => {
+    if (!audioRef.current) {
+      audioRef.current = new VoiceAudioEngine();
+    }
+    audioRef.current.setVoicePreset(voicePreset);
+    return audioRef.current;
+  }, [voicePreset]);
+
+  useEffect(() => {
+    audioRef.current?.setVoicePreset(voicePreset);
+  }, [voicePreset]);
 
   const resetAssistantSync = useCallback(() => {
     assistantFullTextRef.current = "";
@@ -503,17 +516,14 @@ export function useVoiceSession() {
   const ensureContinuousCapture = useCallback(async () => {
     if (continuousCaptureRunningRef.current) return;
 
-    if (!audioRef.current) {
-      audioRef.current = new VoiceAudioEngine();
-    }
-
-    await audioRef.current.prepareMicrophone();
-    await audioRef.current.beginRecording(processContinuousChunk);
+    const audio = ensureAudioEngine();
+    await audio.prepareMicrophone();
+    await audio.beginRecording(processContinuousChunk);
     continuousCaptureRunningRef.current = true;
     continuousListenActiveRef.current = true;
     setContinuousListenActive(true);
     setMicPrimed(true);
-  }, [processContinuousChunk]);
+  }, [ensureAudioEngine, processContinuousChunk]);
 
   const startContinuousListening = useCallback(async () => {
     continuousListenRef.current = true;
@@ -661,10 +671,8 @@ export function useVoiceSession() {
       return greetingDispatchedRef.current;
     }
 
-    if (!audioRef.current) {
-      audioRef.current = new VoiceAudioEngine();
-    }
-    await audioRef.current.initialize();
+    const audio = ensureAudioEngine();
+    await audio.initialize();
 
     const serverReady = await waitForServerSessionReady();
     if (!serverReady) {
@@ -675,7 +683,7 @@ export function useVoiceSession() {
 
     // Vision kiosk opens the mic only after the greeting plays.
     if (!visionGreetingPendingRef.current) {
-      void audioRef.current
+      void audio
         .prepareMicrophone()
         .then(() => setMicPrimed(true))
         .catch(() => {
@@ -684,7 +692,7 @@ export function useVoiceSession() {
     }
 
     return dispatched;
-  }, [dispatchGreeting, waitForServerSessionReady]);
+  }, [dispatchGreeting, ensureAudioEngine, waitForServerSessionReady]);
 
   const beginVisionListening = useCallback(async (): Promise<boolean> => {
     continuousListenRef.current = true;
@@ -765,10 +773,7 @@ export function useVoiceSession() {
         pendingGreetingSourceRef.current = options?.source === "vision" ? "vision" : "manual";
         visionGreetingPendingRef.current =
           options?.source === "vision" && Boolean(options?.continuousListen);
-        if (!audioRef.current) {
-          audioRef.current = new VoiceAudioEngine();
-        }
-        await audioRef.current.initialize();
+        await ensureAudioEngine().initialize();
         await flushPendingGreeting();
       }
       return;
@@ -831,11 +836,7 @@ export function useVoiceSession() {
       teardownSocket();
       resetServerSessionReady();
 
-      if (!audioRef.current) {
-        audioRef.current = new VoiceAudioEngine();
-      }
-
-      await audioRef.current.initialize();
+      await ensureAudioEngine().initialize();
 
       if (generation !== connectGenerationRef.current) return;
 
@@ -1100,7 +1101,7 @@ export function useVoiceSession() {
     } finally {
       connectPromiseRef.current = null;
     }
-  }, [addTranscript, activateMicAfterVisionGreeting, bufferAssistantTranscript, businessSlug, clearContinuousSilenceTimer, clearTranscript, deferChatReset, dispatchGreeting, ensureContinuousCapture, faqMode, finishVisionGreeting, flushPendingGreeting, markAssistantTurnBoundary, markServerSessionReady, reset, resetAssistantSync, resetServerSessionReady, revealPaymentAfterNamePrompt, setAssistantDisplayText, setConversationPhase, setError, setOrder, setStatus, setTalking, signalReadyForUserTurn, startNewConversation, startRevealLoop, teardownContinuousCapture, teardownSocket]);
+  }, [addTranscript, activateMicAfterVisionGreeting, bufferAssistantTranscript, businessSlug, clearContinuousSilenceTimer, clearTranscript, deferChatReset, dispatchGreeting, ensureAudioEngine, ensureContinuousCapture, faqMode, finishVisionGreeting, flushPendingGreeting, markAssistantTurnBoundary, markServerSessionReady, reset, resetAssistantSync, resetServerSessionReady, revealPaymentAfterNamePrompt, setAssistantDisplayText, setConversationPhase, setError, setOrder, setStatus, setTalking, signalReadyForUserTurn, startNewConversation, startRevealLoop, teardownContinuousCapture, teardownSocket]);
 
   const reconnectForLanguageChange = useCallback(async () => {
     intentionalDisconnectRef.current = true;
@@ -1199,19 +1200,13 @@ export function useVoiceSession() {
   }, [setTalking]);
 
   const primeAudioOutput = useCallback(async () => {
-    if (!audioRef.current) {
-      audioRef.current = new VoiceAudioEngine();
-    }
-    await audioRef.current.initialize();
-  }, []);
+    await ensureAudioEngine().initialize();
+  }, [ensureAudioEngine]);
 
   const primeMicrophone = useCallback(async () => {
     try {
       setError(null);
-      if (!audioRef.current) {
-        audioRef.current = new VoiceAudioEngine();
-      }
-      await audioRef.current.prepareMicrophone();
+      await ensureAudioEngine().prepareMicrophone();
       setMicPrimed(true);
 
       if (
@@ -1224,7 +1219,7 @@ export function useVoiceSession() {
     } catch (error) {
       setError(micErrorMessage(error));
     }
-  }, [setError, startContinuousListening]);
+  }, [ensureAudioEngine, setError, startContinuousListening]);
 
   const wasAssistantSpeakingRef = useRef(false);
 

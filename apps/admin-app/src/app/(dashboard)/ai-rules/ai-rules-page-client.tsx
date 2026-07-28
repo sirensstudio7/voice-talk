@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ArrowUpTrayIcon,
   CameraIcon,
@@ -16,6 +16,8 @@ import {
   LightBulbIcon,
   PhotoIcon,
   SparklesIcon,
+  SpeakerWaveIcon,
+  StopIcon,
   TrashIcon,
   UserCircleIcon,
   WrenchIcon,
@@ -25,10 +27,15 @@ import { PageHeader } from "@/components/ui";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
 import { AssistantPreviewHero } from "@/components/assistant-preview-hero";
-import { api, type AiLanguage, type AiRules, type AiTone } from "@/lib/api";
+import { api, type AiLanguage, type AiRules, type AiTone, type VoicePreset } from "@/lib/api";
 import { useAssistantTemplate } from "@/lib/assistant-template-context";
 import { templateToAiRules } from "@/lib/assistant-templates";
 import { useAuth } from "@/lib/auth";
+import {
+  playVoicePresetPreview,
+  stopVoicePresetPreview,
+} from "@/lib/voice-preset-preview";
+import { VOICE_PRESET_OPTIONS } from "@voicetalk/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const DEFAULT_ASSISTANT_AVATAR = "/lorescale-cashier-nobg.png";
@@ -105,6 +112,13 @@ const TONE_OPTIONS: { value: AiTone; label: string; description: string }[] = [
   },
 ];
 
+const VOICE_STYLE_OPTIONS: { value: VoicePreset; label: string; description: string }[] =
+  VOICE_PRESET_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.label,
+    description: option.description,
+  }));
+
 const SECTIONS: {
   key: RuleField;
   label: string;
@@ -150,7 +164,8 @@ function rulesEqual(a: AiRules, b: AiRules) {
     a.language === b.language &&
     a.behavioral_rules === b.behavioral_rules &&
     a.tool_instructions === b.tool_instructions &&
-    a.idle_timeout_seconds === b.idle_timeout_seconds
+    a.idle_timeout_seconds === b.idle_timeout_seconds &&
+    a.voice_preset === b.voice_preset
   );
 }
 
@@ -559,6 +574,214 @@ function ToneSelector({
   );
 }
 
+function VoicePresetSelector({
+  value,
+  language,
+  onChange,
+}: {
+  value: VoicePreset;
+  language: AiLanguage;
+  onChange: (preset: VoicePreset) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [previewing, setPreviewing] = useState<VoicePreset | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const selected = VOICE_STYLE_OPTIONS.find((option) => option.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    return () => {
+      stopVoicePresetPreview();
+    };
+  }, []);
+
+  useEffect(() => {
+    stopVoicePresetPreview();
+    setPreviewing(null);
+  }, [language]);
+
+  const handlePreview = async (preset: VoicePreset, event: ReactMouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setPreviewError(null);
+
+    if (previewing === preset) {
+      stopVoicePresetPreview();
+      setPreviewing(null);
+      return;
+    }
+
+    stopVoicePresetPreview();
+    setPreviewing(preset);
+    try {
+      await playVoicePresetPreview(preset, language);
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : "Unable to play voice preview.");
+    } finally {
+      setPreviewing((current) => (current === preset ? null : current));
+    }
+  };
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-500">
+          <SpeakerWaveIcon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p id="ai-voice-style-label" className="text-sm font-semibold text-slate-900">
+            Voice style
+          </p>
+          <p className="mt-0.5 whitespace-pre-line text-xs leading-relaxed text-slate-500">
+            Changes how your assistant sounds to customers. Tap the speaker to preview each style.
+            Applies on the next session.
+          </p>
+        </div>
+      </div>
+
+      <div ref={containerRef} className="relative">
+        <div
+          className={`flex items-stretch gap-2 rounded-xl border bg-white p-1.5 transition-all ${
+            open
+              ? "border-orange-300 ring-2 ring-orange-500/20"
+              : "border-slate-200 hover:border-slate-300"
+          }`}
+        >
+          <button
+            type="button"
+            id="ai-voice-style"
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            aria-labelledby="ai-voice-style-label"
+            onClick={() => setOpen((current) => !current)}
+            className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left hover:bg-slate-50/80"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-slate-900">
+                {selected?.label ?? "Select…"}
+              </p>
+              {selected ? (
+                <p className="mt-0.5 truncate text-xs text-slate-500">{selected.description}</p>
+              ) : null}
+            </div>
+            <ChevronDownIcon
+              className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+            />
+          </button>
+          <button
+            type="button"
+            aria-label={`Preview ${selected?.label ?? "selected"} voice`}
+            onClick={(event) => {
+              void handlePreview(value, event);
+            }}
+            className={`inline-flex h-10 w-10 shrink-0 items-center justify-center self-center rounded-lg border transition-colors ${
+              previewing === value
+                ? "border-orange-300 bg-orange-50 text-orange-600"
+                : "border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+            }`}
+          >
+            {previewing === value ? (
+              <StopIcon className="h-4 w-4" />
+            ) : (
+              <SpeakerWaveIcon className="h-4 w-4" />
+            )}
+          </button>
+        </div>
+
+        {open ? (
+          <ul
+            role="listbox"
+            aria-labelledby="ai-voice-style-label"
+            className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 ring-1 ring-slate-200/80"
+          >
+            {VOICE_STYLE_OPTIONS.map((option) => {
+              const isSelected = option.value === value;
+              const isPreviewing = previewing === option.value;
+              return (
+                <li key={option.value} role="option" aria-selected={isSelected}>
+                  <div
+                    className={`flex w-full items-start gap-2 px-2.5 py-2 transition-colors ${
+                      isSelected ? "bg-orange-50" : "hover:bg-slate-50"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange(option.value);
+                        setOpen(false);
+                      }}
+                      className="min-w-0 flex-1 px-1 py-0.5 text-left"
+                    >
+                      <p
+                        className={`text-sm font-semibold ${isSelected ? "text-orange-700" : "text-slate-900"}`}
+                      >
+                        {option.label}
+                      </p>
+                      <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
+                        {option.description}
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={
+                        isPreviewing ? `Stop ${option.label} preview` : `Preview ${option.label} voice`
+                      }
+                      onClick={(event) => {
+                        void handlePreview(option.value, event);
+                      }}
+                      className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors ${
+                        isPreviewing
+                          ? "border-orange-300 bg-orange-50 text-orange-600"
+                          : "border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-white hover:text-slate-700"
+                      }`}
+                    >
+                      {isPreviewing ? (
+                        <StopIcon className="h-4 w-4" />
+                      ) : (
+                        <SpeakerWaveIcon className="h-4 w-4" />
+                      )}
+                    </button>
+                    {isSelected ? (
+                      <CheckIcon className="mt-2 h-4 w-4 shrink-0 text-orange-500" aria-hidden />
+                    ) : (
+                      <span className="mt-2 h-4 w-4 shrink-0" aria-hidden />
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+      </div>
+
+      {previewError ? (
+        <p className="mt-2 text-xs text-red-600">{previewError}</p>
+      ) : null}
+    </section>
+  );
+}
+
 function IdleTimeoutSelector({
   value,
   onChange,
@@ -737,8 +960,12 @@ export function AiRulesPageClient() {
         api.getAiRules(token, business.id),
         api.getPromptPreview(token, business.id),
       ]);
-      setRules(rulesData);
-      setSavedRules(rulesData);
+      const normalized = {
+        ...rulesData,
+        voice_preset: rulesData.voice_preset ?? ("natural" as const),
+      };
+      setRules(normalized);
+      setSavedRules(normalized);
       setAvatarCacheBust(rulesData.avatar_url ? Date.now() : 0);
       setPreview(previewData.system_instruction);
     } catch (err) {
@@ -792,6 +1019,12 @@ export function AiRulesPageClient() {
   const updateIdleTimeout = (idle_timeout_seconds: number) => {
     if (!rules) return;
     setRules({ ...rules, idle_timeout_seconds });
+    setMessage(null);
+  };
+
+  const updateVoicePreset = (voice_preset: VoicePreset) => {
+    if (!rules) return;
+    setRules({ ...rules, voice_preset });
     setMessage(null);
   };
 
@@ -957,6 +1190,11 @@ export function AiRulesPageClient() {
           <div className="grid gap-4 lg:grid-cols-2">
             <LanguageSelector value={rules.language ?? "id"} onChange={updateLanguage} />
             <ToneSelector value={rules.tone} onChange={updateTone} />
+            <VoicePresetSelector
+              value={rules.voice_preset ?? "natural"}
+              language={rules.language ?? "id"}
+              onChange={updateVoicePreset}
+            />
           </div>
           {faqOnlyMode ? (
             <IdleTimeoutSelector

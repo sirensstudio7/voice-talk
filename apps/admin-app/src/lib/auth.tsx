@@ -22,7 +22,7 @@ type AuthContextValue = {
   authReady: boolean;
   setBusinessId: (id: string) => void;
   login: (email: string, password: string) => Promise<Business[]>;
-  signup: (email: string, password: string, name?: string) => Promise<number>;
+  signup: (email: string, password: string, name?: string) => Promise<"pending" | "active">;
   logout: () => void;
   refreshBusinesses: () => Promise<Business[]>;
 };
@@ -44,6 +44,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const businessesRequestRef = useRef<Promise<Business[]> | null>(null);
 
   useEffect(() => {
+    // Platform super-admin impersonation handoff via URL hash
+    if (typeof window !== "undefined" && window.location.hash.includes("platform_impersonate=")) {
+      const hash = new URLSearchParams(window.location.hash.slice(1));
+      const impersonateToken = hash.get("platform_impersonate");
+      const businessId = hash.get("business");
+      if (impersonateToken) {
+        localStorage.setItem(TOKEN_KEY, impersonateToken);
+        if (businessId) localStorage.setItem(BUSINESS_KEY, businessId);
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        setToken(impersonateToken);
+        setBusinessIdState(businessId);
+        setUser({ id: "impersonated", email: "", name: "Impersonating…" });
+        localStorage.setItem(
+          USER_KEY,
+          JSON.stringify({ id: "impersonated", email: "", name: "Impersonating…" }),
+        );
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+        void fetch(`${apiUrl}/admin/auth/me`, {
+          headers: { Authorization: `Bearer ${impersonateToken}` },
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((me) => {
+            if (!me) return;
+            const nextUser = { id: me.id as string, email: me.email as string, name: `[Impersonating] ${me.name}` };
+            localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+            setUser(nextUser);
+          })
+          .catch(() => undefined);
+        setHydrated(true);
+        return;
+      }
+    }
+
     const savedToken = localStorage.getItem(TOKEN_KEY);
     const savedUser = localStorage.getItem(USER_KEY);
     const savedBusiness = localStorage.getItem(BUSINESS_KEY);
@@ -149,13 +182,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (email: string, password: string, name?: string) => {
     const result = await apiSignup(email, password, name);
+    if ("status" in result && result.status === "pending") {
+      return "pending";
+    }
     persistSession(result.access_token, result.user);
     setBusinesses([]);
     setBusinessIdState(null);
     localStorage.removeItem(BUSINESS_KEY);
     setBusinessesError(null);
     setBusinessesLoading(false);
-    return 0;
+    return "active";
   };
 
   const logout = () => {

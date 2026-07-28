@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
-import { getBusinessCapabilities } from "@voicetalk/shared";
+import { getBusinessCapabilities, normalizeVoicePreset } from "@voicetalk/shared";
 import { db } from "../db/client.js";
-import { orderItems } from "../db/schema.js";
+import { demoRequests, orderItems } from "../db/schema.js";
 import { env } from "../env.js";
 import { getOrCreateVisionSettings } from "../services/vision-orchestrator.js";
 import { visionSettingsOut } from "../services/vision-settings.js";
@@ -117,6 +117,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       background_url: tenant.backgroundUrl || "",
       gradient_color: tenant.gradientColor || "",
       display_orientation: tenant.displayOrientation || "landscape",
+      voice_preset: normalizeVoicePreset(tenant.aiRules?.voicePreset),
       capabilities,
       vision: visionSettingsOut(vision),
       products: productList.map((p) => ({
@@ -189,5 +190,93 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
         detail: error instanceof Error ? error.message : "Could not create appointment.",
       });
     }
+  });
+
+  app.post("/public/demo-requests", async (request, reply) => {
+    const body = request.body as {
+      email?: string;
+      phone?: string;
+      company_name?: string;
+      city?: string;
+      country?: string;
+      business_industry?: string;
+      branch_total?: number | string;
+      preferred_date?: string;
+      preferred_time?: string;
+    };
+
+    const email = body.email?.toLowerCase().trim() ?? "";
+    const phone = body.phone?.trim() ?? "";
+    const companyName = body.company_name?.trim() ?? "";
+    const city = body.city?.trim() ?? "";
+    const country = body.country?.trim() ?? "";
+    const businessIndustry = body.business_industry?.trim() ?? "";
+    const branchTotal = Number(body.branch_total);
+    const preferredDateRaw = body.preferred_date?.trim() ?? "";
+    const preferredTime = body.preferred_time?.trim() ?? "";
+
+    if (
+      !email ||
+      !phone ||
+      !companyName ||
+      !city ||
+      !country ||
+      !businessIndustry ||
+      !preferredDateRaw ||
+      !preferredTime
+    ) {
+      return reply.status(400).send({ detail: "All fields are required." });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return reply.status(400).send({ detail: "Enter a valid email address." });
+    }
+    if (phone.length < 6 || phone.length > 40) {
+      return reply.status(400).send({ detail: "Enter a valid phone number." });
+    }
+    if (!Number.isInteger(branchTotal) || branchTotal < 1) {
+      return reply.status(400).send({ detail: "Branch total must be a whole number of at least 1." });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(preferredDateRaw)) {
+      return reply.status(400).send({ detail: "Enter a valid preferred date." });
+    }
+    const preferredDate = new Date(`${preferredDateRaw}T12:00:00.000Z`);
+    if (Number.isNaN(preferredDate.getTime())) {
+      return reply.status(400).send({ detail: "Enter a valid preferred date." });
+    }
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (preferredDateRaw < todayStr) {
+      return reply.status(400).send({ detail: "Preferred date must be today or later." });
+    }
+    if (!/^\d{2}:\d{2}$/.test(preferredTime)) {
+      return reply.status(400).send({ detail: "Enter a valid preferred time." });
+    }
+    if (
+      companyName.length > 255 ||
+      city.length > 120 ||
+      country.length > 120 ||
+      businessIndustry.length > 100 ||
+      email.length > 255 ||
+      preferredTime.length > 10
+    ) {
+      return reply.status(400).send({ detail: "One or more fields are too long." });
+    }
+
+    const [created] = await db
+      .insert(demoRequests)
+      .values({
+        email,
+        phone,
+        companyName,
+        city,
+        country,
+        businessIndustry,
+        branchTotal,
+        preferredDate,
+        preferredTime,
+        status: "new",
+      })
+      .returning({ id: demoRequests.id, status: demoRequests.status });
+
+    return reply.status(201).send({ id: created!.id, status: created!.status });
   });
 }

@@ -34,6 +34,7 @@ export interface MenuResponse {
   background_url?: string;
   gradient_color?: string;
   display_orientation?: string;
+  voice_preset?: string;
   capabilities?: BusinessCapabilities;
   vision?: VisionConfig;
   products: MenuProduct[];
