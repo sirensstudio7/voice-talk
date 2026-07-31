@@ -7,6 +7,7 @@ import {
 } from "@heroicons/react/24/outline";
 
 import { DailyOrdersChart, TopProductsPanel } from "@/components/stats-charts";
+import { SubscriptionBanner } from "@/components/subscription-banner";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -95,6 +96,8 @@ export function OverviewPageClient() {
         title="Overview"
         subtitle={business ? `Managing ${business.name}` : "Select a business"}
       />
+
+      <SubscriptionBanner />
 
       {showEmptyState && business ? (
         <Card>

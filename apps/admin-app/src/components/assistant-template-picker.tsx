@@ -16,7 +16,7 @@ export function AssistantTemplatePicker() {
       <div className="mb-3">
         <p className="text-sm font-semibold text-slate-900">Start from a template</p>
         <p className="mt-0.5 text-xs text-slate-500">
-          Choose a preset to preview the avatar and personality, then apply it to your rules.
+          Choose a 3D template to preview the avatar and personality, then apply it to your rules.
         </p>
       </div>
       <ul

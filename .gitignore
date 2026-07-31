@@ -1,6 +1,8 @@
 .env
 .env.local
 .env.*.local
+.env.local.bak
+.cursor/
 node_modules/
 __pycache__/
 *.pyc
@@ -17,3 +19,4 @@ dist/
 .vision.pid
 .vision.slug
 apps/server/uploads/
+.vercel

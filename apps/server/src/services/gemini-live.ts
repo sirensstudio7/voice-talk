@@ -46,6 +46,8 @@ export interface GeminiLiveOptions {
   voiceName?: string;
   onConfirm?: (order: Record<string, unknown>) => void;
   onSetCustomerName?: (name: string) => void;
+  onPhotoConsent?: (consent: "yes" | "no") => void;
+  photoMomentEnabled?: boolean;
   inputSampleRate?: number;
 }
 
@@ -69,7 +71,9 @@ export async function* startGeminiSession(
       : buildToolMapping(options.orderStore, options.products, {
           onConfirm: options.onConfirm,
           onSetCustomerName: options.onSetCustomerName,
+          onPhotoConsent: options.onPhotoConsent,
           orderingEnabled: options.orderingEnabled ?? true,
+          photoMomentEnabled: options.photoMomentEnabled ?? false,
         });
 
   let reconnects = 0;
@@ -149,10 +153,10 @@ async function* runSingleSession(
         } else if (chunk === AUDIO_STREAM_END) {
           await liveSession.sendRealtimeInput({ audioStreamEnd: true });
         } else if (chunk instanceof ClientTextEvent) {
-          await liveSession.sendClientContent({
-            turns: [{ role: "user", parts: [{ text: chunk.text }] }],
-            turnComplete: true,
-          });
+          // gemini-3.1-flash-live-preview: sendClientContent is only for seeding
+          // history and often returns transcript with no PCM. Realtime text
+          // keeps native audio responses working for greetings + typed input.
+          await liveSession.sendRealtimeInput({ text: chunk.text });
         } else if (chunk instanceof Buffer || chunk instanceof Uint8Array) {
           if (chunk.length > 0) {
             await liveSession.sendRealtimeInput({
@@ -187,11 +191,17 @@ async function* runSingleSession(
           orderingEnabled: options.orderingEnabled ?? true,
           bookingEnabled: options.bookingEnabled ?? false,
           faqEnabled: options.faqEnabled ?? false,
+          photoMomentEnabled: options.photoMomentEnabled ?? false,
         }) as never,
       },
       callbacks: {
         onmessage: async (message) => {
           if (sessionClosed) return;
+
+          if (message.setupComplete) {
+            pushEvent({ type: "session.status", status: "connected" });
+            return;
+          }
 
           if (message.goAway) {
             pushEvent(SESSION_RECONNECT);

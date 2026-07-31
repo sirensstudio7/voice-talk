@@ -6,14 +6,27 @@ import * as schema from "./schema.js";
 const usesSupabasePooler =
   env.DATABASE_URL.includes(":6543/") || env.DATABASE_URL.includes("pooler.supabase.com");
 
+const usesTransactionPooler = env.DATABASE_URL.includes(":6543/");
+
+if (usesTransactionPooler) {
+  console.warn(
+    "[db] DATABASE_URL uses Supabase transaction pooler (:6543). " +
+      "Prefer session pooler (:5432) for the Node API to avoid stuck connections.",
+  );
+}
+
 const client = postgres(env.DATABASE_URL, {
-  // Supabase pooler (port 6543) has a low connection cap — keep the pool small.
-  // Direct/local Postgres can safely use more connections for parallel dashboard loads.
+  // Supabase pooler has a low connection cap — keep the pool small.
   prepare: false,
   max: usesSupabasePooler ? 3 : 10,
-  connect_timeout: usesSupabasePooler ? 20 : 10,
-  idle_timeout: 20,
-  max_lifetime: 60 * 10,
+  connect_timeout: usesSupabasePooler ? 15 : 10,
+  // Recycle idle / old sockets so a bad pooler connection cannot linger.
+  idle_timeout: usesTransactionPooler ? 10 : 20,
+  max_lifetime: usesTransactionPooler ? 60 * 2 : 60 * 10,
+  // Fail stuck queries instead of holding pool slots forever (login/UI hang).
+  connection: {
+    statement_timeout: usesSupabasePooler ? 15_000 : 30_000,
+  },
 });
 
 export const db = drizzle(client, { schema });

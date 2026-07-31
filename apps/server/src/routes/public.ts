@@ -22,6 +22,16 @@ import {
   getAvailableSlots,
   listAppointments,
 } from "../services/appointments.js";
+import { getSmartPhotoMomentPublicConfig } from "../services/addon-entitlement.js";
+import {
+  completePhotoSession,
+  markPhotoOfferResponse,
+  resolvePhotoDownload,
+  startPhotoSession,
+  trackAnalyticsEvent,
+  uploadPhotoSessionImage,
+} from "../services/photo-moment.js";
+import { MAX_PHOTO_UPLOAD_BYTES } from "../storage/index.js";
 
 function orderToOut(order: {
   id: string;
@@ -107,6 +117,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
     const capabilities = getBusinessCapabilities(tenant.primaryUseCase, tenant.businessType);
     const productList = capabilities.menu_enabled ? getActiveProducts(tenant) : [];
     const vision = await getOrCreateVisionSettings(tenant.id);
+    const smartPhotoMoment = await getSmartPhotoMomentPublicConfig(tenant.id);
     return {
       business: tenant.name,
       slug: tenant.slug,
@@ -114,12 +125,14 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       business_type: tenant.businessType,
       assistant_name: resolveAssistantName(tenant.aiRules),
       avatar_url: tenant.aiRules?.avatarUrl || "",
+      avatar_model_path: tenant.aiRules?.avatarModelPath || "",
       background_url: tenant.backgroundUrl || "",
       gradient_color: tenant.gradientColor || "",
       display_orientation: tenant.displayOrientation || "landscape",
       voice_preset: normalizeVoicePreset(tenant.aiRules?.voicePreset),
       capabilities,
       vision: visionSettingsOut(vision),
+      smart_photo_moment: smartPhotoMoment,
       products: productList.map((p) => ({
         id: p.productId,
         name: p.name,
@@ -278,5 +291,144 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       .returning({ id: demoRequests.id, status: demoRequests.status });
 
     return reply.status(201).send({ id: created!.id, status: created!.status });
+  });
+
+  app.post("/public/photo/session/start", async (request, reply) => {
+    const body = request.body as {
+      businessId?: string;
+      slug?: string;
+      orderId?: string;
+    };
+
+    let businessId = body.businessId?.trim() ?? "";
+    if (!businessId && body.slug) {
+      const business = await getBusinessBySlug(body.slug);
+      if (!business) return reply.status(404).send({ detail: "Business not found" });
+      businessId = business.id;
+    }
+    if (!businessId) {
+      return reply.status(400).send({ detail: "businessId or slug is required" });
+    }
+
+    try {
+      const session = await startPhotoSession({
+        businessId,
+        orderId: body.orderId ?? null,
+      });
+      await trackAnalyticsEvent({
+        businessId,
+        eventName: "photo_offer_shown",
+        photoSessionId: session.id,
+      });
+      return { sessionId: session.id };
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      throw err;
+    }
+  });
+
+  app.post("/public/photo/session/:id/response", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { response?: string };
+    const response = body.response?.trim().toLowerCase();
+    if (response !== "yes" && response !== "no" && response !== "timeout") {
+      return reply.status(400).send({ detail: "response must be yes, no, or timeout" });
+    }
+    await markPhotoOfferResponse(id, response);
+    return { ok: true };
+  });
+
+  app.post("/public/photo/session/:id/upload", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const data = await request.file();
+    if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+
+    const buffer = await data.toBuffer();
+    if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+    if (buffer.length > MAX_PHOTO_UPLOAD_BYTES) {
+      return reply.status(400).send({ detail: "Photo must be 8 MB or smaller." });
+    }
+
+    try {
+      const result = await uploadPhotoSessionImage(id, buffer);
+      return { photoPath: result.photoPath, ok: true };
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      throw err;
+    }
+  });
+
+  app.post("/public/photo/session/:id/complete", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      const result = await completePhotoSession(id);
+      return {
+        qrToken: result.qrToken,
+        downloadUrl: result.downloadUrl,
+        expiresAt: result.expiresAt,
+      };
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      throw err;
+    }
+  });
+
+  app.get("/public/photo/download/:token", async (request, reply) => {
+    const { token } = request.params as { token: string };
+    const query = request.query as { redirect?: string };
+    try {
+      const result = await resolvePhotoDownload(token);
+      if (query.redirect === "1") {
+        return reply.redirect(result.url);
+      }
+      return result;
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      throw err;
+    }
+  });
+
+  app.post("/public/photo/events", async (request, reply) => {
+    const body = request.body as {
+      businessId?: string;
+      slug?: string;
+      eventName?: string;
+      photoSessionId?: string;
+      metadata?: Record<string, unknown>;
+    };
+
+    let businessId = body.businessId?.trim() ?? "";
+    if (!businessId && body.slug) {
+      const business = await getBusinessBySlug(body.slug);
+      if (!business) return reply.status(404).send({ detail: "Business not found" });
+      businessId = business.id;
+    }
+    if (!businessId || !body.eventName) {
+      return reply.status(400).send({ detail: "businessId/slug and eventName are required" });
+    }
+
+    await trackAnalyticsEvent({
+      businessId,
+      eventName: body.eventName,
+      photoSessionId: body.photoSessionId,
+      metadata: body.metadata,
+    });
+    return { ok: true };
   });
 }

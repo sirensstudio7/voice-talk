@@ -61,26 +61,130 @@ export class VoiceAudioEngine {
   private voicePreset: VoicePreset = "natural";
   private playbackInput: GainNode | null = null;
   private effectNodes: AudioNode[] = [];
+  private playbackAnalyser: AnalyserNode | null = null;
+  private analyserBuffer: Uint8Array<ArrayBuffer> | null = null;
+  private smoothedPlaybackLevel = 0;
 
   async initialize(): Promise<void> {
+    await this.unlockPlayback();
+    await this.ensureWorkletLoaded();
+  }
+
+  private workletLoadPromise: Promise<void> | null = null;
+
+  private async ensureWorkletLoaded(): Promise<void> {
     if (!this.audioContext) {
       this.audioContext = new AudioContext();
-      await this.audioContext.audioWorklet.addModule("/pcm-processor.js");
+    }
+    if (!this.workletLoadPromise) {
+      this.workletLoadPromise = this.audioContext.audioWorklet
+        .addModule("/pcm-processor.js")
+        .then(() => {
+          // Never rebuild if PCM is already routed — tearing down the graph
+          // disconnects live BufferSources → silent greeting with chat still working.
+          if (!this.playbackInput && !this.hasActivePlayback()) {
+            this.rebuildPlaybackChain();
+          }
+        })
+        .catch((err) => {
+          this.workletLoadPromise = null;
+          throw err;
+        });
+    }
+    await this.workletLoadPromise;
+    if (!this.playbackInput && !this.hasActivePlayback()) {
       this.rebuildPlaybackChain();
     }
+  }
 
-    if (this.audioContext.state === "suspended") {
-      await this.audioContext.resume();
+  /**
+   * Synchronous kick during a click/tap — create + resume before any await.
+   * Call this first in the Order Now handler (do not only void an async unlock).
+   */
+  unlockPlaybackSync(): void {
+    if (typeof window === "undefined") return;
+    if (!this.audioContext || this.audioContext.state === "closed") {
+      this.audioContext = new AudioContext();
+      this.workletLoadPromise = null;
     }
+    this.installAutoResume();
+    if (this.audioContext.state === "suspended") {
+      void this.audioContext.resume();
+    }
+    if (this.audioContext.state === "running") {
+      try {
+        const buffer = this.audioContext.createBuffer(1, 1, this.audioContext.sampleRate);
+        const source = this.audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(this.audioContext.destination);
+        source.start(0);
+      } catch {
+        // no-op
+      }
+    }
+    // Do NOT load the mic AudioWorklet here — it rebuilds the playback graph
+    // and can disconnect greeting PCM mid-stream (chat text still appears).
+    // Worklet loads only when the mic is prepared.
+  }
+
+  /** Re-attach resume listeners so returning to the tab restores greeting audio. */
+  installAutoResume(): void {
+    if (typeof window === "undefined" || this.autoResumeInstalled) return;
+    this.autoResumeInstalled = true;
+    const resume = () => {
+      if (this.audioContext?.state === "suspended") {
+        void this.audioContext.resume();
+      }
+    };
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") resume();
+    });
+    window.addEventListener("focus", resume);
+    window.addEventListener("pointerdown", resume, { passive: true });
+  }
+
+  private autoResumeInstalled = false;
+
+  /**
+   * Must run during a user gesture. Resume BEFORE awaiting worklet/module loads —
+   * awaiting fetch first lets the gesture expire and Chrome keeps the context suspended
+   * (transcript still works; PCM schedules silently).
+   */
+  async unlockPlayback(): Promise<void> {
+    this.unlockPlaybackSync();
+    if (!this.audioContext) return;
+    if (this.audioContext.state === "suspended") {
+      try {
+        await this.audioContext.resume();
+      } catch {
+        // Gesture may have expired.
+      }
+    }
+    if (this.audioContext.state === "running") {
+      try {
+        const buffer = this.audioContext.createBuffer(1, 1, this.audioContext.sampleRate);
+        const source = this.audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(this.audioContext.destination);
+        source.start(0);
+      } catch {
+        // no-op
+      }
+    }
+  }
+
+  getAudioContextState(): string {
+    return this.audioContext?.state ?? "none";
   }
 
   setVoicePreset(preset: VoicePreset | string | null | undefined): void {
     const next = normalizeVoicePreset(preset);
     if (next === this.voicePreset && this.playbackInput) return;
     this.voicePreset = next;
-    if (this.audioContext) {
-      this.rebuildPlaybackChain();
-    }
+    if (!this.audioContext) return;
+    // Rebuilding mid-playback disconnects live BufferSources → silence.
+    if (this.hasActivePlayback()) return;
+    this.rebuildPlaybackChain();
   }
 
   getVoicePreset(): VoicePreset {
@@ -97,15 +201,33 @@ export class VoiceAudioEngine {
     }
     this.effectNodes = [];
     this.playbackInput = null;
+    if (this.playbackAnalyser) {
+      try {
+        this.playbackAnalyser.disconnect();
+      } catch {
+        // no-op
+      }
+    }
+    this.playbackAnalyser = null;
+    this.analyserBuffer = null;
   }
 
   private rebuildPlaybackChain(): void {
     if (!this.audioContext) return;
+    // Mid-playback rebuild disconnects scheduled sources → silent AI voice.
+    if (this.hasActivePlayback()) return;
 
     this.teardownPlaybackChain();
 
+    const analyser = this.audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.35;
+    analyser.connect(this.audioContext.destination);
+    this.playbackAnalyser = analyser;
+    this.analyserBuffer = new Uint8Array(new ArrayBuffer(analyser.fftSize));
+
     const config = getVoicePresetConfig(this.voicePreset);
-    const graph = connectVoiceEffectChain(this.audioContext, config);
+    const graph = connectVoiceEffectChain(this.audioContext, config, analyser);
     this.playbackInput = graph.input;
     this.effectNodes = graph.nodes;
   }
@@ -163,6 +285,9 @@ export class VoiceAudioEngine {
       throw lastError ?? new Error("Microphone access failed.");
     }
 
+    // getUserMedia / permission UI often leaves AudioContext suspended.
+    await this.unlockPlayback();
+
     if (this.workletNode) {
       this.sourceNode?.disconnect();
       this.workletNode.disconnect();
@@ -216,21 +341,31 @@ export class VoiceAudioEngine {
   }
 
   async playPcmAsync(arrayBuffer: ArrayBuffer, sampleRate = 24000): Promise<void> {
-    if (!this.audioContext) {
-      await this.initialize();
+    // Playback must NOT depend on the mic AudioWorklet — if /pcm-processor.js
+    // is slow or fails, greeting PCM was never scheduled (chat still worked).
+    if (!this.audioContext || this.audioContext.state === "closed") {
+      this.audioContext = new AudioContext();
+      this.workletLoadPromise = null;
+      this.installAutoResume();
     }
-    if (!this.audioContext) return;
+    if (this.audioContext.state === "suspended") {
+      try {
+        await this.audioContext.resume();
+      } catch {
+        // Schedule anyway; may become audible after a later unlock.
+      }
+    }
+
+    const playbackInput = this.ensurePlaybackChain();
+    if (!playbackInput || !this.audioContext) return;
 
     if (this.audioContext.state === "suspended") {
       try {
         await this.audioContext.resume();
       } catch {
-        return;
+        // still schedule
       }
     }
-
-    const playbackInput = this.ensurePlaybackChain();
-    if (!playbackInput) return;
 
     const pcmData = new Int16Array(arrayBuffer);
     const float32Data = new Float32Array(pcmData.length);
@@ -274,6 +409,34 @@ export class VoiceAudioEngine {
     return this.scheduledSources.length > 0;
   }
 
+  /** Smoothed 0–1 amplitude of assistant playback for lip sync. */
+  getPlaybackLevel(): number {
+    if (!this.hasActivePlayback() || !this.playbackAnalyser || !this.analyserBuffer) {
+      this.smoothedPlaybackLevel *= 0.72;
+      if (this.smoothedPlaybackLevel < 0.01) this.smoothedPlaybackLevel = 0;
+      return this.smoothedPlaybackLevel;
+    }
+
+    this.playbackAnalyser.getByteTimeDomainData(this.analyserBuffer);
+    let sumSquares = 0;
+    for (let i = 0; i < this.analyserBuffer.length; i++) {
+      const sample = (this.analyserBuffer[i] - 128) / 128;
+      sumSquares += sample * sample;
+    }
+    const rms = Math.sqrt(sumSquares / this.analyserBuffer.length);
+
+    const noiseFloor = 0.015;
+    const gain = 4.2;
+    const maxOpen = 0.55;
+    const gated = Math.max(0, rms - noiseFloor);
+    const target = Math.min(maxOpen, gated * gain);
+
+    const alpha = target > this.smoothedPlaybackLevel ? 0.5 : 0.28;
+    this.smoothedPlaybackLevel += (target - this.smoothedPlaybackLevel) * alpha;
+    if (this.smoothedPlaybackLevel < 0.008) this.smoothedPlaybackLevel = 0;
+    return this.smoothedPlaybackLevel;
+  }
+
   getRevealProgress(): number {
     if (this.totalScheduledDuration <= 0) return 0;
     if (!this.audioContext) return 0;
@@ -305,6 +468,7 @@ export class VoiceAudioEngine {
     this.ephemeralNodes = [];
     this.totalScheduledDuration = 0;
     this.playbackStartTime = 0;
+    this.smoothedPlaybackLevel = 0;
     if (this.audioContext) {
       this.nextStartTime = this.audioContext.currentTime;
     }
@@ -316,5 +480,6 @@ export class VoiceAudioEngine {
     this.teardownPlaybackChain();
     void this.audioContext?.close();
     this.audioContext = null;
+    this.workletLoadPromise = null;
   }
 }

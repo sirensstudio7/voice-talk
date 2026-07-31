@@ -24,12 +24,28 @@ import {
   demoRequests,
   platformAdmins,
   platformSettings,
+  plans,
   products,
+  accountSubscriptions,
+  subscriptionRequests,
   subscriptions,
   users,
   voiceSessions,
 } from "../db/schema.js";
 import { env } from "../env.js";
+import {
+  activateSubscriptionRequest,
+  ensureTrialEntitlement,
+  getEntitlementSnapshot,
+  listPaidPlans,
+  rejectSubscriptionRequest,
+} from "../services/entitlement.js";
+import {
+  approveAddonRequest,
+  listAddonRequestRows,
+  rejectAddonRequest,
+  suspendAddon,
+} from "../services/addon-entitlement.js";
 
 function clientKey(request: FastifyRequest): string {
   return (
@@ -288,6 +304,10 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         .select({ value: count() })
         .from(demoRequests)
         .where(eq(demoRequests.status, "new"));
+      const [pendingSubRequests] = await db
+        .select({ value: count() })
+        .from(subscriptionRequests)
+        .where(eq(subscriptionRequests.status, "pending"));
       const [voiceRow] = await db
         .select({
           minutes: sql<number>`coalesce(sum(extract(epoch from (coalesce(ended_at, now()) - started_at)) / 60.0), 0)::float`,
@@ -351,6 +371,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
           active_users_30d: activeUsers?.value ?? 0,
           pending_users: pendingUsers?.value ?? 0,
           new_demo_requests: newDemoRequests?.value ?? 0,
+          pending_subscription_requests: pendingSubRequests?.value ?? 0,
           total_workspaces: totalBusinesses?.value ?? 0,
           active_subscriptions: activeSubs?.value ?? 0,
           manual_mrr: Number(settings.manual_mrr || 0),
@@ -506,6 +527,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
 
       await db.update(users).set({ status }).where(eq(users.id, id));
       clearUserCache(id);
+
+      if (user.status === "pending" && status === "active") {
+        await ensureTrialEntitlement(id);
+      }
+
       await writeAuditLog({
         adminId: admin.id,
         action,
@@ -1158,6 +1184,418 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         page,
         limit,
       };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/platform/subscription-requests", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:read");
+
+      const query = request.query as Record<string, unknown>;
+      const { page, limit, offset } = parsePagination(query);
+      const search = typeof query.search === "string" ? query.search.trim() : "";
+      const status = typeof query.status === "string" ? query.status.trim() : "";
+
+      const conditions = [];
+      if (status) conditions.push(eq(subscriptionRequests.status, status));
+      if (search) {
+        conditions.push(
+          or(ilike(users.name, `%${search}%`), ilike(users.email, `%${search}%`))!,
+        );
+      }
+      const whereClause = conditions.length ? and(...conditions) : undefined;
+
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(subscriptionRequests)
+        .innerJoin(users, eq(users.id, subscriptionRequests.userId))
+        .where(whereClause);
+
+      const rows = await db
+        .select({
+          id: subscriptionRequests.id,
+          status: subscriptionRequests.status,
+          createdAt: subscriptionRequests.createdAt,
+          reviewedAt: subscriptionRequests.reviewedAt,
+          notes: subscriptionRequests.notes,
+          userId: users.id,
+          userName: users.name,
+          userEmail: users.email,
+          planCode: plans.code,
+          planName: plans.name,
+          planLimit: plans.workspaceLimit,
+          trialEndsAt: accountSubscriptions.trialEndsAt,
+          entitlementStatus: accountSubscriptions.status,
+        })
+        .from(subscriptionRequests)
+        .innerJoin(users, eq(users.id, subscriptionRequests.userId))
+        .innerJoin(plans, eq(plans.id, subscriptionRequests.requestedPlanId))
+        .leftJoin(accountSubscriptions, eq(accountSubscriptions.userId, users.id))
+        .where(whereClause)
+        .orderBy(desc(subscriptionRequests.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      return {
+        items: rows.map((r) => ({
+          id: r.id,
+          status: r.status,
+          created_at: r.createdAt.toISOString(),
+          reviewed_at: r.reviewedAt?.toISOString() ?? null,
+          notes: r.notes,
+          customer: { id: r.userId, name: r.userName, email: r.userEmail },
+          requested_plan: {
+            code: r.planCode,
+            name: r.planName,
+            workspace_limit: r.planLimit,
+          },
+          trial_ends_at: r.trialEndsAt?.toISOString() ?? null,
+          entitlement_status: r.entitlementStatus ?? null,
+        })),
+        total: totalRow?.value ?? 0,
+        page,
+        limit,
+      };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/platform/subscription-requests/:id", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:read");
+      const { id } = request.params as { id: string };
+
+      const [row] = await db
+        .select({
+          id: subscriptionRequests.id,
+          status: subscriptionRequests.status,
+          createdAt: subscriptionRequests.createdAt,
+          reviewedAt: subscriptionRequests.reviewedAt,
+          reviewedBy: subscriptionRequests.reviewedBy,
+          notes: subscriptionRequests.notes,
+          userId: users.id,
+          userName: users.name,
+          userEmail: users.email,
+          userPhone: users.phone,
+          planCode: plans.code,
+          planName: plans.name,
+          planLimit: plans.workspaceLimit,
+        })
+        .from(subscriptionRequests)
+        .innerJoin(users, eq(users.id, subscriptionRequests.userId))
+        .innerJoin(plans, eq(plans.id, subscriptionRequests.requestedPlanId))
+        .where(eq(subscriptionRequests.id, id))
+        .limit(1);
+
+      if (!row) return reply.status(404).send({ detail: "Request not found" });
+
+      const entitlement = await getEntitlementSnapshot(row.userId);
+      const paidPlans = await listPaidPlans();
+
+      return {
+        id: row.id,
+        status: row.status,
+        created_at: row.createdAt.toISOString(),
+        reviewed_at: row.reviewedAt?.toISOString() ?? null,
+        reviewed_by: row.reviewedBy,
+        notes: row.notes,
+        customer: {
+          id: row.userId,
+          name: row.userName,
+          email: row.userEmail,
+          phone: row.userPhone,
+        },
+        requested_plan: {
+          code: row.planCode,
+          name: row.planName,
+          workspace_limit: row.planLimit,
+        },
+        entitlement,
+        available_plans: paidPlans.map((p) => ({
+          code: p.code,
+          name: p.name,
+          workspace_limit: p.workspaceLimit,
+        })),
+      };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/platform/subscription-requests/:id/activate", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:write");
+      const { id } = request.params as { id: string };
+      const body = request.body as {
+        plan_code?: string;
+        duration_months?: number;
+        custom_ends_at?: string;
+        notes?: string;
+      };
+
+      let customEndsAt: Date | null = null;
+      if (body.custom_ends_at) {
+        customEndsAt = new Date(body.custom_ends_at);
+        if (Number.isNaN(customEndsAt.getTime())) {
+          return reply.status(400).send({ detail: "Invalid custom_ends_at" });
+        }
+      }
+
+      try {
+        const entitlement = await activateSubscriptionRequest({
+          requestId: id,
+          adminId: admin.id,
+          planCode: body.plan_code,
+          durationMonths: customEndsAt ? null : (body.duration_months ?? 12),
+          customEndsAt,
+          notes: body.notes,
+        });
+
+        await writeAuditLog({
+          adminId: admin.id,
+          action: "subscription_request.activate",
+          entityType: "subscription_request",
+          entityId: id,
+          metadata: {
+            plan_code: entitlement.plan_code,
+            ends_at: entitlement.ends_at,
+          },
+          request,
+        });
+
+        return { id, status: "approved", entitlement };
+      } catch (err) {
+        if (err instanceof Error && "statusCode" in err) {
+          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+            detail: err.message,
+          });
+        }
+        throw err;
+      }
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/platform/subscription-requests/:id/reject", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:write");
+      const { id } = request.params as { id: string };
+      const body = request.body as { notes?: string };
+
+      try {
+        await rejectSubscriptionRequest({
+          requestId: id,
+          adminId: admin.id,
+          notes: body.notes,
+        });
+      } catch (err) {
+        if (err instanceof Error && "statusCode" in err) {
+          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+            detail: err.message,
+          });
+        }
+        throw err;
+      }
+
+      await writeAuditLog({
+        adminId: admin.id,
+        action: "subscription_request.reject",
+        entityType: "subscription_request",
+        entityId: id,
+        metadata: { notes: body.notes ?? "" },
+        request,
+      });
+
+      return { id, status: "rejected" };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/platform/addon-requests", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:read");
+
+      const query = request.query as Record<string, unknown>;
+      const { page, limit, offset } = parsePagination(query);
+      const search = typeof query.search === "string" ? query.search.trim() : "";
+      const status = typeof query.status === "string" ? query.status.trim() : "";
+
+      const { items, total } = await listAddonRequestRows({
+        status: status || undefined,
+        search: search || undefined,
+        limit,
+        offset,
+      });
+
+      return {
+        items: items.map((r) => ({
+          id: r.id,
+          status: r.status,
+          created_at: r.createdAt.toISOString(),
+          reviewed_at: r.reviewedAt?.toISOString() ?? null,
+          notes: r.notes,
+          payment_proof_url: r.paymentProofUrl,
+          transaction_code: r.transactionCode,
+          addon: { code: r.addonCode, name: r.addonName },
+          workspace: { id: r.businessId, name: r.businessName, slug: r.businessSlug },
+          owner: { id: r.userId, name: r.userName, email: r.userEmail },
+        })),
+        total,
+        page,
+        limit,
+      };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/platform/addon-requests/:id/approve", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:write");
+      const { id } = request.params as { id: string };
+      const body = request.body as {
+        duration_months?: number;
+        custom_ends_at?: string;
+        notes?: string;
+      };
+
+      let customEndsAt: Date | null = null;
+      if (body.custom_ends_at) {
+        customEndsAt = new Date(body.custom_ends_at);
+        if (Number.isNaN(customEndsAt.getTime())) {
+          return reply.status(400).send({ detail: "Invalid custom_ends_at" });
+        }
+      }
+
+      try {
+        const sub = await approveAddonRequest({
+          requestId: id,
+          adminId: admin.id,
+          durationMonths: customEndsAt ? null : (body.duration_months ?? 12),
+          customEndsAt,
+          notes: body.notes,
+        });
+
+        await writeAuditLog({
+          adminId: admin.id,
+          action: "addon_request.approve",
+          entityType: "addon_request",
+          entityId: id,
+          metadata: {
+            addon_code: sub.addonCode,
+            business_id: sub.businessId,
+            ends_at: sub.endsAt?.toISOString() ?? null,
+          },
+          request,
+        });
+
+        return {
+          id,
+          status: "approved",
+          subscription: {
+            status: sub.status,
+            starts_at: sub.startsAt?.toISOString() ?? null,
+            ends_at: sub.endsAt?.toISOString() ?? null,
+          },
+        };
+      } catch (err) {
+        if (err instanceof Error && "statusCode" in err) {
+          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+            detail: err.message,
+          });
+        }
+        throw err;
+      }
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/platform/addon-requests/:id/reject", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:write");
+      const { id } = request.params as { id: string };
+      const body = request.body as { notes?: string };
+
+      try {
+        await rejectAddonRequest({
+          requestId: id,
+          adminId: admin.id,
+          notes: body.notes,
+        });
+      } catch (err) {
+        if (err instanceof Error && "statusCode" in err) {
+          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+            detail: err.message,
+          });
+        }
+        throw err;
+      }
+
+      await writeAuditLog({
+        adminId: admin.id,
+        action: "addon_request.reject",
+        entityType: "addon_request",
+        entityId: id,
+        metadata: { notes: body.notes ?? "" },
+        request,
+      });
+
+      return { id, status: "rejected" };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/platform/addon-requests/:id/suspend", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:write");
+      const { id } = request.params as { id: string };
+      const body = request.body as { notes?: string };
+
+      const { items } = await listAddonRequestRows({ limit: 500, offset: 0 });
+      const found = items.find((r) => r.id === id);
+      if (!found) return reply.status(404).send({ detail: "Request not found" });
+
+      try {
+        const sub = await suspendAddon({
+          businessId: found.businessId,
+          addonCode: found.addonCode,
+          adminId: admin.id,
+          notes: body.notes,
+        });
+
+        await writeAuditLog({
+          adminId: admin.id,
+          action: "addon.suspend",
+          entityType: "addon_subscription",
+          entityId: sub.id,
+          metadata: { business_id: found.businessId, addon_code: found.addonCode },
+          request,
+        });
+
+        return { id, status: "suspended" };
+      } catch (err) {
+        if (err instanceof Error && "statusCode" in err) {
+          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+            detail: err.message,
+          });
+        }
+        throw err;
+      }
     } catch (err) {
       return sendAuthError(reply, err);
     }

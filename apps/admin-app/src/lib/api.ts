@@ -10,6 +10,7 @@ export type Business = {
   tagline: string;
   voice_name: string;
   gemini_model: string;
+  background_url?: string;
   is_active: boolean;
   business_type?: string;
   primary_use_case?: PrimaryUseCase;
@@ -66,6 +67,7 @@ export type AiRules = {
   id: string;
   assistant_name: string;
   avatar_url: string;
+  avatar_model_path: string;
   personality: string;
   tone: AiTone;
   language: AiLanguage;
@@ -182,10 +184,106 @@ export type VisionMetrics = {
   conversation_start_rate: number;
 };
 
-function authHeaders(token: string): HeadersInit {
+export type SubscriptionPlan = {
+  code: string;
+  name: string;
+  workspace_limit: number;
+};
+
+export type AccountSubscription = {
+  id: string;
+  status: "trialing" | "expired" | "active" | "past_due" | "cancelled" | string;
+  plan_code: string;
+  plan_name: string;
+  workspace_limit: number;
+  workspace_count: number;
+  trial_started_at: string | null;
+  trial_ends_at: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  service_access: boolean;
+  can_create_workspace: boolean;
+  pending_request: {
+    id: string;
+    requested_plan_code: string;
+    requested_plan_name: string;
+    created_at: string;
+  } | null;
+};
+
+export type PhotoSettings = {
+  enabled: boolean;
+  voice_prompt: string;
+  countdown_seconds: number;
+  qr_expiry_hours: number;
+  logo_url: string;
+  frame_url: string;
+  campaign_text: string;
+  auto_delete_days: number;
+  updated_at?: string;
+  subscription_status?: string;
+};
+
+export type PhotoSettingsPatch = {
+  enabled: boolean;
+  voice_prompt: string;
+  countdown_seconds: number;
+  qr_expiry_hours: number;
+  campaign_text: string | null;
+  auto_delete_days: number;
+};
+
+export type BillingTransaction = {
+  id: string;
+  type: "subscription" | "addon";
+  title: string;
+  subtitle: string;
+  status: string;
+  amount_label: string | null;
+  workspace_name: string | null;
+  payment_proof_url: string | null;
+  transaction_code: string | null;
+  notes: string;
+  created_at: string;
+  reviewed_at: string | null;
+};
+
+export type AddonStatus = {
+  addon: {
+    code: string;
+    name: string;
+    description: string;
+    price_display: string;
+  };
+  subscription_status: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  pending_request: { id: string; status: string; created_at: string } | null;
+  settings: PhotoSettings;
+};
+
+export type PhotoAnalytics = {
+  photos_today: number;
+  acceptance_rate: number;
+  downloads_today: number;
+  downloads_this_month: number;
+};
+
+export type PhotoGalleryItem = {
+  id: string;
+  status: string;
+  visitor_response: string | null;
+  created_at: string;
+  downloaded_at: string | null;
+  download_expires_at: string | null;
+  thumbnail_url: string | null;
+  photo_url: string | null;
+};
+
+function authHeaders(token: string, hasJsonBody = false): HeadersInit {
   return {
     Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
+    ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
   };
 }
 
@@ -221,12 +319,13 @@ function parseErrorMessage(text: string, fallback: string): string {
 async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
+    const hasJsonBody = init?.body != null && init.body !== "";
     response = await fetchWithTimeout(
       `${API_URL}${path}`,
       {
         ...init,
         headers: {
-          ...authHeaders(token),
+          ...authHeaders(token, hasJsonBody),
           ...(init?.headers ?? {}),
         },
       },
@@ -305,16 +404,21 @@ export async function login(email: string, password: string) {
   }
   return response.json() as Promise<{
     access_token: string;
-    user: { id: string; email: string; name: string };
+    user: { id: string; email: string; name: string; country?: string };
     businesses: Business[];
   }>;
 }
 
-export async function signup(email: string, password: string, name?: string) {
+export async function signup(
+  email: string,
+  password: string,
+  name?: string,
+  country?: string,
+) {
   const response = await fetch(`${API_URL}/admin/auth/signup`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, name }),
+    body: JSON.stringify({ email, password, name, country }),
   });
   if (!response.ok) {
     const text = await response.text();
@@ -324,9 +428,9 @@ export async function signup(email: string, password: string, name?: string) {
     | {
         status: "pending";
         message: string;
-        user: { id: string; email: string; name: string };
+        user: { id: string; email: string; name: string; country?: string };
       }
-    | { access_token: string; user: { id: string; email: string; name: string } }
+    | { access_token: string; user: { id: string; email: string; name: string; country?: string } }
   >;
 }
 
@@ -343,6 +447,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  deleteBusiness: (token: string, businessId: string) =>
+    request<void>(`/admin/businesses/${businessId}`, token, { method: "DELETE" }),
   completeOnboarding: (
     token: string,
     businessId: string,
@@ -506,5 +612,107 @@ export const api = {
     request<VisionMetrics>(
       `/admin/businesses/${businessId}/vision-metrics?days=${days}`,
       token,
+    ),
+  getSubscription: (token: string) =>
+    request<AccountSubscription>(`/admin/subscription/me`, token),
+  listTransactions: (token: string) =>
+    request<{ items: BillingTransaction[] }>(`/admin/transactions`, token),
+  listSubscriptionPlans: (token: string) =>
+    request<SubscriptionPlan[]>(`/admin/subscription/plans`, token),
+  requestSubscriptionPlan: (token: string, plan_code: string) =>
+    request<{
+      id: string;
+      requested_plan: SubscriptionPlan;
+      status: string;
+      entitlement: AccountSubscription;
+    }>(`/admin/subscription/request`, token, {
+      method: "POST",
+      body: JSON.stringify({ plan_code }),
+    }),
+  getAddonStatus: (token: string, businessId: string, code = "smart_photo_moment") =>
+    request<AddonStatus>(`/admin/businesses/${businessId}/addons/${code}`, token),
+  requestAddon: (
+    token: string,
+    businessId: string,
+    code = "smart_photo_moment",
+    body?: {
+      duration_months?: number;
+      payment_method?: string;
+      billing_name?: string;
+      billing_email?: string;
+      billing_phone?: string;
+      company?: string;
+      notes?: string;
+      payment_proof_url?: string;
+      transaction_code?: string;
+      amount_display?: string;
+      amount_idr?: number;
+    },
+  ) =>
+    request<{
+      id: string;
+      status: string;
+      transaction_code: string;
+      addon: { code: string; name: string; price_display: string };
+    }>(
+      `/admin/businesses/${businessId}/addons/${code}/request`,
+      token,
+      { method: "POST", body: JSON.stringify(body ?? {}) },
+    ),
+  uploadAddonPaymentProof: (token: string, businessId: string, file: File) =>
+    uploadRequest<{ url: string }>(
+      `/admin/businesses/${businessId}/addons/payment-proof`,
+      token,
+      file,
+    ),
+  getPhotoSettings: (token: string, businessId: string) =>
+    request<PhotoSettings>(`/admin/businesses/${businessId}/photo/settings`, token),
+  updatePhotoSettings: (token: string, businessId: string, body: Partial<PhotoSettingsPatch>) =>
+    request<PhotoSettings>(`/admin/businesses/${businessId}/photo/settings`, token, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  uploadPhotoBranding: (token: string, businessId: string, kind: "logo" | "frame", file: File) =>
+    uploadRequest<PhotoSettings>(
+      `/admin/businesses/${businessId}/photo/branding/${kind}`,
+      token,
+      file,
+    ),
+  deletePhotoBranding: (token: string, businessId: string, kind: "logo" | "frame") =>
+    request<PhotoSettings>(`/admin/businesses/${businessId}/photo/branding/${kind}`, token, {
+      method: "DELETE",
+    }),
+  getPhotoAnalytics: (token: string, businessId: string) =>
+    request<PhotoAnalytics>(`/admin/businesses/${businessId}/photo/analytics`, token),
+  listPhotoGallery: (
+    token: string,
+    businessId: string,
+    params?: { from?: string; to?: string; limit?: number; offset?: number },
+  ) => {
+    const qs = new URLSearchParams();
+    if (params?.from) qs.set("from", params.from);
+    if (params?.to) qs.set("to", params.to);
+    if (params?.limit != null) qs.set("limit", String(params.limit));
+    if (params?.offset != null) qs.set("offset", String(params.offset));
+    const query = qs.size ? `?${qs.toString()}` : "";
+    return request<{ items: PhotoGalleryItem[]; total: number }>(
+      `/admin/businesses/${businessId}/photo/gallery${query}`,
+      token,
+    );
+  },
+  deletePhotoGalleryItem: (token: string, businessId: string, sessionId: string) =>
+    request<{ ok: boolean }>(
+      `/admin/businesses/${businessId}/photo/gallery/${sessionId}`,
+      token,
+      { method: "DELETE" },
+    ),
+  updateProfile: (token: string, body: { country?: string }) =>
+    request<{ id: string; email: string; name: string; country?: string }>(
+      `/admin/auth/me`,
+      token,
+      {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      },
     ),
 };

@@ -53,6 +53,8 @@ type VoiceSessionApi = {
 type KioskVisionSignals = {
   assistantSpeaking: boolean;
   continuousListenActive: boolean;
+  /** True from vision greeting dispatch until the spoken greeting finishes. */
+  visionGreetingPending: boolean;
 };
 
 const KIOSK_RECONNECT_MS = 800;
@@ -73,6 +75,7 @@ export function useKioskOrchestrator(
   visionSignals: KioskVisionSignals = {
     assistantSpeaking: false,
     continuousListenActive: false,
+    visionGreetingPending: false,
   },
 ) {
   const businessSlug = useBusinessSlug();
@@ -100,6 +103,8 @@ export function useKioskOrchestrator(
   const sessionReleaseSentRef = useRef(false);
   const prevConversationPhaseRef = useRef(conversationPhase);
   const greetingStartedRef = useRef(false);
+  /** True once the AI actually started playing the greeting audio. */
+  const greetingAudioHeardRef = useRef(false);
   const prefetchActiveRef = useRef(false);
   const [visionSessionActive, setVisionSessionActive] = useState(false);
   const sendVisionEvent = useCallback((event: BrowserVisionEventType, trackId = 1) => {
@@ -190,6 +195,7 @@ export function useKioskOrchestrator(
     sessionStartedAckPendingRef.current = false;
     setVisionSessionActive(false);
     greetingStartedRef.current = false;
+    greetingAudioHeardRef.current = false;
     prefetchActiveRef.current = false;
     if (shouldSendRelease) {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -232,10 +238,12 @@ export function useKioskOrchestrator(
 
     if (greetingStartedRef.current && !isLive) {
       greetingStartedRef.current = false;
+      greetingAudioHeardRef.current = false;
       sessionActiveRef.current = false;
     }
 
     greetingStartedRef.current = true;
+    greetingAudioHeardRef.current = false;
     prefetchActiveRef.current = false;
     setKioskPhase("greeting");
     // Ack the vision server immediately so the 12s release timer does not fire
@@ -263,7 +271,8 @@ export function useKioskOrchestrator(
 
       // Re-send in case the kiosk socket dropped and reconnected during connect().
       sendSessionStartedAck();
-      greetingStartedRef.current = false;
+      // Keep greetingStartedRef true until the AI finishes speaking the greeting
+      // so the avatar wave pose stays active for the whole line.
 
       const micReady = await voiceRef.current.waitForVisionMicReady(20_000);
       if (!micReady) {
@@ -275,6 +284,7 @@ export function useKioskOrchestrator(
       }
     } catch {
       greetingStartedRef.current = false;
+      greetingAudioHeardRef.current = false;
       prefetchActiveRef.current = false;
       setVisionSessionActive(false);
       voiceRef.current.stopContinuousListening();
@@ -299,6 +309,7 @@ export function useKioskOrchestrator(
       const isLive = voiceStatus === "connected" || voiceStatus === "connecting";
       if (!isLive) {
         greetingStartedRef.current = false;
+        greetingAudioHeardRef.current = false;
         sessionActiveRef.current = false;
         setKioskPhase("idle");
       }
@@ -313,9 +324,12 @@ export function useKioskOrchestrator(
 
     const timer = window.setTimeout(() => {
       if (!greetingStartedRef.current) return;
-      if (visionSignals.continuousListenActive) return;
+      // Mic is often already open during greeting — only skip timeout while the
+      // spoken greeting is still pending.
+      if (visionSignals.visionGreetingPending) return;
 
       greetingStartedRef.current = false;
+      greetingAudioHeardRef.current = false;
       voiceRef.current.stopContinuousListening();
       voiceRef.current.cancelPrefetch();
       notifySessionEnded();
@@ -331,7 +345,7 @@ export function useKioskOrchestrator(
     notifySessionEnded,
     setKioskPhase,
     visionEnabled,
-    visionSignals.continuousListenActive,
+    visionSignals.visionGreetingPending,
   ]);
 
   useEffect(() => {
@@ -375,6 +389,7 @@ export function useKioskOrchestrator(
                 sessionActiveRef.current = false;
                 setVisionSessionActive(false);
                 greetingStartedRef.current = false;
+                greetingAudioHeardRef.current = false;
                 prefetchActiveRef.current = false;
               }
             } else if (payload.session_active === false) {
@@ -468,6 +483,7 @@ export function useKioskOrchestrator(
             sessionStartedAckPendingRef.current = false;
             setVisionSessionActive(false);
             greetingStartedRef.current = false;
+            greetingAudioHeardRef.current = false;
             prefetchActiveRef.current = false;
             setKioskPhase("idle");
           }
@@ -558,21 +574,35 @@ export function useKioskOrchestrator(
     if (status === "connecting") {
       phase = greetingStartedRef.current ? "greeting" : "idle";
     } else if (conversationPhase === "complete") {
+      greetingStartedRef.current = false;
+      greetingAudioHeardRef.current = false;
       phase = "idle";
     } else if (status === "connected") {
       if (conversationPhase === "wrapping_up") {
         phase = "goodbye";
+      } else if (greetingStartedRef.current || visionSignals.visionGreetingPending) {
+        if (visionSignals.assistantSpeaking) {
+          greetingAudioHeardRef.current = true;
+        }
+        // Mic opens early (muted uplink) while visionGreetingPending — do NOT
+        // treat continuousListenActive as end-of-greeting.
+        if (
+          !visionSignals.visionGreetingPending &&
+          greetingAudioHeardRef.current &&
+          !visionSignals.assistantSpeaking
+        ) {
+          greetingStartedRef.current = false;
+          greetingAudioHeardRef.current = false;
+          phase = "listening";
+        } else {
+          phase = "greeting";
+        }
       } else if (isTalking) {
         phase = "listening";
-      } else if (
-        greetingStartedRef.current &&
-        !visionSignals.continuousListenActive
-      ) {
-        phase = visionSignals.assistantSpeaking ? "talking" : "greeting";
       } else if (conversationPhase === "active") {
         phase = visionSignals.assistantSpeaking ? "talking" : "listening";
       } else {
-        phase = "greeting";
+        phase = "idle";
       }
     }
 
@@ -585,6 +615,7 @@ export function useKioskOrchestrator(
     visionEnabled,
     visionSignals.assistantSpeaking,
     visionSignals.continuousListenActive,
+    visionSignals.visionGreetingPending,
   ]);
 
   useEffect(() => {

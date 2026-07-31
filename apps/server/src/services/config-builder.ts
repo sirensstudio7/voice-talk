@@ -81,8 +81,9 @@ const DEFAULT_LANGUAGE = "id";
 const LANGUAGE_PRESETS = LANGUAGE_PRESETS_ORDERING;
 
 const FOOD_CHECKOUT_CLOSING_EN =
-  "Checkout closing order (mandatory):\n" +
-  "1. After confirm_order, ask loyalty card and any other checkout questions from your knowledge base first — one topic per turn.\n" +
+  "Checkout closing order (mandatory — overrides any earlier checkout order):\n" +
+  "0. When the customer says the basket is correct or they are ready (e.g. \"that's right\", \"yes\", \"ok\", \"sudah benar\"), call confirm_order IMMEDIATELY. Never ask them to confirm the order again after that.\n" +
+  "1. After confirm_order, ask loyalty card and any other checkout questions from your knowledge base first — one topic per turn. Skip questions already answered.\n" +
   "2. Always ask for the customer's name last — in its own separate turn, immediately before payment.\n" +
   "3. The name question must be the ONLY sentence/question in that turn. Do not mention loyalty, upsell, phone, or anything else in the same turn.\n" +
   "4. In that same turn as the standalone name question, call prompt_payment to prepare checkout.\n" +
@@ -91,12 +92,14 @@ const FOOD_CHECKOUT_CLOSING_EN =
   "Never call prompt_payment while still asking loyalty or other checkout questions.\n" +
   "Never ask for the name before loyalty card or other checkout questions.\n" +
   "Never bundle the name question with any other question.\n" +
+  "Never repeat a checkout question the customer already answered.\n" +
   "BAD (never say): \"Do you have a loyalty card and what's your name?\" or \"Anything else? May I have your name?\"\n" +
   "GOOD (say exactly one question, then call prompt_payment): \"May I have your name?\" or \"Boleh tahu nama Anda?\"";
 
 const FOOD_CHECKOUT_CLOSING_ID =
-  "Urutan penutupan checkout (wajib):\n" +
-  "1. Setelah confirm_order, tanyakan kartu loyalitas dan pertanyaan checkout lain dari basis pengetahuan dulu — satu topik per turn.\n" +
+  "Urutan penutupan checkout (wajib — mengoverride urutan checkout sebelumnya):\n" +
+  "0. Saat pelanggan bilang pesanan sudah benar atau siap (misalnya \"sudah benar\", \"iya\", \"oke\"), segera panggil confirm_order. Jangan minta konfirmasi pesanan lagi setelah itu.\n" +
+  "1. Setelah confirm_order, tanyakan kartu loyalitas dan pertanyaan checkout lain dari basis pengetahuan dulu — satu topik per turn. Lewati pertanyaan yang sudah dijawab.\n" +
   "2. Selalu tanyakan nama pelanggan terakhir — di turn terpisah, tepat sebelum pembayaran.\n" +
   "3. Pertanyaan nama harus SATU-SATUNYA kalimat/pertanyaan di turn itu. Jangan sebut loyalitas, upsell, telepon, atau hal lain di turn yang sama.\n" +
   "4. Di turn yang sama dengan pertanyaan nama standalone, panggil prompt_payment untuk menyiapkan checkout.\n" +
@@ -105,8 +108,81 @@ const FOOD_CHECKOUT_CLOSING_ID =
   "Jangan panggil prompt_payment saat masih menanyakan kartu loyalitas atau pertanyaan checkout lain.\n" +
   "Jangan tanyakan nama sebelum kartu loyalitas atau pertanyaan checkout lainnya.\n" +
   "Jangan gabungkan pertanyaan nama dengan pertanyaan lain.\n" +
+  "Jangan ulangi pertanyaan checkout yang sudah dijawab pelanggan.\n" +
   "SALAH (jangan ucapkan): \"Punya kartu loyalitas? Boleh tahu nama?\" atau \"Mau tambah? Siapa namanya?\"\n" +
   "BENAR (hanya satu pertanyaan, lalu panggil prompt_payment): \"Boleh tahu nama Anda?\" atau \"May I have your name?\"";
+
+function buildFoodCheckoutClosingWithPhoto(language: string, voicePrompt: string): string {
+  const prompt =
+    voicePrompt.trim() ||
+    (language === "en"
+      ? "Would you like a souvenir photo after payment?"
+      : "Mau foto untuk kenang-kenangan setelah bayar nanti?");
+  const safePrompt = prompt.replace(/"/g, '\\"');
+
+  if (language === "en") {
+    return (
+      "Checkout closing order (mandatory — overrides any earlier checkout order):\n" +
+      "0. When the customer says the basket is correct or they are ready (e.g. \"that's right\", \"yes\", \"ok\", \"sudah benar\"), call confirm_order IMMEDIATELY in that turn. Do not only speak confirmation. Never ask them to confirm the order again after confirm_order succeeded.\n" +
+      "1. After confirm_order, ask loyalty card and any other checkout questions from your knowledge base first — one topic per turn. Skip any question they already answered.\n" +
+      "2. Then ask about a souvenir photo in its own separate turn — BEFORE the name question. " +
+      `Say naturally (same meaning): "${safePrompt}". ` +
+      "Wait for a short yes/no, then call set_photo_souvenir_consent with consent \"yes\" or \"no\". Ask this photo question only once. If they already answered, call set_photo_souvenir_consent with that answer and do not ask again.\n" +
+      "3. Always ask for the customer's name last — in its own separate turn, immediately before payment. Never ask for the name before the photo question.\n" +
+      "4. The name question must be the ONLY sentence/question in that turn. Do not mention loyalty, photo, upsell, phone, or anything else in the same turn.\n" +
+      "5. In that same turn as the standalone name question, call prompt_payment to prepare checkout.\n" +
+      "6. When the customer answers with their name, call set_customer_name immediately — the Pay your order screen opens then.\n" +
+      "Never call prompt_payment before confirm_order or before set_photo_souvenir_consent.\n" +
+      "Never combine the photo question with the name question.\n" +
+      "Never repeat a checkout question the customer already answered.\n" +
+      "Never say \"let me confirm the order again\" after they already confirmed.\n" +
+      "BAD: asking order confirm → loyalty → photo → order confirm again → photo again.\n" +
+      'GOOD: confirm_order tool → loyalty once → photo once → "May I have your name?" + prompt_payment → set_customer_name.'
+    );
+  }
+
+  return (
+    "Urutan penutupan checkout (wajib — mengoverride urutan checkout sebelumnya):\n" +
+    "0. Saat pelanggan bilang pesanan sudah benar atau siap bayar (misalnya \"sudah benar\", \"iya\", \"oke\", \"enggak itu aja\" lalu setuju ringkasan), segera panggil confirm_order di turn itu. Jangan hanya mengucapkan konfirmasi. Jangan minta konfirmasi pesanan lagi setelah confirm_order berhasil.\n" +
+    "1. Setelah confirm_order, tanyakan kartu loyalitas dan pertanyaan checkout lain dari basis pengetahuan dulu — satu topik per turn. Lewati pertanyaan yang sudah dijawab.\n" +
+    "2. Lalu tanyakan foto kenang-kenangan di turn terpisah — SEBELUM pertanyaan nama. " +
+    `Ucapkan secara natural (makna sama): "${safePrompt}". ` +
+    "Tunggu jawaban singkat ya/tidak, lalu panggil set_photo_souvenir_consent dengan consent \"yes\" atau \"no\". Tanyakan foto hanya sekali. Jika mereka sudah menjawab, panggil set_photo_souvenir_consent dengan jawaban itu tanpa bertanya lagi.\n" +
+    "3. Selalu tanyakan nama pelanggan terakhir — di turn terpisah, tepat sebelum pembayaran. Jangan tanyakan nama sebelum pertanyaan foto.\n" +
+    "4. Pertanyaan nama harus SATU-SATUNYA kalimat/pertanyaan di turn itu. Jangan sebut loyalitas, foto, upsell, telepon, atau hal lain di turn yang sama.\n" +
+    "5. Di turn yang sama dengan pertanyaan nama standalone, panggil prompt_payment untuk menyiapkan checkout.\n" +
+    "6. Saat pelanggan menjawab dengan nama mereka, segera panggil set_customer_name — layar Bayar pesanan Anda terbuka saat itu.\n" +
+    "Jangan panggil prompt_payment sebelum confirm_order atau sebelum set_photo_souvenir_consent.\n" +
+    "Jangan gabungkan pertanyaan foto dengan pertanyaan nama.\n" +
+    "Jangan ulangi pertanyaan checkout yang sudah dijawab pelanggan.\n" +
+    "Jangan bilang \"mohon konfirmasi pesanannya dulu\" setelah mereka sudah mengonfirmasi.\n" +
+    "SALAH: konfirmasi pesanan → loyalitas → foto → konfirmasi pesanan lagi → foto lagi.\n" +
+    'BENAR: tool confirm_order → loyalitas sekali → foto sekali → "Boleh tahu nama Anda?" + prompt_payment → set_customer_name.'
+  );
+}
+
+/** @deprecated Prefer buildSystemInstruction options.photoMomentEnabled — kept for callers. */
+export function buildPhotoSouvenirCheckoutAddon(
+  language: string,
+  voicePrompt: string,
+): string {
+  return `\n\n${buildFoodCheckoutClosingWithPhoto(language, voicePrompt)}`;
+}
+
+export type SystemInstructionOptions = {
+  photoMomentEnabled?: boolean;
+  photoVoicePrompt?: string;
+};
+
+function resolveFoodCheckoutClosing(
+  language: string,
+  options?: SystemInstructionOptions,
+): string {
+  if (options?.photoMomentEnabled) {
+    return buildFoodCheckoutClosingWithPhoto(language, options.photoVoicePrompt ?? "");
+  }
+  return language === "en" ? FOOD_CHECKOUT_CLOSING_EN : FOOD_CHECKOUT_CLOSING_ID;
+}
 const DEFAULT_ASSISTANT_NAME = "Lorescale";
 
 export type BusinessWithRelations = Business & {
@@ -332,28 +408,68 @@ export function buildVisionGoodbyePrompt(
   );
 }
 
-export function buildCombinedNameAskCorrectionPrompt(language: string): string {
+export function buildCombinedNameAskCorrectionPrompt(
+  language: string,
+  options?: {
+    photoMomentEnabled?: boolean;
+    photoConsentRecorded?: boolean;
+    voicePrompt?: string;
+  },
+): string {
+  const photoPending =
+    Boolean(options?.photoMomentEnabled) && !options?.photoConsentRecorded;
+
+  if (photoPending) {
+    const prompt =
+      options?.voicePrompt?.trim() ||
+      (language === "en"
+        ? "Would you like a souvenir photo after payment?"
+        : "Mau foto untuk kenang-kenangan setelah bayar nanti?");
+    const safePrompt = prompt.replace(/"/g, '\\"');
+    if (language === "en") {
+      return (
+        "You combined the customer's name with another question (possibly the souvenir photo) in the same turn. " +
+        "That is not allowed. Smart Photo Moment consent is not recorded yet. " +
+        "In your NEXT turn, ask ONLY about the souvenir photo — one short yes/no question, nothing else. " +
+        `Say naturally: "${safePrompt}". ` +
+        "After they answer, call set_photo_souvenir_consent. " +
+        "Do NOT ask for their name in that turn. Ask for the name alone only after photo consent is saved."
+      );
+    }
+    return (
+      "Kamu menggabungkan pertanyaan nama dengan pertanyaan lain (mungkin foto kenang-kenangan) dalam turn yang sama. " +
+      "Itu tidak diperbolehkan. Consent Smart Photo Moment belum tercatat. " +
+      "Di turn BERIKUTNYA, tanyakan HANYA tentang foto kenang-kenangan — satu pertanyaan ya/tidak singkat, tidak ada yang lain. " +
+      `Ucapkan secara natural: "${safePrompt}". ` +
+      "Setelah mereka menjawab, panggil set_photo_souvenir_consent. " +
+      "JANGAN tanyakan nama di turn itu. Tanyakan nama saja setelah consent foto tersimpan."
+    );
+  }
+
   if (language === "en") {
     return (
       "You combined the customer's name with another question in the same turn. " +
       "That is not allowed. In your NEXT turn, ask ONLY for their name — one short question, nothing else. " +
-      'Example: "May I have your name?" Do not mention loyalty, upsell, or anything else. ' +
+      'Example: "May I have your name?" Do not mention loyalty, photo, upsell, or anything else. ' +
       "In that same turn, call prompt_payment to prepare checkout. " +
-      "After they answer, call set_customer_name — the Pay your order screen opens then."
+      "After they answer, call set_customer_name — the Pay your order screen opens then. " +
+      "Do not repeat questions they already answered."
     );
   }
   return (
     "Kamu menggabungkan pertanyaan nama dengan pertanyaan lain dalam turn yang sama. " +
     "Itu tidak diperbolehkan. Di turn BERIKUTNYA, tanyakan HANYA nama pelanggan — satu pertanyaan singkat, tidak ada yang lain. " +
-    'Contoh: "Boleh tahu nama Anda?" Jangan sebut loyalitas, upsell, atau hal lain. ' +
+    'Contoh: "Boleh tahu nama Anda?" Jangan sebut loyalitas, foto, upsell, atau hal lain. ' +
     "Di turn yang sama, panggil prompt_payment untuk menyiapkan checkout. " +
-    "Setelah mereka menjawab, panggil set_customer_name — layar Bayar pesanan Anda terbuka saat itu."
+    "Setelah mereka menjawab, panggil set_customer_name — layar Bayar pesanan Anda terbuka saat itu. " +
+    "Jangan ulangi pertanyaan yang sudah dijawab."
   );
 }
 
 export function buildSystemInstruction(
   business: BusinessWithRelations,
   languageOverride?: string | null,
+  options?: SystemInstructionOptions,
 ): string {
   const productList = getActiveProducts(business);
   const knowledge = [...business.knowledgeEntries].sort(
@@ -505,9 +621,10 @@ export function buildSystemInstruction(
     {
       const customTools = toolInstructions.trim();
       const toolsSection = customTools || defaultToolsEn;
+      // Always append the authoritative closing so SPM / name-last rules override templates.
       const checkoutClosing =
-        orderingEnabled && !bookingEnabled && customTools
-          ? `\n\n${FOOD_CHECKOUT_CLOSING_EN}`
+        orderingEnabled && !bookingEnabled
+          ? `\n\n${resolveFoodCheckoutClosing("en", options)}`
           : "";
       sections.push(toolsSection + checkoutClosing);
     }
@@ -530,8 +647,8 @@ export function buildSystemInstruction(
       const customTools = toolInstructions.trim();
       const toolsSection = customTools || defaultToolsId;
       const checkoutClosing =
-        orderingEnabled && !bookingEnabled && customTools
-          ? `\n\n${FOOD_CHECKOUT_CLOSING_ID}`
+        orderingEnabled && !bookingEnabled
+          ? `\n\n${resolveFoodCheckoutClosing("id", options)}`
           : "";
       sections.push(toolsSection + checkoutClosing);
     }

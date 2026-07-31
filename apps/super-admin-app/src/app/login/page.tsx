@@ -77,7 +77,11 @@ export default function LoginPage() {
       setSession(result.access_token, result.admin);
       router.replace("/");
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : "Invalid email or password.");
+      setError(
+        err instanceof ApiRequestError
+          ? err.message
+          : "Sign-in failed. Check your credentials and that the API is reachable.",
+      );
     } finally {
       setLoading(false);
     }

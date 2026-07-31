@@ -24,17 +24,17 @@ const PLAN_OPTIONS = [
   {
     value: "starter",
     label: "Starter",
-    description: "Essential limits for new workspaces.",
+    description: "1 workspace — essential limits for new accounts.",
   },
   {
     value: "growth",
     label: "Growth",
-    description: "Higher usage limits and support priority.",
+    description: "5 workspaces — higher usage and support priority.",
   },
   {
     value: "enterprise",
     label: "Enterprise",
-    description: "Custom limits, SLA, and dedicated support.",
+    description: "10 workspaces — custom limits, SLA, and dedicated support.",
   },
 ] as const;
 

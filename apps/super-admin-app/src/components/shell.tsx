@@ -7,11 +7,14 @@ import {
   ArrowRightOnRectangleIcon,
   BuildingOffice2Icon,
   ChevronDownIcon,
+  ClipboardDocumentCheckIcon,
   ClipboardDocumentListIcon,
   ClockIcon,
   Cog6ToothIcon,
   CreditCardIcon,
+  CubeTransparentIcon,
   PresentationChartBarIcon,
+  PuzzlePieceIcon,
   Squares2X2Icon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
@@ -59,6 +62,7 @@ type NavItem = {
   icon: IconComponent;
   pendingFilter?: boolean;
   demoRequestsBadge?: boolean;
+  subscriptionRequestsBadge?: boolean;
 };
 
 type NavGroup = { label: string; items: NavItem[] };
@@ -81,6 +85,17 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/businesses", label: "Workspaces", icon: BuildingOffice2Icon },
       { href: "/subscriptions", label: "Subscriptions", icon: CreditCardIcon },
       {
+        href: "/subscription-requests",
+        label: "Plan requests",
+        icon: ClipboardDocumentCheckIcon,
+        subscriptionRequestsBadge: true,
+      },
+      {
+        href: "/addon-requests",
+        label: "Add-on requests",
+        icon: PuzzlePieceIcon,
+      },
+      {
         href: "/demo-requests",
         label: "Demo requests",
         icon: PresentationChartBarIcon,
@@ -91,6 +106,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Platform",
     items: [
+      { href: "/avatar-pose", label: "Avatar pose", icon: CubeTransparentIcon },
       { href: "/settings", label: "Settings", icon: Cog6ToothIcon },
       { href: "/audit-logs", label: "Audit Logs", icon: ClipboardDocumentListIcon },
     ],
@@ -102,7 +118,10 @@ const ROUTE_LABELS: Record<string, string> = {
   "/users": "Users",
   "/businesses": "Workspaces",
   "/subscriptions": "Subscriptions",
+  "/subscription-requests": "Plan requests",
+  "/addon-requests": "Add-on requests",
   "/demo-requests": "Demo requests",
+  "/avatar-pose": "Avatar pose",
   "/settings": "Settings",
   "/audit-logs": "Audit Logs",
 };
@@ -111,6 +130,7 @@ function breadcrumbLabel(pathname: string) {
   if (ROUTE_LABELS[pathname]) return ROUTE_LABELS[pathname];
   if (pathname.startsWith("/users/")) return "User detail";
   if (pathname.startsWith("/businesses/")) return "Workspace detail";
+  if (pathname.startsWith("/avatar-pose/clips/")) return "Clip";
   return pathname.split("/").filter(Boolean).pop()?.replace(/-/g, " ") ?? "";
 }
 
@@ -121,6 +141,9 @@ function isActive(pathname: string, href: string, statusFilter: string | null, p
   if (href === "/") return pathname === "/";
   if (href === "/users") {
     return (pathname === "/users" && statusFilter !== "pending") || pathname.startsWith("/users/");
+  }
+  if (href === "/avatar-pose") {
+    return pathname === "/avatar-pose" || pathname.startsWith("/avatar-pose/");
   }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -215,6 +238,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const { admin, logout, token, authReady } = useAuth();
   const [pendingUsers, setPendingUsers] = useState(0);
   const [newDemoRequests, setNewDemoRequests] = useState(0);
+  const [pendingSubRequests, setPendingSubRequests] = useState(0);
 
   const loadPendingUsers = useCallback(async () => {
     if (!token) return;
@@ -236,28 +260,47 @@ export function Shell({ children }: { children: ReactNode }) {
     }
   }, [token]);
 
+  const loadPendingSubRequests = useCallback(async () => {
+    if (!token) return;
+    try {
+      const result = await api.listSubscriptionRequests(token, {
+        status: "pending",
+        limit: 1,
+        page: 1,
+      });
+      setPendingSubRequests(result.total);
+    } catch {
+      setPendingSubRequests(0);
+    }
+  }, [token]);
+
   useEffect(() => {
     if (!authReady) return;
     void loadPendingUsers();
     void loadNewDemoRequests();
-  }, [authReady, loadPendingUsers, loadNewDemoRequests, pathname, statusFilter]);
+    void loadPendingSubRequests();
+  }, [authReady, loadPendingUsers, loadNewDemoRequests, loadPendingSubRequests, pathname, statusFilter]);
 
   useEffect(() => {
     const onFocus = () => {
       void loadPendingUsers();
       void loadNewDemoRequests();
+      void loadPendingSubRequests();
     };
     const onUsersChanged = () => void loadPendingUsers();
     const onDemoChanged = () => void loadNewDemoRequests();
+    const onSubChanged = () => void loadPendingSubRequests();
     window.addEventListener("focus", onFocus);
     window.addEventListener("platform-users-changed", onUsersChanged);
     window.addEventListener("platform-demo-requests-changed", onDemoChanged);
+    window.addEventListener("platform-subscription-requests-changed", onSubChanged);
     return () => {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("platform-users-changed", onUsersChanged);
       window.removeEventListener("platform-demo-requests-changed", onDemoChanged);
+      window.removeEventListener("platform-subscription-requests-changed", onSubChanged);
     };
-  }, [loadPendingUsers, loadNewDemoRequests]);
+  }, [loadPendingUsers, loadNewDemoRequests, loadPendingSubRequests]);
 
   return (
     <SidebarProvider>
@@ -272,20 +315,34 @@ export function Shell({ children }: { children: ReactNode }) {
               <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {group.items.map(({ href, label, icon: Icon, pendingFilter, demoRequestsBadge }) => {
+                  {group.items.map(
+                    ({
+                      href,
+                      label,
+                      icon: Icon,
+                      pendingFilter,
+                      demoRequestsBadge,
+                      subscriptionRequestsBadge,
+                    }) => {
                     const active = isActive(pathname, href, statusFilter, pendingFilter);
                     const badgeCount = pendingFilter
                       ? pendingUsers
                       : demoRequestsBadge
                         ? newDemoRequests
-                        : 0;
-                    const showBadge = Boolean(pendingFilter || demoRequestsBadge);
+                        : subscriptionRequestsBadge
+                          ? pendingSubRequests
+                          : 0;
+                    const showBadge = Boolean(
+                      pendingFilter || demoRequestsBadge || subscriptionRequestsBadge,
+                    );
                     const tooltip =
                       pendingFilter && pendingUsers > 0
                         ? `${label} (${pendingUsers} awaiting approval)`
                         : demoRequestsBadge && newDemoRequests > 0
                           ? `${label} (${newDemoRequests} new)`
-                          : label;
+                          : subscriptionRequestsBadge && pendingSubRequests > 0
+                            ? `${label} (${pendingSubRequests} pending)`
+                            : label;
 
                     return (
                       <SidebarMenuItem key={href} className="relative">
@@ -310,7 +367,8 @@ export function Shell({ children }: { children: ReactNode }) {
                         ) : null}
                       </SidebarMenuItem>
                     );
-                  })}
+                  },
+                  )}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

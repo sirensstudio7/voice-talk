@@ -23,6 +23,9 @@ const AvatarHero = dynamic(
 export function AssistantPreviewHero() {
   const { selectedTemplate } = useAssistantTemplate();
 
+  // Head → hips bust framing (same crop as customer RPM templates / prior desktop).
+  const framing = "bust" as const;
+
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
       <AssistantTemplatePicker />
@@ -30,9 +33,11 @@ export function AssistantPreviewHero() {
         <AvatarHero
           key={selectedTemplate.id}
           isTalking={false}
+          mode="idle"
           modelPath={selectedTemplate.modelPath}
           assistantName={selectedTemplate.assistant_name}
-          frameClassName="absolute inset-x-0 bottom-0 top-0 mx-auto aspect-[2/3] h-full max-h-[420px] w-auto [mask-image:linear-gradient(to_bottom,black_0%,black_78%,transparent_94%)] [-webkit-mask-image:linear-gradient(to_bottom,black_0%,black_78%,transparent_94%)]"
+          framing={framing}
+          frameClassName="absolute inset-x-0 bottom-0 top-0 mx-auto aspect-[2/3] h-full max-h-[420px] w-auto"
         />
         <div
           className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-slate-100 to-transparent"
@@ -49,7 +54,7 @@ export function AssistantPreviewHero() {
             <p className="mt-1 text-sm text-slate-600">{selectedTemplate.description}</p>
           </div>
           <p className="hidden rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-slate-500 ring-1 ring-slate-200 sm:inline">
-            Same 3D model · personality varies
+            Template avatar · personality varies
           </p>
         </div>
       </div>

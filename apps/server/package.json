@@ -27,6 +27,7 @@
     "jsonwebtoken": "^9.0.2",
     "otpauth": "^9.5.1",
     "postgres": "^3.4.7",
+    "sharp": "^0.35.3",
     "ws": "^8.21.0",
     "zod": "^3.25.51"
   },
@@ -34,6 +35,7 @@
     "@types/bcrypt": "^5.0.2",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.15.29",
+    "@types/sharp": "^0.31.1",
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.1",
     "tsx": "^4.19.4",

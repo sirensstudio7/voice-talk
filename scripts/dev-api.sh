@@ -30,7 +30,7 @@ kill_port() {
 }
 
 wait_for_health() {
-  local retries=30
+  local retries="${1:-30}"
   local i
   for ((i = 1; i <= retries; i++)); do
     local health_json
@@ -128,7 +128,9 @@ case "${1:-start}" in
     fi
     if curl -sf --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; then
       echo "API is running — waiting for database..."
-      if wait_for_health; then
+      # Stuck Postgres pools rarely recover without a process restart.
+      # Only wait briefly, then recycle the API.
+      if wait_for_health 6; then
         ensure_vision_sidecar
         exit 0
       fi
@@ -137,7 +139,7 @@ case "${1:-start}" in
       echo "API not responding. Starting in background (log: .api.log)..."
     fi
     start_api_daemon
-    wait_for_health
+    wait_for_health 30
     ensure_vision_sidecar
     ;;
   *)

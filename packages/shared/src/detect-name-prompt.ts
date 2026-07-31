@@ -15,6 +15,7 @@ const OTHER_CHECKOUT_QUESTION_PATTERNS = [
   /\b(phone\s+number|mobile\s+number|contact\s+number|nomor\s+(?:hp|telepon|wa|whatsapp))\b/i,
   /\b(email\s+address|alamat\s+email)\b/i,
   /\b(promo|diskon|voucher|kupon|coupon|discount)\b/i,
+  /\b(souvenir\s+photo|photo\s+together|want\s+a\s+photo|take\s+a\s+photo|foto\s+(?:bareng|bersama|kenang)|kenang[- ]?kenangan|mau\s+foto|foto\s+dulu)\b/i,
 ];
 
 const OTHER_QUESTION_STARTERS = [

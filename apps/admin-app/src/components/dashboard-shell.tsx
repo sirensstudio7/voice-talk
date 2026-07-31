@@ -16,10 +16,13 @@ import {
   CheckIcon,
   ChevronDownIcon,
   ClockIcon,
+  PlusIcon,
+  PuzzlePieceIcon,
   Cog6ToothIcon,
   MagnifyingGlassIcon,
   QrCodeIcon,
   QueueListIcon,
+  BanknotesIcon,
   ReceiptPercentIcon,
   SparklesIcon,
   Squares2X2Icon,
@@ -59,7 +62,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { getHealth, type Business } from "@/lib/api";
+import { api, getHealth, type Business } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { customerAppUrl } from "@/lib/customer-app";
 
@@ -96,7 +99,13 @@ const ROUTE_LABELS: Record<string, string> = {
   "/vision-settings": "Vision Settings",
   "/conversations": "Conversations",
   "/appearance": "Appearance",
+  "/billing": "Billing",
+  "/transactions": "Transactions",
+  "/workspaces": "Workspaces",
   "/settings": "Settings",
+  "/add-ons": "Add On",
+  "/add-ons/smart-photo-moment": "Smart Photo Moment",
+  "/add-ons/smart-photo-moment/payment": "Checkout",
 };
 
 function breadcrumbLabel(pathname: string) {
@@ -148,6 +157,10 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/conversations", label: "Conversations", icon: ChatBubbleLeftRightIcon },
       { href: "/appearance", label: "Appearance", icon: SwatchIcon },
     ],
+  },
+  {
+    label: "Add On",
+    items: [{ href: "/add-ons", label: "Add On", icon: PuzzlePieceIcon }],
   },
 ];
 
@@ -220,7 +233,26 @@ function BusinessSwitcher({
   business: Business | null;
   onSelect: (id: string) => void;
 }) {
+  const router = useRouter();
+  const { token } = useAuth();
+  const [canCreate, setCanCreate] = useState(true);
   const label = business?.name ?? "Select business";
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    void api
+      .getSubscription(token)
+      .then((sub) => {
+        if (!cancelled) setCanCreate(sub.can_create_workspace);
+      })
+      .catch(() => {
+        if (!cancelled) setCanCreate(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, businesses.length]);
 
   return (
     <DropdownMenu>
@@ -270,6 +302,22 @@ function BusinessSwitcher({
             </DropdownMenuItem>
           );
         })}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={() => {
+            if (canCreate) {
+              router.push("/onboarding/workspace?new=1");
+            } else {
+              router.push("/billing");
+            }
+          }}
+          className="gap-2 p-2"
+        >
+          <div className="flex size-6 shrink-0 items-center justify-center rounded-md border border-dashed">
+            <PlusIcon className="size-3.5 shrink-0" />
+          </div>
+          <span className="font-medium">{canCreate ? "New workspace" : "Upgrade to add workspace"}</span>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -297,6 +345,29 @@ function UserMenu({
   onLogout: () => void;
 }) {
   const router = useRouter();
+  const { token } = useAuth();
+  const [planLabel, setPlanLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    void api
+      .getSubscription(token)
+      .then((sub) => {
+        if (cancelled) return;
+        const label =
+          sub.status === "trialing"
+            ? "Trial"
+            : sub.plan_name?.replace(/\s*Plan$/i, "") || sub.plan_code;
+        setPlanLabel(label);
+      })
+      .catch(() => {
+        if (!cancelled) setPlanLabel(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   return (
     <DropdownMenu>
@@ -305,7 +376,14 @@ function UserMenu({
           type="button"
           className="hidden items-center gap-2.5 rounded-md px-1 py-1 outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring md:flex"
         >
-          <p className="max-w-[12rem] truncate text-xs text-muted-foreground">{user.email}</p>
+          <div className="flex min-w-0 flex-col items-end gap-0.5">
+            {planLabel ? (
+              <span className="inline-flex max-w-[12rem] truncate rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold leading-none text-foreground">
+                {planLabel}
+              </span>
+            ) : null}
+            <p className="max-w-[12rem] truncate text-xs text-muted-foreground">{user.email}</p>
+          </div>
           <div
             className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-orange-400 to-orange-500"
             aria-hidden="true"
@@ -317,9 +395,26 @@ function UserMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuLabel className="font-normal">
+          {planLabel ? (
+            <span className="mb-1 inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold leading-none text-foreground">
+              {planLabel}
+            </span>
+          ) : null}
           <p className="truncate text-xs text-muted-foreground">{user.email}</p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => router.push("/workspaces")}>
+          <BuildingOffice2Icon />
+          Workspace
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => router.push("/billing")}>
+          <ReceiptPercentIcon />
+          Billing
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => router.push("/transactions")}>
+          <BanknotesIcon />
+          Transactions
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => router.push("/settings")}>
           <Cog6ToothIcon />
           Settings

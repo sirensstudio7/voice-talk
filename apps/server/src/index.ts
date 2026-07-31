@@ -15,6 +15,7 @@ import { registerPublicRoutes } from "./routes/public.js";
 import { registerWebSocketRoutes } from "./routes/websocket.js";
 import { registerVisionWebSocketRoutes } from "./routes/vision-ws.js";
 import { initVisionEventBus } from "./services/vision-orchestrator.js";
+import { registerPhotoMomentJobs } from "./services/photo-jobs.js";
 import { getUploadRoot } from "./storage/index.js";
 
 const app = Fastify({ logger: true });
@@ -32,7 +33,7 @@ await app.register(cors, {
   methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
 });
 
-await app.register(multipart, { limits: { fileSize: 5 * 1024 * 1024 } });
+await app.register(multipart, { limits: { fileSize: 8 * 1024 * 1024 } });
 await app.register(websocket);
 
 if (!hasSupabaseStorage()) {
@@ -52,6 +53,7 @@ await registerPlatformRoutes(app);
 await registerWebSocketRoutes(app);
 await registerVisionWebSocketRoutes(app);
 await initVisionEventBus();
+registerPhotoMomentJobs(app);
 
 app.setErrorHandler((error, _request, reply) => {
   const err = error as Error & { statusCode?: number; cause?: Error };

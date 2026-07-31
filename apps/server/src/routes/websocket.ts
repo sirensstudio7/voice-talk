@@ -24,6 +24,10 @@ import {
   resolveIdleTimeoutMs,
   resolveLanguage,
 } from "../services/config-builder.js";
+import {
+  DEFAULT_PHOTO_READY_PROMPT,
+  getSmartPhotoMomentPublicConfig,
+} from "../services/addon-entitlement.js";
 import { getOrCreateVisionSettings, ensureVisionHub, setKioskSessionActive, releaseKioskSession, getVisionHub } from "../services/vision-orchestrator.js";
 import { handleClientOrderMessage } from "../services/client-order.js";
 import {
@@ -176,8 +180,20 @@ async function handleSession(
     }
   };
 
+  const isAwaitingCheckoutName = () => {
+    const snap = orderStore.snapshot();
+    return snap.status === "confirmed" && !String(snap.customer_name ?? "").trim();
+  };
+
   const scheduleIdleTimeout = () => {
     if (completionScheduled) return;
+
+    // During confirmed checkout (waiting for name), do not inject vision
+    // silence follow-ups — they cause the model to restart checkout questions.
+    if (orderingEnabled && isAwaitingCheckoutName()) {
+      clearIdleTimer();
+      return;
+    }
 
     if (visionMode && visionSettingsCache) {
       clearIdleTimer();
@@ -185,6 +201,10 @@ async function handleSession(
       if (visionSilenceStage === "none") {
         idleTimer = setTimeout(() => {
           if (completionScheduled) return;
+          if (orderingEnabled && isAwaitingCheckoutName()) {
+            visionSilenceStage = "none";
+            return;
+          }
           visionSilenceStage = "follow_up";
           audioQueue.push(
             new ClientTextEvent(buildVisionSilenceFollowUpPrompt(resolvedLanguage)),
@@ -197,6 +217,10 @@ async function handleSession(
         const goodbyeMs = visionSettingsCache.autoGoodbyeTimeoutSeconds * 1000;
         idleTimer = setTimeout(() => {
           if (completionScheduled) return;
+          if (orderingEnabled && isAwaitingCheckoutName()) {
+            visionSilenceStage = "none";
+            return;
+          }
           visionSilenceStage = "goodbye";
           audioQueue.push(
             new ClientTextEvent(
@@ -257,13 +281,23 @@ async function handleSession(
     if (!lastAssistantTurn || !isCombinedCustomerNameAsk(lastAssistantTurn)) return;
     if (lastNameCorrectionTurn === lastAssistantTurn) return;
     lastNameCorrectionTurn = lastAssistantTurn;
-    audioQueue.push(new ClientTextEvent(buildCombinedNameAskCorrectionPrompt(resolvedLanguage)));
+    audioQueue.push(
+      new ClientTextEvent(
+        buildCombinedNameAskCorrectionPrompt(resolvedLanguage, {
+          photoMomentEnabled,
+          photoConsentRecorded: photoSouvenirConsent !== null,
+          voicePrompt: photoVoicePrompt,
+        }),
+      ),
+    );
   };
 
   const maybePromptPaymentAfterNameAsk = () => {
     if (!orderingEnabled || completionScheduled) return;
     const snap = orderStore.snapshot();
     if (snap.status !== "confirmed" || snap.customer_name) return;
+    // Don't open Pay until souvenir-photo consent is recorded when SPM is on.
+    if (photoMomentEnabled && photoSouvenirConsent === null) return;
     if (!lastAssistantTurn || !isStandaloneCustomerNameAsk(lastAssistantTurn)) return;
     safeSendJson(socket, { type: "checkout.prompt_payment" });
   };
@@ -281,6 +315,21 @@ async function handleSession(
   const onSetCustomerName = (name: string) => {
     void updateOrderCustomerName(voiceSessionId, name);
   };
+
+  const onPhotoConsent = (consent: "yes" | "no") => {
+    photoSouvenirConsent = consent;
+    safeSendJson(socket, { type: "photo.consent", consent });
+  };
+
+  // Loaded before Gemini connect so tools/instructions match entitlement.
+  let photoMomentEnabled = false;
+  let photoVoicePrompt = "";
+  let photoSouvenirConsent: "yes" | "no" | null = null;
+  const photoConfigPromise = getSmartPhotoMomentPublicConfig(tenant.id).then((cfg) => {
+    photoMomentEnabled = Boolean(cfg.active && cfg.enabled);
+    photoVoicePrompt = cfg.voice_prompt;
+    return cfg;
+  });
 
   socket.on("message", (raw, isBinary) => {
     if (isBinary) {
@@ -305,6 +354,13 @@ async function handleSession(
         audioQueue.push(ACTIVITY_END);
       } else if (msgType === "audio.stream_end") {
         audioQueue.push(AUDIO_STREAM_END);
+      } else if (msgType === "input.text") {
+        const text = String(payload.text ?? "").trim();
+        if (!text) return;
+        clearIdleTimer();
+        visionSilenceStage = "none";
+        safeSendJson(socket, { type: "transcript.user", text });
+        audioQueue.push(new ClientTextEvent(text));
       } else if (msgType === "session.restore") {
         Object.keys(restorePayload).forEach((k) => delete restorePayload[k]);
         Object.assign(restorePayload, payload);
@@ -348,6 +404,29 @@ async function handleSession(
               );
           audioQueue.push(new ClientTextEvent(greetingPrompt));
         })();
+      } else if (msgType === "session.photo_offer") {
+        // Legacy post-payment offer — kept for compatibility; preferred flow asks before name.
+        const promptText = String(payload.prompt ?? "").trim();
+        if (!promptText) return;
+        clearIdleTimer();
+        visionSilenceStage = "none";
+        audioQueue.push(
+          new ClientTextEvent(
+            `Speak this photo invitation naturally in the conversation language, then wait for a short yes/no answer. Do not ask about anything else. Say: "${promptText.replace(/"/g, '\\"')}"`,
+          ),
+        );
+      } else if (msgType === "session.photo_ready") {
+        const promptText =
+          String(payload.prompt ?? "").trim() || DEFAULT_PHOTO_READY_PROMPT;
+        clearIdleTimer();
+        visionSilenceStage = "none";
+        audioQueue.push(
+          new ClientTextEvent(
+            `The customer just completed payment successfully and already agreed to a souvenir photo. ` +
+              `Speak this short ready cue naturally in the conversation language, then stop and wait. ` +
+              `Do not ask questions. Say: "${promptText.replace(/"/g, '\\"')}"`,
+          ),
+        );
       } else if (msgType === "session.goodbye") {
         void (async () => {
           if (completionScheduled) return;
@@ -398,9 +477,13 @@ async function handleSession(
   if (!safeSendJson(socket, { type: "session.status", status: "connecting" })) return;
 
   await waitRestore;
+  await photoConfigPromise;
 
   const transcript = (restorePayload.transcript as Array<{ role?: string; text?: string }>) ?? [];
-  let systemInstruction = buildSystemInstruction(tenant, query.language);
+  let systemInstruction = buildSystemInstruction(tenant, query.language, {
+    photoMomentEnabled: orderingEnabled && photoMomentEnabled,
+    photoVoicePrompt,
+  });
   if (transcript.length) {
     systemInstruction += buildTranscriptContext(transcript, resolvedLanguage);
   }
@@ -410,8 +493,8 @@ async function handleSession(
   }
 
   try {
-    if (!safeSendJson(socket, { type: "session.status", status: "connected" })) return;
-
+    // "connecting" was already sent. "connected" is emitted by Gemini setupComplete
+    // inside startGeminiSession — do not claim ready before the live session exists.
     for await (const event of startGeminiSession(
       {
         apiKey: env.GEMINI_API_KEY,
@@ -422,11 +505,13 @@ async function handleSession(
         orderingEnabled,
         bookingEnabled,
         faqEnabled,
+        photoMomentEnabled,
         businessId: tenant.id,
         voiceSessionId,
         voiceName: getVoicePresetGeminiVoice(tenant.aiRules?.voicePreset),
         onConfirm,
         onSetCustomerName,
+        onPhotoConsent,
       },
       audioQueue.iterable,
       {
@@ -449,7 +534,28 @@ async function handleSession(
           continue;
         }
 
+        if (event.name === "set_photo_souvenir_consent") {
+          const result = event.result as Record<string, unknown> | undefined;
+          // May auto-confirm the order when photo was asked before confirm_order.
+          if (result && typeof result === "object" && "order" in result) {
+            safeSendJson(socket, {
+              type: "order.updated",
+              order: (result as Record<string, unknown>).order,
+            });
+          }
+          continue;
+        }
+
         if (event.name === "prompt_payment") {
+          const result = event.result as Record<string, unknown> | undefined;
+          if (result?.error) continue;
+          if (result && typeof result === "object" && "order" in result) {
+            safeSendJson(socket, {
+              type: "order.updated",
+              order: (result as Record<string, unknown>).order,
+            });
+          }
+          if (photoMomentEnabled && photoSouvenirConsent === null) continue;
           const snap = orderStore.snapshot();
           if (snap.status === "confirmed") {
             if (String(snap.customer_name ?? "").trim()) {
@@ -467,6 +573,7 @@ async function handleSession(
 
         if (event.name === "set_customer_name") {
           const result = event.result as Record<string, unknown> | undefined;
+          if (result?.error) continue;
           if (result && typeof result === "object" && "order" in result) {
             safeSendJson(socket, {
               type: "order.updated",

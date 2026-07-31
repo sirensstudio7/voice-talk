@@ -9,8 +9,9 @@ import {
   signup as apiSignup,
   type Business,
 } from "@/lib/api";
+import { detectCountryCode } from "@/lib/country";
 
-type AuthUser = { id: string; email: string; name: string };
+type AuthUser = { id: string; email: string; name: string; country?: string };
 
 type AuthContextValue = {
   token: string | null;
@@ -24,7 +25,7 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<Business[]>;
   signup: (email: string, password: string, name?: string) => Promise<"pending" | "active">;
   logout: () => void;
-  refreshBusinesses: () => Promise<Business[]>;
+  refreshBusinesses: (opts?: { silent?: boolean }) => Promise<Business[]>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -90,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setHydrated(true);
   }, []);
 
-  const refreshBusinesses = async () => {
+  const refreshBusinesses = async (opts?: { silent?: boolean }) => {
     if (!token) {
       setBusinesses([]);
       setBusinessIdState(null);
@@ -103,7 +104,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return businessesRequestRef.current;
     }
 
-    setBusinessesLoading(true);
+    if (!opts?.silent) {
+      setBusinessesLoading(true);
+    }
     setBusinessesError(null);
 
     const request = (async () => {
@@ -138,7 +141,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setBusinessesError(message);
         return [];
       } finally {
-        setBusinessesLoading(false);
+        if (!opts?.silent) {
+          setBusinessesLoading(false);
+        }
         businessesRequestRef.current = null;
       }
     })();
@@ -181,11 +186,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signup = async (email: string, password: string, name?: string) => {
-    const result = await apiSignup(email, password, name);
+    const result = await apiSignup(email, password, name, detectCountryCode());
     if ("status" in result && result.status === "pending") {
       return "pending";
     }
-    persistSession(result.access_token, result.user);
+    persistSession(result.access_token, {
+      id: result.user.id,
+      email: result.user.email,
+      name: result.user.name,
+      country: result.user.country,
+    });
     setBusinesses([]);
     setBusinessIdState(null);
     localStorage.removeItem(BUSINESS_KEY);

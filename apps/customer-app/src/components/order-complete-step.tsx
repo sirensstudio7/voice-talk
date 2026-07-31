@@ -1,11 +1,13 @@
 "use client";
 
-import {
-  CheckCircleIcon,
-} from "@heroicons/react/24/outline";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircleIcon } from "@heroicons/react/24/outline";
 
 import type { OrderState } from "@/types/voice";
 import { formatCurrency } from "@voicetalk/shared";
+
+/** Idle timeout before auto start-new-order for the next kiosk guest. */
+const AUTO_NEW_SESSION_MS = 10_000;
 
 interface OrderCompleteStepProps {
   order: OrderState;
@@ -13,6 +15,28 @@ interface OrderCompleteStepProps {
 }
 
 export function OrderCompleteStep({ order, onNewOrder }: OrderCompleteStepProps) {
+  const [secondsLeft, setSecondsLeft] = useState(Math.ceil(AUTO_NEW_SESSION_MS / 1000));
+  const onNewOrderRef = useRef(onNewOrder);
+  onNewOrderRef.current = onNewOrder;
+
+  // Restart timer only while this screen is mounted (paused when photo closes the panel).
+  useEffect(() => {
+    const startedAt = Date.now();
+    setSecondsLeft(Math.ceil(AUTO_NEW_SESSION_MS / 1000));
+
+    const tick = window.setInterval(() => {
+      const remainingMs = AUTO_NEW_SESSION_MS - (Date.now() - startedAt);
+      const next = Math.max(0, Math.ceil(remainingMs / 1000));
+      setSecondsLeft(next);
+      if (remainingMs <= 0) {
+        window.clearInterval(tick);
+        onNewOrderRef.current();
+      }
+    }, 250);
+
+    return () => window.clearInterval(tick);
+  }, []);
+
   return (
     <div className="flex flex-col items-center gap-5 py-4 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-600">
@@ -56,6 +80,9 @@ export function OrderCompleteStep({ order, onNewOrder }: OrderCompleteStepProps)
       >
         Start new order
       </button>
+      <p className="text-xs text-slate-400">
+        New session for next guest in {secondsLeft}s
+      </p>
     </div>
   );
 }

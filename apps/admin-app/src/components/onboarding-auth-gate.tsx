@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { useAuth } from "@/lib/auth";
 import { getOnboardingRedirectPath, isOnboardingComplete } from "@/lib/onboarding";
@@ -14,6 +14,8 @@ export function OnboardingAuthGate({
   requireBusiness?: boolean;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isNewWorkspace = searchParams.get("new") === "1";
   const { token, businesses, business, businessesLoading, authReady } = useAuth();
 
   useEffect(() => {
@@ -25,7 +27,7 @@ export function OnboardingAuthGate({
     if (businessesLoading) return;
 
     if (!requireBusiness) {
-      if (businesses.length > 0 && isOnboardingComplete(business)) {
+      if (!isNewWorkspace && businesses.length > 0 && isOnboardingComplete(business)) {
         router.replace("/");
       }
       return;
@@ -39,7 +41,7 @@ export function OnboardingAuthGate({
     if (isOnboardingComplete(business)) {
       router.replace("/");
     }
-  }, [authReady, token, businesses, business, businessesLoading, requireBusiness, router]);
+  }, [authReady, token, businesses, business, businessesLoading, requireBusiness, isNewWorkspace, router]);
 
   if (!authReady || !token || businessesLoading) {
     return (
@@ -50,7 +52,7 @@ export function OnboardingAuthGate({
   }
 
   if (!requireBusiness) {
-    if (businesses.length > 0 && isOnboardingComplete(business)) {
+    if (!isNewWorkspace && businesses.length > 0 && isOnboardingComplete(business)) {
       return null;
     }
     return <>{children}</>;

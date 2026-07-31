@@ -1,5 +1,5 @@
-import { sql } from "drizzle-orm";
-import { db } from "./client.js";
+import postgres from "postgres";
+import { env } from "../env.js";
 
 export type DbHealth = {
   online: boolean;
@@ -7,19 +7,42 @@ export type DbHealth = {
   error?: string;
 };
 
-const CACHE_TTL_MS = 30_000;
+const SUCCESS_CACHE_TTL_MS = 15_000;
+const FAILURE_CACHE_TTL_MS = 2_000;
+
 let cachedHealth: DbHealth | null = null;
 let cachedAt = 0;
 let inflightCheck: Promise<DbHealth> | null = null;
 
+/**
+ * Ping with a disposable 1-connection client.
+ *
+ * Important: never race `db.execute` on the shared pool — a timed-out query
+ * keeps holding a pool slot and will exhaust max connections (common with
+ * Supabase transaction pooler on :6543).
+ */
 async function pingDb(timeoutMs: number): Promise<DbHealth> {
   const started = Date.now();
+  const connectTimeoutSec = Math.max(1, Math.ceil(timeoutMs / 1000));
+
+  const ping = postgres(env.DATABASE_URL, {
+    prepare: false,
+    max: 1,
+    connect_timeout: connectTimeoutSec,
+    idle_timeout: 1,
+    max_lifetime: 5,
+  });
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   try {
     await Promise.race([
-      db.execute(sql`select 1`),
+      ping`select 1`,
       new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("Database ping timed out")), timeoutMs);
+        timer = setTimeout(
+          () => reject(new Error("Database ping timed out")),
+          timeoutMs,
+        );
       }),
     ]);
 
@@ -30,29 +53,43 @@ async function pingDb(timeoutMs: number): Promise<DbHealth> {
       latencyMs: null,
       error: error instanceof Error ? error.message : "Database unreachable",
     };
+  } finally {
+    if (timer) clearTimeout(timer);
+    await ping.end({ timeout: 1 }).catch(() => {
+      // Ignore close errors — connection may already be dead.
+    });
   }
 }
 
 export async function checkDbHealth(timeoutMs = 5000, force = false): Promise<DbHealth> {
   const now = Date.now();
-  if (!force && cachedHealth && now - cachedAt < CACHE_TTL_MS) {
-    return cachedHealth;
+  if (!force && cachedHealth) {
+    const ttl = cachedHealth.online ? SUCCESS_CACHE_TTL_MS : FAILURE_CACHE_TTL_MS;
+    if (now - cachedAt < ttl) {
+      return cachedHealth;
+    }
   }
 
   if (!force && inflightCheck) {
     return inflightCheck;
   }
 
-  inflightCheck = pingDb(timeoutMs).then((result) => {
+  const check = pingDb(timeoutMs).then((result) => {
     cachedHealth = result;
     cachedAt = Date.now();
     return result;
   });
 
+  if (!force) {
+    inflightCheck = check;
+  }
+
   try {
-    return await inflightCheck;
+    return await check;
   } finally {
-    inflightCheck = null;
+    if (inflightCheck === check) {
+      inflightCheck = null;
+    }
   }
 }
 

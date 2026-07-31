@@ -391,7 +391,16 @@ export function StoreMenuPanelRoot() {
   );
 }
 
-export function StoreMenuButton() {
+const DEFAULT_MENU_BUTTON_CLASS =
+  "relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] transition hover:bg-slate-50";
+
+export function StoreMenuButton({
+  className = DEFAULT_MENU_BUTTON_CLASS,
+  iconClassName = "h-5 w-5",
+}: {
+  className?: string;
+  iconClassName?: string;
+} = {}) {
   const businessSlug = useBusinessSlug();
   const bookingEnabled = useSessionStore((s) => s.bookingEnabled);
   const openMenuPanel = useSessionStore((s) => s.openMenuPanel);
@@ -406,11 +415,10 @@ export function StoreMenuButton() {
     <button
       type="button"
       onClick={handleClick}
-      className="relative z-10 flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_rgba(15,23,42,0.06),0_12px_28px_rgba(15,23,42,0.05)] backdrop-blur-sm transition hover:bg-white hover:scale-[1.02] active:scale-[0.98]"
+      className={className}
       aria-label={bookingEnabled ? "View treatments" : "View menu"}
     >
-      <BookOpenIcon className="h-4 w-4 text-orange-500" />
-      {bookingEnabled ? "Treatments" : "Menu"}
+      <BookOpenIcon className={iconClassName} />
     </button>
   );
 }

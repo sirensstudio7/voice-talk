@@ -12,8 +12,9 @@ Tawarkan upsell dengan sopan jika relevan dengan pesanan.
 Jika tidak yakin, tanyakan klarifikasi daripada menebak.`;
 
 export const TOOL_INSTRUCTIONS = `Panggil add_to_order segera setelah pelanggan memilih item.
-Setelah confirm_order: tanyakan kartu loyalitas atau hal checkout lain dulu (satu topik per turn), lalu tanyakan nama pelanggan terakhir di turn terpisah.
-Pertanyaan nama harus satu-satunya pertanyaan di turn itu — jangan gabungkan dengan pertanyaan lain.
+Setelah confirm_order: tanyakan kartu loyalitas atau hal checkout lain dulu (satu topik per turn). Jika Smart Photo Moment aktif, tanyakan foto kenang-kenangan di turn terpisah sebelum nama, lalu panggil set_photo_souvenir_consent.
+Lalu tanyakan nama pelanggan terakhir di turn terpisah.
+Pertanyaan nama harus satu-satunya pertanyaan di turn itu — jangan gabungkan dengan foto, loyalitas, atau pertanyaan lain. Jangan ulangi pertanyaan yang sudah dijawab.
 Di turn yang sama, panggil prompt_payment setelah pertanyaan nama standalone.
 Tunggu pelanggan menjawab, lalu panggil set_customer_name — layar pembayaran terbuka otomatis setelah nama disimpan.`;
 
@@ -25,7 +26,7 @@ export const KNOWLEDGE = [
   {
     title: "Kartu loyalitas",
     content:
-      "Tawarkan kartu loyalitas setelah pesanan dikonfirmasi, sebelum menanyakan nama pelanggan. Tanyakan kartu loyalitas di turn terpisah — jangan gabungkan dengan pertanyaan nama.",
+      "Tawarkan kartu loyalitas setelah pesanan dikonfirmasi, sebelum foto kenang-kenangan (jika Smart Photo Moment aktif) dan sebelum menanyakan nama pelanggan. Tanyakan kartu loyalitas di turn terpisah — jangan gabungkan dengan foto atau pertanyaan nama.",
   },
 ];
 

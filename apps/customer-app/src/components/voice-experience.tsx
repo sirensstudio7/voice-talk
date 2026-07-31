@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { LorescaleHero } from "@/components/lorescale-hero";
@@ -8,6 +8,7 @@ import { ExperienceBackground } from "@/components/experience-background";
 import { AppointmentBookingPanelRoot } from "@/components/appointment-booking-panel";
 import { CheckoutPanel } from "@/components/basket-panel";
 import { FlyToBasketLayer } from "@/components/fly-to-basket";
+import { SmartPhotoMomentOverlay, shouldOfferPhotoMoment } from "@/components/photo/smart-photo-moment-overlay";
 import { StoreMenuPanelRoot } from "@/components/store-menu-panel";
 import { BottomControls, ExperienceHeader } from "@/components/voice-controls";
 import { TranscriptPanel } from "@/components/transcript-panel";
@@ -74,6 +75,9 @@ export function VoiceExperience() {
   const setMenuCache = useSessionStore((s) => s.setMenuCache);
   const setAssistantName = useSessionStore((s) => s.setAssistantName);
   const setAvatarUrl = useSessionStore((s) => s.setAvatarUrl);
+  const setAvatarModelPath = useSessionStore((s) => s.setAvatarModelPath);
+  const avatarModelPath = useSessionStore((s) => s.avatarModelPath);
+  const assistantName = useSessionStore((s) => s.assistantName) || "Assistant";
   const hydrateLanguageFromStorage = useSessionStore((s) => s.hydrateLanguageFromStorage);
   const visionEnabled = useKioskStore((s) => s.visionEnabled);
   const kioskPhase = useKioskStore((s) => s.kioskPhase);
@@ -94,15 +98,24 @@ export function VoiceExperience() {
     isTalking,
     micPrimed,
     continuousListenActive,
+    visionGreetingPending,
+    greetingPoseActive,
+    thumbsUpPoseActive,
+    talkingHandPoseActive,
     assistantSpeaking,
+    mouthOpen,
+    sessionWarm,
     connect,
     disconnect,
     reconnectForLanguageChange,
     primeMicrophone,
     primeAudioOutput,
+    unlockAudioSync,
     beginVisionListening,
     startTalking,
     stopTalking,
+    sendText,
+    sendPhotoReady,
     startContinuousListening,
     stopContinuousListening,
     cancelPrefetch,
@@ -110,6 +123,9 @@ export function VoiceExperience() {
     ensureVisionGreetingDispatched,
     waitForVisionMicReady,
   } = voiceSession;
+
+  const [startingConversation, setStartingConversation] = useState(false);
+  const [awaitingGreetingAudio, setAwaitingGreetingAudio] = useState(false);
 
   useKioskOrchestrator(
     {
@@ -125,18 +141,99 @@ export function VoiceExperience() {
       ensureVisionGreetingDispatched,
       waitForVisionMicReady,
     },
-    { assistantSpeaking, continuousListenActive },
+    { assistantSpeaking, continuousListenActive, visionGreetingPending },
   );
 
-  const { error, checkoutPanelOpen, conversationPhase, freshOrderRequest, language, orderingEnabled, menuEnabled, bookingEnabled, menuCacheSlug, setLanguage } =
+  const { error, checkoutPanelOpen, conversationPhase, language, orderingEnabled, menuEnabled, bookingEnabled, menuCacheSlug, setLanguage, paymentCompleteRequest, menuCache } =
     useSessionStore();
+  const photoConfig = menuCache?.smart_photo_moment;
+  const photoEnabled = shouldOfferPhotoMoment(photoConfig);
+
+  const handlePhotoReady = useCallback(
+    (prompt: string) => {
+      sendPhotoReady(prompt);
+    },
+    [sendPhotoReady],
+  );
+
+  const handlePhotoFinish = useCallback(() => {
+    // Order complete UI already showing via checkoutPhase paid
+  }, []);
+
   const menuReady = menuCacheSlug === businessSlug;
   const showOrdering = menuReady && orderingEnabled;
   const showBooking = menuReady && bookingEnabled;
   const showMenu = menuReady && menuEnabled;
   const isLive = status === "connected" || status === "connecting";
+  // Prefetch must keep Order Now visible — only hide once a real session is active.
+  const inActiveSession =
+    (status === "connected" && !sessionWarm) ||
+    (status === "connecting" && startingConversation);
   const canTalk = status !== "connecting" && conversationPhase !== "wrapping_up";
-  const avatarMode = useMemo(() => kioskPhaseToAvatarMode(kioskPhase), [kioskPhase]);
+  const showStartButton =
+    !visionEnabled &&
+    !inActiveSession &&
+    !startingConversation &&
+    conversationPhase !== "wrapping_up" &&
+    !checkoutPanelOpen;
+
+  useEffect(() => {
+    if (isLive || error) {
+      setStartingConversation(false);
+    }
+  }, [error, isLive]);
+
+  useEffect(() => {
+    if (
+      assistantSpeaking ||
+      greetingPoseActive ||
+      thumbsUpPoseActive ||
+      talkingHandPoseActive ||
+      error ||
+      (!isLive && !startingConversation)
+    ) {
+      setAwaitingGreetingAudio(false);
+    }
+  }, [
+    assistantSpeaking,
+    error,
+    greetingPoseActive,
+    thumbsUpPoseActive,
+    talkingHandPoseActive,
+    isLive,
+    startingConversation,
+  ]);
+
+  // Warm Gemini + voice WS while the customer reads the idle screen (Order Now path).
+  useEffect(() => {
+    if (visionEnabled) return;
+    if (conversationPhase === "wrapping_up") return;
+    if (isLive || sessionWarm) return;
+
+    const timer = window.setTimeout(() => {
+      void connect({ prefetch: true }).catch(() => {
+        // Idle prefetch is best-effort; Order Now still cold-starts if needed.
+      });
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    businessSlug,
+    connect,
+    conversationPhase,
+    isLive,
+    language,
+    sessionWarm,
+    visionEnabled,
+  ]);
+
+  const avatarMode = useMemo(() => {
+    // Short hello wave only — not the whole greeting / talking phase.
+    if (greetingPoseActive) return "greeting" as const;
+    if (thumbsUpPoseActive) return "acknowledge" as const;
+    if (talkingHandPoseActive) return "talk_gesture" as const;
+    return kioskPhaseToAvatarMode(kioskPhase);
+  }, [greetingPoseActive, thumbsUpPoseActive, talkingHandPoseActive, kioskPhase]);
 
   const visionMicLabel = useMemo(() => {
     if (assistantSpeaking) return "Assistant speaking…";
@@ -161,6 +258,9 @@ export function VoiceExperience() {
     setLanguage(nextLanguage);
     if (wasLive) {
       void reconnectForLanguageChange();
+    } else if (sessionWarm) {
+      // Prefetch was for the old language — drop it so the warm effect reconnects.
+      cancelPrefetch();
     }
   };
 
@@ -197,6 +297,7 @@ export function VoiceExperience() {
         }
 
         setAvatarUrl(data.avatar_url ?? "");
+        setAvatarModelPath(data.avatar_model_path ?? "");
         setBackgroundUrl(data.background_url ?? "");
         setGradientColor(data.gradient_color ?? "");
         setDisplayOrientationSetting(normalizeDisplayOrientationSetting(data.display_orientation));
@@ -219,10 +320,42 @@ export function VoiceExperience() {
       cancelled = true;
       window.removeEventListener("focus", handleFocus);
     };
-  }, [businessSlug, setAssistantName, setAvatarUrl, setMenuCache]);
+  }, [businessSlug, setAssistantName, setAvatarUrl, setAvatarModelPath, setMenuCache]);
+
+  const ensureBusinessAvatarReady = async () => {
+    if (avatarModelPath) return;
+    try {
+      const data = await fetchMenu(businessSlug);
+      setMenuLoadError(null);
+      setMenuCache(businessSlug, data);
+      if (data.assistant_name) setAssistantName(data.assistant_name);
+      setAvatarUrl(data.avatar_url ?? "");
+      setAvatarModelPath(data.avatar_model_path ?? "");
+      setBackgroundUrl(data.background_url ?? "");
+      setGradientColor(data.gradient_color ?? "");
+      setDisplayOrientationSetting(normalizeDisplayOrientationSetting(data.display_orientation));
+      // Let AvatarHero remount onto the RPM model before the greeting wave.
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+    } catch (error) {
+      setMenuLoadError(menuFetchErrorMessage(error));
+    }
+  };
 
   const handleStartTalking = () => {
     void startTalking();
+  };
+
+  const handleStartConversation = () => {
+    setStartingConversation(true);
+    setAwaitingGreetingAudio(true);
+    // Must run sync in the click — async-only unlock often misses the gesture.
+    unlockAudioSync();
+    void (async () => {
+      await primeAudioOutput();
+      await connect({ requestGreeting: true });
+    })();
+    void ensureBusinessAvatarReady();
+    // Mic opens later via Hold to talk — requesting it here kills greeting audio.
   };
 
   const searchParams = useSearchParams();
@@ -242,12 +375,51 @@ export function VoiceExperience() {
   const layout = getExperienceLayout(resolvedDisplayOrientation, { heroEmbed: isHeroEmbed });
   const statusOverlayClass = layout.statusOverlayClass;
 
+  const startCtaLabel = showOrdering
+    ? "Order Now"
+    : showBooking
+      ? "Book appointment"
+      : "Start conversation";
+
+  const startButton = (
+    <>
+      <button
+        type="button"
+        onClick={handleStartConversation}
+        className={`inline-flex items-center justify-center rounded-full font-medium text-white transition-opacity hover:opacity-90 ${
+          layout.compactUi ? "px-5 py-2.5 text-[13px]" : "px-6 py-3 text-[15px]"
+        }`}
+        style={{
+          background: "rgb(249, 115, 22)",
+          boxShadow: "rgba(255, 255, 255, 0.35) 0px 2.5px 5px 0px inset",
+        }}
+      >
+        {startCtaLabel}
+      </button>
+      {sessionWarm ? (
+        <p className="text-center text-[11px] font-medium text-slate-500/90">Ready</p>
+      ) : (
+        <p className="text-center text-[11px] font-medium text-slate-400">Preparing…</p>
+      )}
+      {error ? (
+        <p className="max-w-sm rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-center text-xs font-medium text-red-700">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
+
   return (
     <main
       className={layout.shellClassName}
       data-display={resolvedDisplayOrientation}
       data-display-setting={orientationSettingForLayout}
       data-embed={isHeroEmbed ? "hero" : undefined}
+      data-avatar-mode={avatarMode}
+      data-greeting-pose={greetingPoseActive ? "1" : "0"}
+      data-thumbs-up-pose={thumbsUpPoseActive ? "1" : "0"}
+      data-talking-hand-pose={talkingHandPoseActive ? "1" : "0"}
+      data-avatar-model={avatarModelPath || "default"}
     >
       <div className={layout.frameClassName}>
         <ExperienceBackground backgroundUrl={backgroundUrl} />
@@ -255,17 +427,18 @@ export function VoiceExperience() {
         {layout.heroWrapperClassName ? (
           <div className={layout.heroWrapperClassName}>
             <LorescaleHero
-              key={freshOrderRequest}
               isTalking={isTalking}
               mode={avatarMode}
+              mouthOpen={mouthOpen}
               frameClassName={layout.heroFrameClassName}
             />
           </div>
         ) : (
-          <div key={freshOrderRequest} className="pointer-events-none absolute inset-0">
+          <div className="pointer-events-none absolute inset-0 overflow-visible">
             <LorescaleHero
               isTalking={isTalking}
               mode={avatarMode}
+              mouthOpen={mouthOpen}
               frameClassName={layout.heroFrameClassName}
             />
           </div>
@@ -362,36 +535,32 @@ export function VoiceExperience() {
           </div>
         ) : null}
 
-        {!visionEnabled && !isLive && conversationPhase !== "wrapping_up" && !checkoutPanelOpen ? (
+        {!visionEnabled &&
+        (startingConversation || awaitingGreetingAudio) &&
+        conversationPhase !== "wrapping_up" &&
+        !checkoutPanelOpen &&
+        layout.isLandscape ? (
           <div className={statusOverlayClass}>
-            <button
-              type="button"
-              onClick={() => {
-                void (async () => {
-                  try {
-                    await primeMicrophone();
-                  } catch {
-                    // Playback can still work; mic is only needed after the greeting.
-                  }
-                  await connect({ requestGreeting: true });
-                })();
-              }}
-              className={`inline-flex items-center justify-center rounded-full font-medium text-white transition-opacity hover:opacity-90 ${
-                layout.compactUi ? "px-5 py-2.5 text-[13px]" : "px-6 py-3 text-[15px]"
-              }`}
-              style={{
-                background: "rgb(249, 115, 22)",
-                boxShadow: "rgba(255, 255, 255, 0.35) 0px 2.5px 5px 0px inset",
-              }}
-            >
-              {showOrdering ? "Order Now" : showBooking ? "Book appointment" : "Start conversation"}
-            </button>
-            {error ? (
-              <p className="max-w-sm rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-center text-xs font-medium text-red-700">
-                {error}
+            <p className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 backdrop-blur">
+              {assistantName} is joining…
+            </p>
+          </div>
+        ) : null}
+
+        {!visionEnabled && !checkoutPanelOpen && !layout.isLandscape ? (
+          <div className={statusOverlayClass} aria-hidden={!showStartButton}>
+            {showStartButton ? (
+              startButton
+            ) : startingConversation || awaitingGreetingAudio ? (
+              <p className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 backdrop-blur">
+                {assistantName} is joining…
               </p>
             ) : null}
           </div>
+        ) : null}
+
+        {showStartButton && layout.isLandscape ? (
+          <div className={statusOverlayClass}>{startButton}</div>
         ) : null}
 
         {!checkoutPanelOpen && !visionEnabled ? (
@@ -400,12 +569,26 @@ export function VoiceExperience() {
             isTalking={isTalking}
             onStart={handleStartTalking}
             onStop={stopTalking}
+            onSendText={sendText}
             menuEnabled={showMenu}
             footerClassName={layout.bottomControlsClassName ?? undefined}
             compact={layout.compactUi}
           />
         ) : null}
       </div>
+
+      {photoEnabled && photoConfig ? (
+        <SmartPhotoMomentOverlay
+          businessSlug={businessSlug}
+          config={photoConfig}
+          orderId={null}
+          paymentCompleteRequest={paymentCompleteRequest}
+          assistantSpeaking={assistantSpeaking}
+          onRequestPhotoReady={handlePhotoReady}
+          onFinishOfferKeepAlive={handlePhotoFinish}
+          disconnectVoice={disconnect}
+        />
+      ) : null}
     </main>
   );
 }

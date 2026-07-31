@@ -56,7 +56,7 @@ const PLANS: readonly Plan[] = [
     description:
       "For multi-brand operators with custom needs. Dedicated support, SLAs, and integrations built for scale.",
     features: [
-      "Unlimited locations",
+      "Up to 10 locations",
       "Custom AI models & SLA",
       "Dedicated support",
       "SSO & custom integrations",

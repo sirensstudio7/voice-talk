@@ -32,6 +32,8 @@ const envSchema = z.object({
   ALLOWED_ORIGINS: z.string().optional(),
   /** Comma-separated production domains always allowed over HTTPS, e.g. lorescale.com */
   PRODUCTION_DOMAIN: z.string().default("lorescale.com"),
+  /** Public origin for photo QR download links (marketing app hosts /p/[token]). */
+  PHOTO_DOWNLOAD_BASE_URL: z.string().default("http://localhost:6690"),
 });
 
 export const env = envSchema.parse(process.env);

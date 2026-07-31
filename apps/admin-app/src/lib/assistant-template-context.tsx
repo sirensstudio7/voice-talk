@@ -32,8 +32,12 @@ export function AssistantTemplateProvider({ children }: { children: ReactNode })
 
   useEffect(() => {
     const stored = sessionStorage.getItem(STORAGE_KEY);
+    // Drop removed templates (e.g. Lorescale) so Alex stays the default.
     if (stored && getAssistantTemplate(stored)) {
       setSelectedTemplateIdState(stored);
+    } else if (stored) {
+      sessionStorage.removeItem(STORAGE_KEY);
+      setSelectedTemplateIdState(DEFAULT_TEMPLATE_ID);
     }
   }, []);
 

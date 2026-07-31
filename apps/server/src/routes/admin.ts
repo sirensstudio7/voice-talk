@@ -4,6 +4,8 @@ import { mergeTranscriptMessages, normalizeVoicePreset } from "@voicetalk/shared
 import { and, count, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   businessOut,
+  clearBusinessAccessCache,
+  clearUserCache,
   createAccessToken,
   getAuthUserId,
   getCurrentUser,
@@ -16,18 +18,30 @@ import {
 import { db } from "../db/client.js";
 import {
   aiRules,
+  addonRequests,
+  addons,
   businesses,
   businessMembers,
   knowledgeEntries,
   orderItems,
   orders,
+  plans,
   platformSettings,
   products,
+  subscriptionRequests,
   transcriptMessages,
   users,
   voiceSessions,
   visionSettings,
 } from "../db/schema.js";
+import { deleteBusinessAsOwner } from "../services/delete-business.js";
+import {
+  createSubscriptionRequest,
+  ensureTrialEntitlement,
+  getEntitlementSnapshot,
+  listPaidPlans,
+  assertCanCreateWorkspace,
+} from "../services/entitlement.js";
 import { buildSystemInstruction, normalizeIdleTimeoutSeconds } from "../services/config-builder.js";
 import {
   buildOnboardingAiRules,
@@ -78,12 +92,49 @@ import {
   ALLOWED_IMAGE_TYPES,
   deleteFromStorage,
   MAX_UPLOAD_BYTES,
+  PHOTO_BRANDING_BUCKET,
   uploadToStorage,
 } from "../storage/index.js";
+import {
+  createAddonRequest,
+  getAddonStatusForBusiness,
+  getOrCreatePhotoSettings,
+  listAddons,
+  photoSettingsOut,
+  SMART_PHOTO_MOMENT_CODE,
+} from "../services/addon-entitlement.js";
+import {
+  deletePhotoSession,
+  getPhotoAnalytics,
+  listPhotoGallery,
+  updatePhotoSettings,
+} from "../services/photo-moment.js";
 import { orderToOut } from "./public.js";
 
 const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const DISPLAY_ORIENTATIONS = new Set(["portrait", "landscape", "auto"]);
+
+const ADDON_MONTHLY_IDR = 199_000;
+const ADDON_DURATION_DISCOUNTS: Record<number, number> = {
+  1: 0,
+  3: 0.05,
+  6: 0.1,
+  12: 0.15,
+};
+
+/** Prefer checkout Amount in notes; otherwise derive from Duration. */
+function amountLabelFromAddonNotes(notes: string): string {
+  const explicit = notes.match(/Amount:\s*(.+)/i);
+  if (explicit?.[1]?.trim()) return explicit[1].trim();
+
+  const durationMatch = notes.match(/Duration:\s*(\d+)\s*month/i);
+  const months = durationMatch ? Number(durationMatch[1]) : 0;
+  if (!months) return "—";
+
+  const discount = ADDON_DURATION_DISCOUNTS[months] ?? 0;
+  const total = Math.round(ADDON_MONTHLY_IDR * months * (1 - discount));
+  return `Rp${total.toLocaleString("id-ID")}`;
+}
 
 function normalizeGradientColor(value: string | undefined | null): string {
   if (value == null) return "";
@@ -146,6 +197,7 @@ function aiRulesOut(r: typeof aiRules.$inferSelect) {
     id: r.id,
     assistant_name: r.assistantName,
     avatar_url: r.avatarUrl || "",
+    avatar_model_path: r.avatarModelPath || "",
     personality: r.personality,
     tone: r.tone,
     language: r.language,
@@ -241,9 +293,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/admin/auth/signup", async (request, reply) => {
-    const body = request.body as { email?: string; password?: string; name?: string };
+    const body = request.body as {
+      email?: string;
+      password?: string;
+      name?: string;
+      country?: string;
+    };
     const email = body.email?.toLowerCase().trim() ?? "";
     const password = body.password ?? "";
+    const country = (body.country ?? "").trim().toUpperCase().slice(0, 2);
 
     if (!email || !password) {
       return reply.status(400).send({ detail: "Email and password are required." });
@@ -268,9 +326,14 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         email,
         passwordHash: await hashPassword(password),
         name,
+        country: /^[A-Z]{2}$/.test(country) ? country : "",
         status: approvalRequired ? "pending" : "active",
       })
       .returning();
+
+    if (!approvalRequired) {
+      await ensureTrialEntitlement(user!.id);
+    }
 
     if (approvalRequired) {
       return reply.status(201).send({
@@ -285,6 +348,29 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       token_type: "bearer",
       user: userOut(user!),
     });
+  });
+
+  app.patch("/admin/auth/me", async (request, reply) => {
+    try {
+      const user = await getCurrentUser(request);
+      const body = request.body as { country?: string };
+      const country = (body.country ?? "").trim().toUpperCase().slice(0, 2);
+      if (country && !/^[A-Z]{2}$/.test(country)) {
+        return reply.status(400).send({ detail: "country must be a 2-letter ISO code." });
+      }
+      if (!country || user.country) {
+        return userOut(user);
+      }
+      const [updated] = await db
+        .update(users)
+        .set({ country })
+        .where(eq(users.id, user.id))
+        .returning();
+      clearUserCache(user.id);
+      return userOut(updated!);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
   });
 
   app.get("/admin/auth/me", async (request, reply) => {
@@ -327,6 +413,16 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   app.post("/admin/businesses", async (request, reply) => {
     try {
       const user = await getCurrentUser(request);
+      try {
+        await assertCanCreateWorkspace(user.id);
+      } catch (err) {
+        if (err instanceof Error && "statusCode" in err) {
+          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+            detail: err.message,
+          });
+        }
+        throw err;
+      }
       const body = request.body as {
         slug: string;
         name: string;
@@ -463,6 +559,18 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .where(eq(businesses.id, business.id))
         .returning();
       return businessOut(updated!);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.delete("/admin/businesses/:businessId", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      const userId = getAuthUserId(request);
+      await deleteBusinessAsOwner(userId, businessId);
+      clearBusinessAccessCache(businessId);
+      return reply.status(204).send();
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -915,6 +1023,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as Record<string, unknown>;
       const updates: Partial<typeof aiRules.$inferInsert> = {};
       if (body.assistant_name !== undefined) updates.assistantName = String(body.assistant_name);
+      if (body.avatar_model_path !== undefined) {
+        updates.avatarModelPath = String(body.avatar_model_path);
+      }
       if (body.personality !== undefined) updates.personality = String(body.personality);
       if (body.tone !== undefined) updates.tone = String(body.tone);
       if (body.language !== undefined) updates.language = String(body.language);
@@ -1473,6 +1584,412 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       const { days } = request.query as { days?: string };
       const periodDays = days ? Math.max(1, Math.min(90, Number(days))) : 7;
       return getVisionMetrics(businessId, periodDays);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/transactions", async (request, reply) => {
+    try {
+      const user = await getCurrentUser(request);
+
+      const [planRows, addonRows] = await Promise.all([
+        db
+          .select({
+            id: subscriptionRequests.id,
+            status: subscriptionRequests.status,
+            createdAt: subscriptionRequests.createdAt,
+            reviewedAt: subscriptionRequests.reviewedAt,
+            notes: subscriptionRequests.notes,
+            planName: plans.name,
+            planCode: plans.code,
+          })
+          .from(subscriptionRequests)
+          .innerJoin(plans, eq(plans.id, subscriptionRequests.requestedPlanId))
+          .where(eq(subscriptionRequests.userId, user.id))
+          .orderBy(desc(subscriptionRequests.createdAt))
+          .limit(50),
+        db
+          .select({
+            id: addonRequests.id,
+            status: addonRequests.status,
+            createdAt: addonRequests.createdAt,
+            reviewedAt: addonRequests.reviewedAt,
+            notes: addonRequests.notes,
+            paymentProofUrl: addonRequests.paymentProofUrl,
+            transactionCode: addonRequests.transactionCode,
+            addonName: addons.name,
+            addonCode: addons.code,
+            priceDisplay: addons.priceDisplay,
+            businessName: businesses.name,
+            businessId: businesses.id,
+          })
+          .from(addonRequests)
+          .innerJoin(addons, eq(addons.code, addonRequests.addonCode))
+          .innerJoin(businesses, eq(businesses.id, addonRequests.businessId))
+          .where(eq(addonRequests.userId, user.id))
+          .orderBy(desc(addonRequests.createdAt))
+          .limit(50),
+      ]);
+
+      const items = [
+        ...planRows.map((row) => ({
+          id: row.id,
+          type: "subscription" as const,
+          title: `${row.planName} plan`,
+          subtitle: row.planCode,
+          status: row.status,
+          amount_label: null as string | null,
+          workspace_name: null as string | null,
+          payment_proof_url: null as string | null,
+          transaction_code: null as string | null,
+          notes: row.notes,
+          created_at: row.createdAt.toISOString(),
+          reviewed_at: row.reviewedAt?.toISOString() ?? null,
+        })),
+        ...addonRows.map((row) => ({
+          id: row.id,
+          type: "addon" as const,
+          title: row.addonName,
+          subtitle: row.addonCode,
+          status: row.status,
+          amount_label: amountLabelFromAddonNotes(row.notes),
+          workspace_name: row.businessName,
+          payment_proof_url: row.paymentProofUrl,
+          transaction_code: row.transactionCode,
+          notes: row.notes,
+          created_at: row.createdAt.toISOString(),
+          reviewed_at: row.reviewedAt?.toISOString() ?? null,
+        })),
+      ].sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+      return { items };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/subscription/me", async (request, reply) => {
+    try {
+      const user = await getCurrentUser(request);
+      return getEntitlementSnapshot(user.id);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/subscription/plans", async (request, reply) => {
+    try {
+      await getCurrentUser(request);
+      const paid = await listPaidPlans();
+      return paid.map((p) => ({
+        code: p.code,
+        name: p.name,
+        workspace_limit: p.workspaceLimit,
+      }));
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/admin/subscription/request", async (request, reply) => {
+    try {
+      const user = await getCurrentUser(request);
+      const body = request.body as { plan_code?: string };
+      const planCode = body.plan_code?.trim().toLowerCase() ?? "";
+      if (!planCode) {
+        return reply.status(400).send({ detail: "plan_code is required" });
+      }
+
+      try {
+        const { requestId, plan } = await createSubscriptionRequest(user.id, planCode);
+        const entitlement = await getEntitlementSnapshot(user.id);
+        return reply.status(201).send({
+          id: requestId,
+          requested_plan: { code: plan.code, name: plan.name, workspace_limit: plan.workspaceLimit },
+          status: "pending",
+          entitlement,
+        });
+      } catch (err) {
+        if (err instanceof Error && "statusCode" in err) {
+          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+            detail: err.message,
+          });
+        }
+        throw err;
+      }
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/addons", async (request, reply) => {
+    try {
+      await getCurrentUser(request);
+      const rows = await listAddons();
+      return rows.map((a) => ({
+        code: a.code,
+        name: a.name,
+        description: a.description,
+        price_display: a.priceDisplay,
+      }));
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/addons/:code", async (request, reply) => {
+    try {
+      const { businessId, code } = request.params as { businessId: string; code: string };
+      await requireBusinessAccess(request, businessId);
+      return getAddonStatusForBusiness(businessId, code);
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/admin/businesses/:businessId/addons/payment-proof", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      const data = await request.file();
+      if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+
+      const contentType = (data.mimetype || "").toLowerCase();
+      const extension = ALLOWED_IMAGE_TYPES[contentType];
+      if (!extension) {
+        return reply.status(400).send({
+          detail: "Upload a PNG, JPG, WEBP, or GIF image of your payment proof.",
+        });
+      }
+
+      const buffer = await data.toBuffer();
+      if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+      if (buffer.length > MAX_UPLOAD_BYTES) {
+        return reply.status(400).send({ detail: "Payment proof must be 5 MB or smaller." });
+      }
+
+      const url = await uploadToStorage(
+        "payment-proofs",
+        `${businessId}/proof-${Date.now()}${extension}`,
+        buffer,
+        contentType,
+      );
+      return { url };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/admin/businesses/:businessId/addons/:code/request", async (request, reply) => {
+    try {
+      const user = await getCurrentUser(request);
+      const { businessId, code } = request.params as { businessId: string; code: string };
+      await requireBusinessAccess(request, businessId);
+      const body = (request.body ?? {}) as {
+        duration_months?: number;
+        payment_method?: string;
+        billing_name?: string;
+        billing_email?: string;
+        billing_phone?: string;
+        company?: string;
+        notes?: string;
+        payment_proof_url?: string;
+        transaction_code?: string;
+        amount_display?: string;
+        amount_idr?: number;
+      };
+      const noteParts = [
+        body.amount_display
+          ? `Amount: ${body.amount_display}`
+          : body.amount_idr != null
+            ? `Amount: Rp${Number(body.amount_idr).toLocaleString("id-ID")}`
+            : null,
+        body.duration_months ? `Duration: ${body.duration_months} month(s)` : null,
+        body.payment_method ? `Payment method: ${body.payment_method}` : null,
+        body.billing_name ? `Name: ${body.billing_name}` : null,
+        body.billing_email ? `Email: ${body.billing_email}` : null,
+        body.billing_phone ? `Phone: ${body.billing_phone}` : null,
+        body.company ? `Company: ${body.company}` : null,
+        body.notes ? `Note: ${body.notes}` : null,
+        body.payment_proof_url ? `Payment proof: ${body.payment_proof_url}` : null,
+      ].filter(Boolean);
+      try {
+        const { requestId, transactionCode, addon } = await createAddonRequest(
+          user.id,
+          businessId,
+          code,
+          noteParts.join("\n"),
+          body.payment_proof_url?.trim() || null,
+          body.transaction_code,
+        );
+        return reply.status(201).send({
+          id: requestId,
+          status: "pending",
+          transaction_code: transactionCode,
+          addon: {
+            code: addon.code,
+            name: addon.name,
+            price_display: addon.priceDisplay,
+          },
+        });
+      } catch (err) {
+        if (err instanceof Error && "statusCode" in err) {
+          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+            detail: err.message,
+          });
+        }
+        throw err;
+      }
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/photo/settings", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      const settings = await getOrCreatePhotoSettings(businessId);
+      const status = await getAddonStatusForBusiness(businessId, SMART_PHOTO_MOMENT_CODE);
+      return { ...photoSettingsOut(settings), subscription_status: status.subscription_status };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.patch("/admin/businesses/:businessId/photo/settings", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      const body = request.body as {
+        enabled?: boolean;
+        voice_prompt?: string;
+        countdown_seconds?: number;
+        qr_expiry_hours?: number;
+        campaign_text?: string | null;
+        auto_delete_days?: number;
+      };
+      const updated = await updatePhotoSettings(businessId, {
+        enabled: body.enabled,
+        voicePrompt: body.voice_prompt,
+        countdownSeconds: body.countdown_seconds,
+        qrExpiryHours: body.qr_expiry_hours,
+        campaignText: body.campaign_text,
+        autoDeleteDays: body.auto_delete_days,
+      });
+      return updated;
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/admin/businesses/:businessId/photo/branding/:kind", async (request, reply) => {
+    try {
+      const { businessId, kind } = request.params as { businessId: string; kind: string };
+      if (kind !== "logo" && kind !== "frame") {
+        return reply.status(400).send({ detail: "kind must be logo or frame" });
+      }
+      await requireBusinessAccess(request, businessId);
+      const data = await request.file();
+      if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+
+      const contentType = (data.mimetype || "").toLowerCase();
+      const extension = ALLOWED_IMAGE_TYPES[contentType];
+      if (!extension) {
+        return reply.status(400).send({
+          detail: "Upload a PNG, JPG, WEBP, or GIF image.",
+        });
+      }
+
+      const buffer = await data.toBuffer();
+      if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+      if (buffer.length > MAX_UPLOAD_BYTES) {
+        return reply.status(400).send({ detail: "Image must be 5 MB or smaller." });
+      }
+
+      const objectPath = `${businessId}/${kind}${extension}`;
+      const url = await uploadToStorage(PHOTO_BRANDING_BUCKET, objectPath, buffer, contentType);
+      const updated = await updatePhotoSettings(businessId, {
+        ...(kind === "logo" ? { logoUrl: url } : { frameUrl: url }),
+      });
+      return updated;
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.delete("/admin/businesses/:businessId/photo/branding/:kind", async (request, reply) => {
+    try {
+      const { businessId, kind } = request.params as { businessId: string; kind: string };
+      if (kind !== "logo" && kind !== "frame") {
+        return reply.status(400).send({ detail: "kind must be logo or frame" });
+      }
+      await requireBusinessAccess(request, businessId);
+      const updated = await updatePhotoSettings(businessId, {
+        ...(kind === "logo" ? { logoUrl: null } : { frameUrl: null }),
+      });
+      return updated;
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/photo/gallery", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      const query = request.query as Record<string, unknown>;
+      const from = typeof query.from === "string" && query.from ? new Date(query.from) : null;
+      const to = typeof query.to === "string" && query.to ? new Date(query.to) : null;
+      const limit = Math.min(100, Math.max(1, Number(query.limit) || 50));
+      const offset = Math.max(0, Number(query.offset) || 0);
+      return listPhotoGallery({
+        businessId,
+        from: from && !Number.isNaN(from.getTime()) ? from : null,
+        to: to && !Number.isNaN(to.getTime()) ? to : null,
+        limit,
+        offset,
+      });
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.delete("/admin/businesses/:businessId/photo/gallery/:sessionId", async (request, reply) => {
+    try {
+      const { businessId, sessionId } = request.params as {
+        businessId: string;
+        sessionId: string;
+      };
+      await requireBusinessAccess(request, businessId);
+      await deletePhotoSession(businessId, sessionId);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/photo/analytics", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      return getPhotoAnalytics(businessId);
     } catch (err) {
       return sendAuthError(reply, err);
     }

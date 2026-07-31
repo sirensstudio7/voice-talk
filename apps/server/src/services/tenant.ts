@@ -9,12 +9,17 @@ import {
   type Business,
 } from "../db/schema.js";
 import type { BusinessWithRelations } from "../services/config-builder.js";
+import { hasServiceAccessForBusiness } from "../services/entitlement.js";
 
 export async function getBusinessBySlug(slug: string): Promise<BusinessWithRelations | null> {
   const business = await db.query.businesses.findFirst({
     where: (b, { and, eq: eqFn }) => and(eqFn(b.slug, slug), eqFn(b.isActive, true)),
   });
   if (!business) return null;
+
+  // Block public/kiosk access when the owner's account entitlement is not entitled
+  const entitled = await hasServiceAccessForBusiness(business.id);
+  if (!entitled) return null;
 
   const [productList, knowledgeList, rules] = await Promise.all([
     db.select().from(products).where(eq(products.businessId, business.id)),

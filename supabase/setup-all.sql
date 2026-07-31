@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS ai_rules (
   business_id VARCHAR(36) NOT NULL UNIQUE REFERENCES businesses(id),
   assistant_name VARCHAR(50) NOT NULL DEFAULT 'Lorescale',
   avatar_url TEXT NOT NULL DEFAULT '',
+  avatar_model_path TEXT NOT NULL DEFAULT '',
   personality TEXT NOT NULL,
   tone VARCHAR(20) NOT NULL DEFAULT 'friendly',
   language VARCHAR(5) NOT NULL DEFAULT 'id',
@@ -294,3 +295,138 @@ DROP POLICY IF EXISTS "Service delete assistant-avatars" ON storage.objects;
 CREATE POLICY "Service delete assistant-avatars"
   ON storage.objects FOR DELETE
   USING (bucket_id = 'assistant-avatars');
+
+-- Account entitlements + plan catalog (024_account_subscriptions.sql)
+CREATE TABLE IF NOT EXISTS plans (
+  id VARCHAR(36) PRIMARY KEY,
+  code VARCHAR(50) NOT NULL UNIQUE,
+  name VARCHAR(100) NOT NULL,
+  workspace_limit INTEGER NOT NULL,
+  is_trial BOOLEAN NOT NULL DEFAULT FALSE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO plans (id, code, name, workspace_limit, is_trial, sort_order)
+VALUES
+  ('plan-trial', 'trial', 'Demo Trial', 1, TRUE, 0),
+  ('plan-starter', 'starter', 'Starter', 1, FALSE, 1),
+  ('plan-growth', 'growth', 'Growth', 5, FALSE, 2),
+  ('plan-enterprise', 'enterprise', 'Enterprise', 10, FALSE, 3)
+ON CONFLICT (code) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS account_subscriptions (
+  id VARCHAR(36) PRIMARY KEY,
+  user_id VARCHAR(36) NOT NULL UNIQUE REFERENCES users(id),
+  plan_id VARCHAR(36) NOT NULL REFERENCES plans(id),
+  status VARCHAR(20) NOT NULL DEFAULT 'trialing',
+  trial_started_at TIMESTAMPTZ,
+  trial_ends_at TIMESTAMPTZ,
+  starts_at TIMESTAMPTZ,
+  ends_at TIMESTAMPTZ,
+  workspace_limit INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_account_subscriptions_status ON account_subscriptions(status);
+CREATE INDEX IF NOT EXISTS idx_account_subscriptions_trial_ends ON account_subscriptions(trial_ends_at);
+
+CREATE TABLE IF NOT EXISTS subscription_requests (
+  id VARCHAR(36) PRIMARY KEY,
+  user_id VARCHAR(36) NOT NULL REFERENCES users(id),
+  requested_plan_id VARCHAR(36) NOT NULL REFERENCES plans(id),
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by VARCHAR(36) REFERENCES platform_admins(id),
+  notes TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscription_requests_status ON subscription_requests(status);
+CREATE INDEX IF NOT EXISTS idx_subscription_requests_user ON subscription_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_subscription_requests_created ON subscription_requests(created_at DESC);
+
+-- Smart Photo Moment (027_smart_photo_moment.sql)
+CREATE TABLE IF NOT EXISTS addons (
+  id VARCHAR(36) PRIMARY KEY,
+  code VARCHAR(50) NOT NULL UNIQUE,
+  name VARCHAR(100) NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  price_display VARCHAR(50) NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO addons (id, code, name, description, price_display, sort_order)
+VALUES (
+  'addon-smart-photo-moment',
+  'smart_photo_moment',
+  'Smart Photo Moment',
+  'AI transaction-triggered souvenir photo with QR download.',
+  'Rp199.000/month',
+  1
+)
+ON CONFLICT (code) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS addon_subscriptions (
+  id VARCHAR(36) PRIMARY KEY,
+  business_id VARCHAR(36) NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  addon_code VARCHAR(50) NOT NULL REFERENCES addons(code),
+  status VARCHAR(20) NOT NULL DEFAULT 'inactive',
+  starts_at TIMESTAMPTZ,
+  ends_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (business_id, addon_code)
+);
+
+CREATE TABLE IF NOT EXISTS addon_requests (
+  id VARCHAR(36) PRIMARY KEY,
+  business_id VARCHAR(36) NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  user_id VARCHAR(36) NOT NULL REFERENCES users(id),
+  addon_code VARCHAR(50) NOT NULL REFERENCES addons(code),
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by VARCHAR(36) REFERENCES platform_admins(id),
+  notes TEXT NOT NULL DEFAULT '',
+  payment_proof_url TEXT,
+  transaction_code VARCHAR(32) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS photo_settings (
+  business_id VARCHAR(36) PRIMARY KEY REFERENCES businesses(id) ON DELETE CASCADE,
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  voice_prompt TEXT NOT NULL DEFAULT 'Terima kasih! Mau foto bareng untuk kenang-kenangan?',
+  countdown_seconds INTEGER NOT NULL DEFAULT 3,
+  qr_expiry_hours INTEGER NOT NULL DEFAULT 24,
+  logo_url TEXT,
+  frame_url TEXT,
+  campaign_text TEXT,
+  auto_delete_days INTEGER NOT NULL DEFAULT 7,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS photo_sessions (
+  id VARCHAR(36) PRIMARY KEY,
+  business_id VARCHAR(36) NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  order_id VARCHAR(36) REFERENCES orders(id) ON DELETE SET NULL,
+  visitor_response VARCHAR(20),
+  status VARCHAR(30) NOT NULL DEFAULT 'started',
+  photo_path TEXT,
+  thumbnail_path TEXT,
+  qr_token VARCHAR(64) UNIQUE,
+  download_expires_at TIMESTAMPTZ,
+  downloaded_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS analytics_events (
+  id VARCHAR(36) PRIMARY KEY,
+  business_id VARCHAR(36) NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  event_name VARCHAR(50) NOT NULL,
+  photo_session_id VARCHAR(36) REFERENCES photo_sessions(id) ON DELETE SET NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

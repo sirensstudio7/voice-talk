@@ -26,6 +26,10 @@ export {
   isStandaloneCustomerNameAsk,
 } from "./detect-name-prompt.js";
 export {
+  detectPhotoOfferIntent,
+  type PhotoOfferIntent,
+} from "./photo-offer-intent.js";
+export {
   VOICE_PRESETS,
   VOICE_PRESET_OPTIONS,
   connectVoiceEffectChain,

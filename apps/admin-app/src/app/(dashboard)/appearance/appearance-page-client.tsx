@@ -18,6 +18,7 @@ import { useSidebar } from "@/components/ui/sidebar";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { customerAppUrl } from "@/lib/customer-app";
+import { compressImageForUpload, formatFileSize } from "@/lib/compress-image";
 import {
   normalizeDisplayOrientationSetting,
   useResolvedDisplayOrientation,
@@ -416,9 +417,19 @@ export function AppearancePageClient() {
     setMessage(null);
 
     try {
-      const settings = await api.uploadBackground(token, business.id, file);
+      const compressed = await compressImageForUpload(file, {
+        maxEdge: 2048,
+        quality: 0.82,
+      });
+      const settings = await api.uploadBackground(token, business.id, compressed);
       setBackgroundUrl(settings.background_url);
-      setMessage("Background uploaded.");
+      if (compressed.size < file.size) {
+        setMessage(
+          `Background uploaded and optimized (${formatFileSize(file.size)} → ${formatFileSize(compressed.size)}).`,
+        );
+      } else {
+        setMessage("Background uploaded.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed.");
     } finally {
@@ -630,7 +641,7 @@ export function AppearancePageClient() {
                           />
                           <div className="absolute inset-0 flex items-center justify-center bg-foreground/0 transition group-hover:bg-foreground/25">
                             <span className="rounded-md bg-background/95 px-2.5 py-1 text-xs font-medium opacity-0 shadow-sm ring-1 ring-border transition group-hover:opacity-100">
-                              {uploading ? "Uploading…" : "Replace image"}
+                              {uploading ? "Optimizing…" : "Replace image"}
                             </span>
                           </div>
                           <Button
@@ -652,7 +663,7 @@ export function AppearancePageClient() {
                         <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
                           <ArrowUpTrayIcon className="size-5 text-muted-foreground" />
                           <p className="text-xs text-muted-foreground">
-                            {uploading ? "Uploading…" : "Drop or click to upload"}
+                            {uploading ? "Optimizing…" : "Drop or click to upload"}
                           </p>
                         </div>
                       )}
@@ -669,7 +680,7 @@ export function AppearancePageClient() {
                   >
                     <span className="truncate text-muted-foreground">
                       {uploading
-                        ? "Uploading…"
+                        ? "Optimizing…"
                         : previewUrl
                           ? "Image selected"
                           : "Choose an image"}
@@ -677,7 +688,7 @@ export function AppearancePageClient() {
                     <ArrowUpTrayIcon className="size-4 shrink-0 text-muted-foreground" />
                   </button>
                 }
-                hint="PNG, JPG, WEBP, or GIF · up to 5 MB"
+                hint="Auto-compressed on upload · PNG, JPG, WEBP, or GIF · up to 5 MB"
                 action={
                   previewUrl ? (
                     <Button

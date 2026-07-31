@@ -8,27 +8,46 @@ export class ApiRequestError extends Error {
   }
 }
 
+const DEFAULT_TIMEOUT_MS = 20_000;
+
 async function request<T>(
   path: string,
-  options: RequestInit & { token?: string | null } = {},
+  options: RequestInit & { token?: string | null; timeoutMs?: number } = {},
 ): Promise<T> {
-  const { token, headers, ...rest } = options;
-  const res = await fetch(`${API_URL}${path}`, {
-    ...rest,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
-    },
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new ApiRequestError(
-      typeof data?.detail === "string" ? data.detail : "Request failed",
-      res.status,
-    );
+  const { token, headers, timeoutMs = DEFAULT_TIMEOUT_MS, signal, ...rest } = options;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", () => controller.abort(), { once: true });
   }
-  return data as T;
+
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      ...rest,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new ApiRequestError(
+        typeof data?.detail === "string" ? data.detail : "Request failed",
+        res.status,
+      );
+    }
+    return data as T;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new ApiRequestError("Request timed out. Is the API running?", 408);
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }
 
 export type PlatformAdmin = {
@@ -68,6 +87,7 @@ export type DashboardResponse = {
     active_users_30d: number;
     pending_users: number;
     new_demo_requests: number;
+    pending_subscription_requests?: number;
     total_workspaces: number;
     active_subscriptions: number;
     manual_mrr: number;
@@ -76,6 +96,54 @@ export type DashboardResponse = {
   };
   users: Paginated<PlatformUser>;
   recent_signups: PlatformUser[];
+};
+
+export type SubscriptionRequestItem = {
+  id: string;
+  status: string;
+  created_at: string;
+  reviewed_at: string | null;
+  notes: string;
+  customer: { id: string; name: string; email: string };
+  requested_plan: { code: string; name: string; workspace_limit: number };
+  trial_ends_at: string | null;
+  entitlement_status: string | null;
+};
+
+export type AddonRequestItem = {
+  id: string;
+  status: string;
+  created_at: string;
+  reviewed_at: string | null;
+  notes: string;
+  payment_proof_url: string | null;
+  transaction_code: string;
+  addon: { code: string; name: string };
+  workspace: { id: string; name: string; slug: string };
+  owner: { id: string; name: string; email: string };
+};
+
+export type SubscriptionRequestDetail = {
+  id: string;
+  status: string;
+  created_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  notes: string;
+  customer: { id: string; name: string; email: string; phone: string };
+  requested_plan: { code: string; name: string; workspace_limit: number };
+  entitlement: {
+    status: string;
+    plan_code: string;
+    plan_name: string;
+    workspace_limit: number;
+    workspace_count: number;
+    trial_started_at: string | null;
+    trial_ends_at: string | null;
+    starts_at: string | null;
+    ends_at: string | null;
+  };
+  available_plans: Array<{ code: string; name: string; workspace_limit: number }>;
 };
 
 export type DemoRequestItem = {
@@ -335,6 +403,80 @@ export const api = {
       method: "PATCH",
       token,
       body: JSON.stringify(body),
+    });
+  },
+  listSubscriptionRequests(
+    token: string,
+    params: { page?: number; limit?: number; search?: string; status?: string } = {},
+  ) {
+    return request<Paginated<SubscriptionRequestItem>>(
+      `/platform/subscription-requests${qs(params)}`,
+      { token },
+    );
+  },
+  getSubscriptionRequest(token: string, id: string) {
+    return request<SubscriptionRequestDetail>(`/platform/subscription-requests/${id}`, { token });
+  },
+  activateSubscriptionRequest(
+    token: string,
+    id: string,
+    body: {
+      plan_code?: string;
+      duration_months?: number;
+      custom_ends_at?: string;
+      notes?: string;
+    },
+  ) {
+    return request<{ id: string; status: string; entitlement: unknown }>(
+      `/platform/subscription-requests/${id}/activate`,
+      {
+        method: "POST",
+        token,
+        body: JSON.stringify(body),
+      },
+    );
+  },
+  rejectSubscriptionRequest(token: string, id: string, notes?: string) {
+    return request<{ id: string; status: string }>(
+      `/platform/subscription-requests/${id}/reject`,
+      {
+        method: "POST",
+        token,
+        body: JSON.stringify({ notes: notes ?? "" }),
+      },
+    );
+  },
+  listAddonRequests(
+    token: string,
+    params: { page?: number; limit?: number; search?: string; status?: string } = {},
+  ) {
+    return request<Paginated<AddonRequestItem>>(`/platform/addon-requests${qs(params)}`, {
+      token,
+    });
+  },
+  approveAddonRequest(
+    token: string,
+    id: string,
+    body: { duration_months?: number; custom_ends_at?: string; notes?: string } = {},
+  ) {
+    return request<{ id: string; status: string }>(`/platform/addon-requests/${id}/approve`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(body),
+    });
+  },
+  rejectAddonRequest(token: string, id: string, notes?: string) {
+    return request<{ id: string; status: string }>(`/platform/addon-requests/${id}/reject`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ notes: notes ?? "" }),
+    });
+  },
+  suspendAddonRequest(token: string, id: string, notes?: string) {
+    return request<{ id: string; status: string }>(`/platform/addon-requests/${id}/suspend`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ notes: notes ?? "" }),
     });
   },
 };

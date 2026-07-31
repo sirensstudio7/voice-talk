@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircleIcon } from "@heroicons/react/24/outline";
 
@@ -12,6 +12,8 @@ import {
 import { ApiRequestError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
+  clearBusinessDraft,
+  clearWorkspaceDraft,
   isValidSlug,
   loadWorkspaceDraft,
   nameToSlug,
@@ -22,10 +24,20 @@ type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid" | "err
 
 export function WorkspaceOnboardingClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isNewWorkspace = searchParams.get("new") === "1";
   const { token, business, refreshBusinesses, setBusinessId } = useAuth();
-  const draft = loadWorkspaceDraft();
+  const draft = isNewWorkspace ? null : loadWorkspaceDraft();
 
-  const [name, setName] = useState(draft?.name ?? business?.name ?? "");
+  const [name, setName] = useState(
+    isNewWorkspace ? "" : (draft?.name ?? business?.name ?? ""),
+  );
+
+  useEffect(() => {
+    if (!isNewWorkspace) return;
+    clearWorkspaceDraft();
+    clearBusinessDraft();
+  }, [isNewWorkspace]);
   const slug = nameToSlug(name);
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
   const [slugSuggestions, setSlugSuggestions] = useState<string[]>([]);
@@ -61,7 +73,7 @@ export function WorkspaceOnboardingClient() {
       setSlugStatus("checking");
       setSlugError(null);
       try {
-        if (business?.slug === value) {
+        if (!isNewWorkspace && business?.slug === value) {
           setSlugStatus("available");
           setSlugSuggestions([]);
           return;
@@ -92,7 +104,7 @@ export function WorkspaceOnboardingClient() {
         }
       }
     },
-    [token, business?.slug],
+    [token, business?.slug, isNewWorkspace],
   );
 
   useEffect(() => {
@@ -106,7 +118,7 @@ export function WorkspaceOnboardingClient() {
       return;
     }
 
-    if (business?.slug === slug) {
+    if (!isNewWorkspace && business?.slug === slug) {
       setSlugStatus("available");
       setSlugSuggestions([]);
       setSlugError(null);
@@ -119,7 +131,7 @@ export function WorkspaceOnboardingClient() {
       void checkSlug(slug);
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [slug, slugIsValid, token, checkSlug, name, business?.slug]);
+  }, [slug, slugIsValid, token, checkSlug, name, business?.slug, isNewWorkspace]);
 
   const canContinue =
     name.trim().length > 0 &&
@@ -132,7 +144,7 @@ export function WorkspaceOnboardingClient() {
     event.preventDefault();
     if (!token) return;
 
-    if (business && business.slug === slug) {
+    if (!isNewWorkspace && business && business.slug === slug) {
       router.push("/onboarding/business");
       return;
     }
@@ -254,7 +266,7 @@ export function WorkspaceOnboardingClient() {
         <OnboardingActions>
           <OnboardingContinueButton
             type="submit"
-            disabled={business?.slug === slug ? false : !canContinue}
+            disabled={!isNewWorkspace && business?.slug === slug ? false : !canContinue}
             loading={loading}
             showArrow={!success}
           >

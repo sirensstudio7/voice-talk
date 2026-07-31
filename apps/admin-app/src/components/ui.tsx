@@ -34,16 +34,25 @@ export function PageHeader({
   subtitle,
   action,
   titleAction,
+  align = "start",
 }: {
   title: string;
   subtitle?: string;
   action?: ReactNode;
   titleAction?: ReactNode;
+  align?: "start" | "center";
 }) {
+  const centered = align === "center";
+
   if (titleAction) {
     return (
       <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+        <div
+          className={cn(
+            "flex flex-wrap items-end gap-4",
+            centered ? "justify-center text-center" : "justify-between",
+          )}
+        >
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
             {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
@@ -56,7 +65,12 @@ export function PageHeader({
   }
 
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4">
+    <div
+      className={cn(
+        "flex flex-wrap items-end gap-4",
+        centered ? "flex-col items-center justify-center text-center" : "justify-between",
+      )}
+    >
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}

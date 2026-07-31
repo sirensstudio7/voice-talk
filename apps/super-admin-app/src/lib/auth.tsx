@@ -30,19 +30,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    const savedToken = localStorage.getItem(TOKEN_KEY);
-    const savedAdmin = localStorage.getItem(ADMIN_KEY);
-    if (savedToken && savedAdmin) {
-      setToken(savedToken);
-      setAdmin(JSON.parse(savedAdmin) as PlatformAdmin);
-      void api.me(savedToken).catch(() => {
+    let cancelled = false;
+
+    async function restoreSession() {
+      const savedToken = localStorage.getItem(TOKEN_KEY);
+      const savedAdmin = localStorage.getItem(ADMIN_KEY);
+      if (!savedToken || !savedAdmin) {
+        if (!cancelled) setAuthReady(true);
+        return;
+      }
+
+      try {
+        const admin = await api.me(savedToken);
+        if (cancelled) return;
+        localStorage.setItem(ADMIN_KEY, JSON.stringify(admin));
+        setToken(savedToken);
+        setAdmin(admin);
+      } catch {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(ADMIN_KEY);
-        setToken(null);
-        setAdmin(null);
-      });
+        if (!cancelled) {
+          setToken(null);
+          setAdmin(null);
+        }
+      } finally {
+        if (!cancelled) setAuthReady(true);
+      }
     }
-    setAuthReady(true);
+
+    void restoreSession();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const value = useMemo<AuthContextValue>(

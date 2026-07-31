@@ -241,7 +241,7 @@ export function CheckoutPanel() {
     order,
     checkoutPhase,
     checkoutPanelOpen,
-    confirmOrder,
+    confirmManualCheckout,
     markPaid,
     expirePayment,
     startNewOrder,
@@ -269,7 +269,8 @@ export function CheckoutPanel() {
 
     try {
       await persistConfirmedOrder(businessSlug, order);
-      confirmOrder();
+      // Menu-only path: open Pay your order immediately (voice flow waits for name ask).
+      confirmManualCheckout();
     } catch (error) {
       setConfirmError(error instanceof Error ? error.message : "Could not confirm order.");
     } finally {

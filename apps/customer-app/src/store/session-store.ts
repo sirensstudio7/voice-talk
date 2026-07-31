@@ -231,6 +231,8 @@ interface SessionStore {
   menuPanelOpen: boolean;
   freshOrderRequest: number;
   paymentCompleteRequest: number;
+  /** Smart Photo Moment consent captured before name/payment. */
+  photoSouvenirConsent: "yes" | "no" | null;
   pendingCheckoutReveal: boolean;
   pendingNamePaymentReveal: boolean;
   flyAnimations: FlyAnimationRequest[];
@@ -246,6 +248,7 @@ interface SessionStore {
   selectedTreatment: SelectedTreatment | null;
   assistantName: string;
   avatarUrl: string;
+  avatarModelPath: string;
   avatarCacheBust: number;
   voicePreset: VoicePreset;
   forceNewAssistantBubble: boolean;
@@ -268,8 +271,11 @@ interface SessionStore {
   setOrder: (order: OrderState, options?: { source?: "server" | "local" }) => void;
   revealPaymentAfterNamePrompt: () => void;
   confirmOrder: () => void;
+  /** Menu / tap checkout: confirm and open Pay your order (no voice name ask). */
+  confirmManualCheckout: () => void;
   markPaid: () => void;
   expirePayment: () => void;
+  setPhotoSouvenirConsent: (consent: "yes" | "no" | null) => void;
   startNewOrder: () => void;
   startNewConversation: () => void;
   clearTranscript: () => void;
@@ -288,6 +294,7 @@ interface SessionStore {
   refreshMenuCache: (slug: string) => Promise<boolean>;
   setAssistantName: (name: string) => void;
   setAvatarUrl: (url: string) => void;
+  setAvatarModelPath: (path: string) => void;
   setVoicePreset: (preset: VoicePreset | string | null | undefined) => void;
   hydrateLanguageFromStorage: () => void;
   decrementItemFromOrder: (productId: string) => void;
@@ -309,6 +316,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   menuPanelOpen: false,
   freshOrderRequest: 0,
   paymentCompleteRequest: 0,
+  photoSouvenirConsent: null,
   pendingCheckoutReveal: false,
   pendingNamePaymentReveal: false,
   flyAnimations: [],
@@ -324,6 +332,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   selectedTreatment: null,
   assistantName: "Lorescale",
   avatarUrl: "",
+  avatarModelPath: "",
   avatarCacheBust: 0,
   voicePreset: "natural",
   forceNewAssistantBubble: false,
@@ -495,6 +504,32 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         order: { ...state.order, status: "confirmed" },
       };
     }),
+  confirmManualCheckout: () =>
+    set((state) => {
+      if (state.order.items.length === 0) return state;
+      if (state.checkoutPhase === "paid") return state;
+      // Already confirmed but stuck on shopping (e.g. prior menu confirm without payment reveal).
+      if (state.checkoutPhase === "awaiting_payment") {
+        return state.checkoutPanelOpen
+          ? state
+          : {
+              checkoutPanelOpen: true,
+              checkoutOpenRequest: state.checkoutOpenRequest + 1,
+            };
+      }
+      if (state.checkoutPhase !== "shopping") return state;
+
+      const order = { ...state.order, status: "confirmed" as const };
+      // Force payment UI open — menu checkout has no voice name ask.
+      return {
+        order,
+        checkoutPhase: "awaiting_payment" as const,
+        checkoutPanelOpen: true,
+        checkoutOpenRequest: state.checkoutOpenRequest + 1,
+        pendingCheckoutReveal: false,
+        pendingNamePaymentReveal: false,
+      };
+    }),
   markPaid: () =>
     set((state) => ({
       checkoutPhase: "paid",
@@ -505,6 +540,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       checkoutPhase: "shopping",
       order: { ...state.order, status: "open" },
     })),
+  setPhotoSouvenirConsent: (consent) => set({ photoSouvenirConsent: consent }),
   startNewOrder: () =>
     set((state) => ({
       status: "idle",
@@ -521,6 +557,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       flyAnimations: [],
       freshOrderRequest: state.freshOrderRequest + 1,
       paymentCompleteRequest: 0,
+      photoSouvenirConsent: null,
     })),
   startNewConversation: () =>
     set({
@@ -679,6 +716,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set({ assistantName: name.trim() || "Lorescale" }),
   setAvatarUrl: (url) =>
     set({ avatarUrl: url, avatarCacheBust: url ? Date.now() : 0 }),
+  setAvatarModelPath: (path) => set({ avatarModelPath: path.trim() }),
   setVoicePreset: (preset) =>
     set({ voicePreset: normalizeVoicePreset(preset) }),
   hydrateLanguageFromStorage: () => {
@@ -758,6 +796,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       pendingNamePaymentReveal: false,
       flyAnimations: [],
       paymentCompleteRequest: 0,
+      photoSouvenirConsent: null,
       conversationPhase: "active",
       forceNewAssistantBubble: false,
     }));

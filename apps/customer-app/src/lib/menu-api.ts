@@ -31,25 +31,33 @@ export interface MenuResponse {
   business_type?: string;
   assistant_name?: string;
   avatar_url?: string;
+  avatar_model_path?: string;
   background_url?: string;
   gradient_color?: string;
   display_orientation?: string;
   voice_preset?: string;
   capabilities?: BusinessCapabilities;
   vision?: VisionConfig;
+  smart_photo_moment?: {
+    active: boolean;
+    enabled: boolean;
+    voice_prompt: string;
+    countdown_seconds: number;
+  };
   products: MenuProduct[];
 }
 
 export async function fetchMenu(businessSlug: string): Promise<MenuResponse> {
   const url = `${API_URL}/menu?business=${encodeURIComponent(businessSlug)}`;
   let lastError: unknown;
+  const timeouts = [20_000, 28_000, 35_000];
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < timeouts.length; attempt++) {
     try {
       const response = await fetchWithTimeout(
         url,
         { cache: "no-store" },
-        attempt === 0 ? 18_000 : 24_000,
+        timeouts[attempt],
       );
       if (!response.ok) {
         throw new Error("Unable to load menu.");
@@ -60,8 +68,8 @@ export async function fetchMenu(businessSlug: string): Promise<MenuResponse> {
       const retryable =
         (error instanceof DOMException && error.name === "AbortError") ||
         error instanceof TypeError;
-      if (retryable && attempt === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (retryable && attempt < timeouts.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
         continue;
       }
       throw error;

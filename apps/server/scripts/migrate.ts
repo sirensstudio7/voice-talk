@@ -36,6 +36,10 @@ async function migrate() {
     "021_demo_requests.sql",
     "022_demo_requests_country.sql",
     "023_demo_requests_schedule.sql",
+    "024_account_subscriptions.sql",
+    "025_user_country.sql",
+    "026_ai_rules_avatar_model_path.sql",
+    "027_smart_photo_moment.sql",
   ];
 
   for (const file of migrationFiles) {
@@ -51,6 +55,24 @@ async function migrate() {
         `);
         console.log(`Applied ${file} (schema only; skipped Supabase storage policies).`);
         continue;
+      }
+      if (file === "027_smart_photo_moment.sql") {
+        const tablesOnly = schema.split("-- Private photo bucket")[0] ?? schema;
+        try {
+          await sql.unsafe(tablesOnly);
+          console.log(`Applied ${file} (schema only; skipped Supabase storage policies).`);
+          continue;
+        } catch (inner) {
+          const innerCode =
+            inner && typeof inner === "object" && "code" in inner
+              ? String((inner as { code?: string }).code)
+              : "";
+          if (innerCode === "42701" || innerCode === "42P07" || innerCode === "23514") {
+            console.log(`Skipped ${file} (${innerCode}; already applied or conflicting).`);
+            continue;
+          }
+          throw inner;
+        }
       }
       // Idempotent re-runs: skip known "already applied" / conflicting check constraints
       // from older migrations when columns already exist.

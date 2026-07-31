@@ -94,6 +94,18 @@ export function clearUserCache(userId?: string): void {
   userCache.clear();
 }
 
+export function clearBusinessAccessCache(businessId?: string): void {
+  if (!businessId) {
+    businessAccessCache.clear();
+    return;
+  }
+  for (const key of businessAccessCache.keys()) {
+    if (key.endsWith(`:${businessId}`)) {
+      businessAccessCache.delete(key);
+    }
+  }
+}
+
 function publicErrorDetail(error: unknown): string {
   if (!(error instanceof Error)) return "Internal error";
 
@@ -173,7 +185,12 @@ export function sendAuthError(reply: FastifyReply, error: unknown): void {
 }
 
 export function userOut(user: User) {
-  return { id: user.id, email: user.email, name: user.name };
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    country: user.country || "",
+  };
 }
 
 export function businessOut(business: typeof businesses.$inferSelect) {
@@ -185,6 +202,7 @@ export function businessOut(business: typeof businesses.$inferSelect) {
     tagline: business.tagline,
     voice_name: business.voiceName,
     gemini_model: business.geminiModel,
+    background_url: business.backgroundUrl || "",
     is_active: business.isActive,
     business_type: business.businessType,
     primary_use_case: capabilities.primary_use_case,

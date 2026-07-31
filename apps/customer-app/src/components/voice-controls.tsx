@@ -6,12 +6,12 @@ import {
   HomeIcon,
   MicrophoneIcon,
   PhoneXMarkIcon,
-  ShareIcon,
 } from "@heroicons/react/24/outline";
 import Image from "next/image";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { BasketButton } from "@/components/basket-panel";
+import { KeyboardInputPanel } from "@/components/keyboard-input-panel";
 import { DEFAULT_ASSISTANT_AVATAR, resolveMediaUrl } from "@/lib/menu-api";
 import { useSessionStore } from "@/store/session-store";
 import { StoreMenuButton } from "@/components/store-menu-panel";
@@ -195,10 +195,15 @@ export function ExperienceHeader({
     useSessionStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const isLive = status === "connected" || status === "connecting";
+  const assistantInitial = (assistantName?.trim().charAt(0) || "A").toUpperCase();
+  // Skip the 2D photo during idle preload; show it once a session is active.
   const resolvedAvatarUrl = avatarUrl ? resolveMediaUrl(avatarUrl) : "";
-  const assistantAvatarSrc = resolvedAvatarUrl
-    ? `${resolvedAvatarUrl}${resolvedAvatarUrl.includes("?") ? "&" : "?"}v=${avatarCacheBust || 0}`
-    : DEFAULT_ASSISTANT_AVATAR;
+  const assistantAvatarSrc =
+    isLive && resolvedAvatarUrl
+      ? `${resolvedAvatarUrl}${resolvedAvatarUrl.includes("?") ? "&" : "?"}v=${avatarCacheBust || 0}`
+      : isLive
+        ? DEFAULT_ASSISTANT_AVATAR
+        : null;
 
   const statusDot =
     status === "connecting"
@@ -235,33 +240,37 @@ export function ExperienceHeader({
           } ${assistantName}, ${liveStatusLabel}`}
         >
           <div
-            className={`relative shrink-0 overflow-hidden rounded-full bg-slate-100 ${
-              compact ? "h-6 w-6" : "h-8 w-8"
+            className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 font-semibold text-slate-600 ${
+              compact ? "h-6 w-6 text-[10px]" : "h-8 w-8 text-xs"
             }`}
           >
-            {assistantAvatarSrc.startsWith("http") ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={assistantAvatarSrc}
-                src={assistantAvatarSrc}
-                alt=""
-                width={32}
-                height={32}
-                loading="eager"
-                decoding="async"
-                referrerPolicy="no-referrer"
-                className="h-full w-full object-cover object-center"
-                aria-hidden
-              />
+            {assistantAvatarSrc ? (
+              assistantAvatarSrc.startsWith("http") ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={assistantAvatarSrc}
+                  src={assistantAvatarSrc}
+                  alt=""
+                  width={32}
+                  height={32}
+                  loading="eager"
+                  decoding="async"
+                  referrerPolicy="no-referrer"
+                  className="h-full w-full object-cover object-center"
+                  aria-hidden
+                />
+              ) : (
+                <Image
+                  src={assistantAvatarSrc}
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="h-full w-full object-cover object-center"
+                  aria-hidden
+                />
+              )
             ) : (
-              <Image
-                src={assistantAvatarSrc}
-                alt=""
-                width={32}
-                height={32}
-                className="h-full w-full object-cover object-center"
-                aria-hidden
-              />
+              <span aria-hidden>{assistantInitial}</span>
             )}
             <span
               className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-white transition-colors duration-300 ease-out ${statusDot}`}
@@ -333,6 +342,7 @@ interface BottomControlsProps {
   isTalking: boolean;
   onStart: () => void;
   onStop: () => void;
+  onSendText?: (text: string) => void | Promise<void>;
   menuEnabled?: boolean;
   hideMic?: boolean;
   footerClassName?: string;
@@ -350,12 +360,15 @@ export function BottomControls({
   isTalking,
   onStart,
   onStop,
+  onSendText,
   menuEnabled = true,
   hideMic = false,
   footerClassName,
   compact = false,
 }: BottomControlsProps) {
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const footerClass = footerClassName ?? DEFAULT_FOOTER_CLASS;
+  const floatingChrome = footerClass.includes("absolute");
   const sideButtonClass = compact ? COMPACT_SIDE_BUTTON_CLASS : DEFAULT_SIDE_BUTTON_CLASS;
   const sideIconClass = compact ? "h-4 w-4" : "h-5 w-5";
   const controlsGridClass = compact
@@ -369,8 +382,14 @@ export function BottomControls({
     return (
       <footer className={footerClass}>
         {menuEnabled ? (
-          <div className="absolute bottom-8 right-6 z-10">
-            <StoreMenuButton />
+          <div
+            className={
+              floatingChrome
+                ? "absolute bottom-8 right-6 z-10"
+                : "flex justify-end px-1 pb-1"
+            }
+          >
+            <StoreMenuButton className={sideButtonClass} iconClassName={sideIconClass} />
           </div>
         ) : null}
       </footer>
@@ -378,41 +397,53 @@ export function BottomControls({
   }
 
   return (
-    <footer className={footerClass}>
-      {menuEnabled ? (
-        <div className="absolute bottom-8 right-6 z-10">
-          <StoreMenuButton />
-        </div>
-      ) : null}
+    <>
+      <footer className={footerClass}>
+        <div className={controlsGridClass}>
+          <div className={sideClusterClass}>
+            <button
+              type="button"
+              className={sideButtonClass}
+              aria-label="Keyboard input"
+              aria-expanded={keyboardOpen}
+              onClick={() => {
+                if (onSendText) setKeyboardOpen(true);
+              }}
+            >
+              <CommandLineIcon className={sideIconClass} />
+            </button>
+          </div>
 
-      <div className={controlsGridClass}>
-        <div className={sideClusterClass}>
-          <button type="button" className={sideButtonClass} aria-label="Keyboard input">
-            <CommandLineIcon className={sideIconClass} />
-          </button>
-        </div>
+          <TalkButton
+            disabled={disabled}
+            isTalking={isTalking}
+            onStart={onStart}
+            onStop={onStop}
+            compact={compact}
+          />
 
-        <TalkButton
-          disabled={disabled}
-          isTalking={isTalking}
-          onStart={onStart}
-          onStop={onStop}
-          compact={compact}
+          <div
+            className={
+              compact
+                ? "flex items-end justify-start gap-3"
+                : "flex items-end justify-start gap-4 sm:gap-6"
+            }
+          >
+            {menuEnabled ? (
+              <StoreMenuButton className={sideButtonClass} iconClassName={sideIconClass} />
+            ) : null}
+          </div>
+        </div>
+      </footer>
+
+      {onSendText ? (
+        <KeyboardInputPanel
+          open={keyboardOpen}
+          onClose={() => setKeyboardOpen(false)}
+          onSend={onSendText}
         />
-
-        <div
-          className={
-            compact
-              ? "flex items-end justify-start gap-3"
-              : "flex items-end justify-start gap-4 sm:gap-6"
-          }
-        >
-          <button type="button" className={sideButtonClass} aria-label="Share">
-            <ShareIcon className={sideIconClass} />
-          </button>
-        </div>
-      </div>
-    </footer>
+      ) : null}
+    </>
   );
 }
 

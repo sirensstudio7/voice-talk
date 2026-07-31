@@ -150,7 +150,7 @@ const SECTIONS: {
     label: "Tool instructions",
     description: "How your assistant should use ordering tools like add_to_order and confirm_order.",
     placeholder:
-      "Call add_to_order as soon as the customer picks an item. After confirm_order, ask loyalty or other checkout questions first (one topic per turn), then ask for their name last in a separate turn before payment. The name question must be the only question in that turn.",
+      "Call add_to_order as soon as the customer picks an item. After confirm_order, ask loyalty or other checkout questions first (one topic per turn). If Smart Photo Moment is active, ask about a souvenir photo before the name. Ask for their name last in a separate turn before payment. The name question must be the only question in that turn — do not repeat answered questions.",
     icon: WrenchIcon,
     minHeight: "min-h-28",
   },
@@ -159,6 +159,7 @@ const SECTIONS: {
 function rulesEqual(a: AiRules, b: AiRules) {
   return (
     a.assistant_name === b.assistant_name &&
+    a.avatar_model_path === b.avatar_model_path &&
     a.personality === b.personality &&
     a.tone === b.tone &&
     a.language === b.language &&
@@ -962,6 +963,7 @@ export function AiRulesPageClient() {
       ]);
       const normalized = {
         ...rulesData,
+        avatar_model_path: rulesData.avatar_model_path ?? "",
         voice_preset: rulesData.voice_preset ?? ("natural" as const),
       };
       setRules(normalized);
