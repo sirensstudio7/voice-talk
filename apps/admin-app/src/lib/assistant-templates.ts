@@ -1,4 +1,4 @@
-import type { AiLanguage, AiRules, AiTone } from "@/lib/api";
+import type { AiLanguage, AiRules, AiTone, VoicePreset } from "@/lib/api";
 
 export type AssistantTemplate = {
   id: string;
@@ -8,6 +8,7 @@ export type AssistantTemplate = {
   assistant_name: string;
   tone: AiTone;
   language: AiLanguage;
+  voice_preset: VoicePreset;
   personality: string;
   behavioral_rules: string;
   tool_instructions: string;
@@ -22,6 +23,7 @@ export const ASSISTANT_TEMPLATES: AssistantTemplate[] = [
     assistant_name: "Alex",
     tone: "professional",
     language: "en",
+    voice_preset: "deep",
     personality: `You are Alex, a professional AI cashier.
 Be polite, efficient, and precise. Confirm orders clearly before completing them.
 Use structured language and stay focused on the customer's request.`,
@@ -41,6 +43,7 @@ Call set_customer_name when they give their name.`,
     assistant_name: "Alya",
     tone: "friendly",
     language: "id",
+    voice_preset: "natural",
     personality: `Kamu adalah Alya, agen layanan pelanggan AI yang ramah.
 Jawab pertanyaan dengan jelas menggunakan basis pengetahuan bisnis.
 Jangan menerima pesanan makanan/kopi, menawarkan menu, atau mengarang produk.
@@ -62,6 +65,7 @@ Jangan mengucapkan tool call secara lisan.`,
     assistant_name: "Maya",
     tone: "casual",
     language: "id",
+    voice_preset: "natural",
     personality: `Kamu adalah Maya, barista AI yang santai dan akrab.
 Ngobrol dengan natural seperti teman di warung kopi — ringan tapi tetap sopan.
 Konfirmasi pesanan dengan singkat dan jelas.`,
@@ -96,6 +100,6 @@ export function templateToAiRules(
     behavioral_rules: template.behavioral_rules,
     tool_instructions: template.tool_instructions,
     idle_timeout_seconds: existing.idle_timeout_seconds ?? 30,
-    voice_preset: existing.voice_preset ?? "natural",
+    voice_preset: template.voice_preset,
   };
 }

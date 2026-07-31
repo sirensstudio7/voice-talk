@@ -25,6 +25,7 @@ import {
 import {
   LORESCALE_ASSISTANT_NAME,
   LORESCALE_AVATAR_MODEL_PATH,
+  LORESCALE_VOICE_PRESET,
   LORESCALE_BEHAVIORAL_RULES,
   LORESCALE_BUSINESS_NAME,
   LORESCALE_KNOWLEDGE,
@@ -192,6 +193,7 @@ async function seed() {
       businessId: lorescaleBusiness!.id,
       assistantName: LORESCALE_ASSISTANT_NAME,
       avatarModelPath: LORESCALE_AVATAR_MODEL_PATH,
+      voicePreset: LORESCALE_VOICE_PRESET,
       personality: LORESCALE_PERSONALITY.trim(),
       tone: "professional",
       language: "en",
@@ -219,6 +221,7 @@ async function seed() {
     .set({
       assistantName: LORESCALE_ASSISTANT_NAME,
       avatarModelPath: LORESCALE_AVATAR_MODEL_PATH,
+      voicePreset: LORESCALE_VOICE_PRESET,
       personality: LORESCALE_PERSONALITY.trim(),
       tone: "professional",
       language: "en",
@@ -235,6 +238,7 @@ async function seed() {
       businessId: lorescaleBusiness!.id,
       assistantName: LORESCALE_ASSISTANT_NAME,
       avatarModelPath: LORESCALE_AVATAR_MODEL_PATH,
+      voicePreset: LORESCALE_VOICE_PRESET,
       personality: LORESCALE_PERSONALITY.trim(),
       tone: "professional",
       language: "en",

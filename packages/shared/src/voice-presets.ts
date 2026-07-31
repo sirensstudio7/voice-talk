@@ -129,7 +129,7 @@ export const VOICE_PRESET_OPTIONS: VoicePresetOption[] = [
   {
     value: "deep",
     label: "Deep",
-    description: "Lower pitch with a warm low end.",
+    description: "Male voice — lower pitch with a warm low end.",
   },
   {
     value: "robot",
@@ -255,6 +255,8 @@ const PRESET_CONFIGS: Record<VoicePreset, VoicePresetConfig> = {
     speakingStyle: DARK_BEAST_SPEAKING_STYLE,
   },
   deep: {
+    // Male TTS base (Charon) — use for male assistants like Alex.
+    geminiVoiceName: "Charon",
     playbackRate: 1,
     gain: 1.15,
     pitchSemitones: -2,
