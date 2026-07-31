@@ -187,7 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (email: string, password: string, name?: string) => {
     const result = await apiSignup(email, password, name, detectCountryCode());
-    if ("status" in result && result.status === "pending") {
+    if (!("access_token" in result)) {
       return "pending";
     }
     persistSession(result.access_token, {
