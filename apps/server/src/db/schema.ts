@@ -327,6 +327,7 @@ export const aiRules = pgTable("ai_rules", {
   toolInstructions: text("tool_instructions").notNull().default(""),
   idleTimeoutSeconds: integer("idle_timeout_seconds").notNull().default(30),
   voicePreset: varchar("voice_preset", { length: 30 }).notNull().default("natural"),
+  voiceGender: varchar("voice_gender", { length: 10 }).notNull().default("female"),
 });
 
 export const voiceSessions = pgTable("voice_sessions", {
@@ -517,6 +518,144 @@ export type AddonRequest = typeof addonRequests.$inferSelect;
 export type PhotoSettings = typeof photoSettings.$inferSelect;
 export type PhotoSession = typeof photoSessions.$inferSelect;
 export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
+
+/** AI Presenter — presentation projects (tenant = business_id). */
+export const presentations = pgTable("presentations", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  businessId: varchar("business_id", { length: 36 })
+    .notNull()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  createdBy: varchar("created_by", { length: 36 }).references(() => users.id, {
+    onDelete: "set null",
+  }),
+  title: varchar("title", { length: 500 }).notNull().default(""),
+  description: text("description").notNull().default(""),
+  language: varchar("language", { length: 20 }).notNull().default("en"),
+  category: varchar("category", { length: 100 }).notNull().default(""),
+  status: varchar("status", { length: 50 }).notNull().default("draft"),
+  processingStep: varchar("processing_step", { length: 50 }).notNull().default(""),
+  processingError: text("processing_error").notNull().default(""),
+  totalSlides: integer("total_slides").notNull().default(0),
+  estimatedDuration: integer("estimated_duration").notNull().default(0),
+  greetingScript: text("greeting_script").notNull().default(""),
+  closingScript: text("closing_script").notNull().default(""),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const presentationFiles = pgTable("presentation_files", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  presentationId: varchar("presentation_id", { length: 36 })
+    .notNull()
+    .references(() => presentations.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  fileType: varchar("file_type", { length: 50 }).notNull(),
+  sizeBytes: integer("size_bytes").notNull().default(0),
+  storagePath: text("storage_path").notNull().default(""),
+  status: varchar("status", { length: 50 }).notNull().default("uploaded"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const presentationSlides = pgTable(
+  "presentation_slides",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    presentationId: varchar("presentation_id", { length: 36 })
+      .notNull()
+      .references(() => presentations.id, { onDelete: "cascade" }),
+    slideNumber: integer("slide_number").notNull(),
+    title: text("title").notNull().default(""),
+    contentJson: text("content_json").notNull().default("{}"),
+    notes: text("notes").notNull().default(""),
+    script: text("script").notNull().default(""),
+    imageUrl: text("image_url").notNull().default(""),
+    durationSeconds: integer("duration_seconds").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique("uq_presentation_slide_number").on(table.presentationId, table.slideNumber)],
+);
+
+export const presentationAudioAssets = pgTable("presentation_audio_assets", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  slideId: varchar("slide_id", { length: 36 })
+    .notNull()
+    .references(() => presentationSlides.id, { onDelete: "cascade" }),
+  kind: varchar("kind", { length: 50 }).notNull().default("slide"),
+  provider: varchar("provider", { length: 50 }).notNull().default("gemini"),
+  storagePath: text("storage_path").notNull().default(""),
+  durationSeconds: integer("duration_seconds").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const presentationSessions = pgTable("presentation_sessions", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  presentationId: varchar("presentation_id", { length: 36 })
+    .notNull()
+    .references(() => presentations.id, { onDelete: "cascade" }),
+  businessId: varchar("business_id", { length: 36 })
+    .notNull()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull().default(""),
+  status: varchar("status", { length: 50 }).notNull().default("initializing"),
+  currentSlideNumber: integer("current_slide_number").notNull().default(0),
+  enableQna: boolean("enable_qna").notNull().default(true),
+  autoStart: boolean("auto_start").notNull().default(true),
+  audienceCount: integer("audience_count").notNull().default(0),
+  questionCount: integer("question_count").notNull().default(0),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const presentationQuestions = pgTable("presentation_questions", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  sessionId: varchar("session_id", { length: 36 })
+    .notNull()
+    .references(() => presentationSessions.id, { onDelete: "cascade" }),
+  question: text("question").notNull().default(""),
+  answer: text("answer").notNull().default(""),
+  status: varchar("status", { length: 50 }).notNull().default("incoming"),
+  moderationResult: text("moderation_result").notNull().default("{}"),
+  sourceReferences: text("source_references").notNull().default("[]"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  answeredAt: timestamp("answered_at", { withTimezone: true }),
+});
+
+export const presentationEmbeddings = pgTable("presentation_embeddings", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  presentationId: varchar("presentation_id", { length: 36 })
+    .notNull()
+    .references(() => presentations.id, { onDelete: "cascade" }),
+  sourceType: varchar("source_type", { length: 50 }).notNull(),
+  sourceId: varchar("source_id", { length: 36 }),
+  chunkText: text("chunk_text").notNull().default(""),
+  embeddingReference: text("embedding_reference").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type Presentation = typeof presentations.$inferSelect;
+export type PresentationFile = typeof presentationFiles.$inferSelect;
+export type PresentationSlide = typeof presentationSlides.$inferSelect;
+export type PresentationAudioAsset = typeof presentationAudioAssets.$inferSelect;
+export type PresentationSession = typeof presentationSessions.$inferSelect;
+export type PresentationQuestion = typeof presentationQuestions.$inferSelect;
+export type PresentationEmbedding = typeof presentationEmbeddings.$inferSelect;
 
 export type BusinessWithRelations = Business & {
   products: Product[];

@@ -62,6 +62,7 @@ export type KnowledgeEntry = {
 export type AiTone = "friendly" | "professional" | "casual";
 export type AiLanguage = "id" | "en";
 export type VoicePreset = "natural" | "dark_beast" | "deep" | "robot" | "bright";
+export type VoiceGender = "female" | "male";
 
 export type AiRules = {
   id: string;
@@ -75,6 +76,7 @@ export type AiRules = {
   tool_instructions: string;
   idle_timeout_seconds: number;
   voice_preset: VoicePreset;
+  voice_gender: VoiceGender;
 };
 
 export type OrderItem = {
@@ -715,4 +717,199 @@ export const api = {
         body: JSON.stringify(body),
       },
     ),
+
+  listPresentations: (token: string, businessId: string) =>
+    request<Presentation[]>(`/admin/businesses/${businessId}/presentations`, token),
+  createPresentation: (
+    token: string,
+    businessId: string,
+    body: { title: string; description?: string; language?: string; category?: string },
+  ) =>
+    request<Presentation>(`/admin/businesses/${businessId}/presentations`, token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getPresentation: (token: string, businessId: string, presentationId: string) =>
+    request<PresentationDetail>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}`,
+      token,
+    ),
+  /** Absolute URL to fetch the uploaded PPTX with the admin bearer token. */
+  presentationPptxUrl: (businessId: string, presentationId: string) =>
+    `${API_URL}/admin/businesses/${businessId}/presentations/${presentationId}/pptx`,
+  /** Absolute URL to stream a narration audio asset with the admin bearer token. */
+  presentationAudioUrl: (businessId: string, presentationId: string, assetId: string) =>
+    `${API_URL}/admin/businesses/${businessId}/presentations/${presentationId}/audio/${assetId}`,
+  deletePresentation: (token: string, businessId: string, presentationId: string) =>
+    request<void>(`/admin/businesses/${businessId}/presentations/${presentationId}`, token, {
+      method: "DELETE",
+    }),
+  uploadPresentationFile: (
+    token: string,
+    businessId: string,
+    presentationId: string,
+    file: File,
+  ) =>
+    uploadRequest<PresentationFile>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}/files`,
+      token,
+      file,
+    ),
+  processPresentation: (token: string, businessId: string, presentationId: string) =>
+    request<Presentation>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}/process`,
+      token,
+      { method: "POST", body: JSON.stringify({}) },
+    ),
+  launchPresentationSession: (
+    token: string,
+    businessId: string,
+    presentationId: string,
+    body?: { name?: string; enable_qna?: boolean; auto_start?: boolean },
+  ) =>
+    request<PresentationSession>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}/sessions`,
+      token,
+      { method: "POST", body: JSON.stringify(body ?? {}) },
+    ),
+  getPresentationSession: (token: string, businessId: string, sessionId: string) =>
+    request<PresentationSessionDetail>(
+      `/admin/businesses/${businessId}/sessions/${sessionId}`,
+      token,
+    ),
+  controlPresentationSession: (
+    token: string,
+    businessId: string,
+    sessionId: string,
+    action: string,
+  ) =>
+    request<PresentationSession>(
+      `/admin/businesses/${businessId}/sessions/${sessionId}/control`,
+      token,
+      { method: "POST", body: JSON.stringify({ action }) },
+    ),
+  askPresentationQuestion: (
+    token: string,
+    businessId: string,
+    sessionId: string,
+    question: string,
+  ) =>
+    request<PresentationQuestion>(
+      `/admin/businesses/${businessId}/sessions/${sessionId}/questions`,
+      token,
+      { method: "POST", body: JSON.stringify({ question }) },
+    ),
+  getPresentationSessionAnalytics: (token: string, businessId: string, sessionId: string) =>
+    request<PresentationSessionAnalytics>(
+      `/admin/businesses/${businessId}/sessions/${sessionId}/analytics`,
+      token,
+    ),
+};
+
+export type Presentation = {
+  id: string;
+  business_id: string;
+  title: string;
+  description: string;
+  language: string;
+  category: string;
+  status: string;
+  processing_step: string;
+  processing_error: string;
+  total_slides: number;
+  estimated_duration: number;
+  greeting_script: string;
+  closing_script: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PresentationFile = {
+  id: string;
+  presentation_id: string;
+  file_name: string;
+  file_type: string;
+  size_bytes: number;
+  storage_path: string;
+  status: string;
+  created_at: string;
+};
+
+export type PresentationSlide = {
+  id: string;
+  presentation_id: string;
+  slide_number: number;
+  title: string;
+  content: { texts?: string[] };
+  notes: string;
+  script: string;
+  image_url: string;
+  duration_seconds: number;
+};
+
+export type PresentationAudioAsset = {
+  id: string;
+  slide_id: string;
+  kind: string;
+  provider?: string;
+  storage_path: string;
+  duration_seconds: number;
+};
+
+export type PresentationDetail = Presentation & {
+  files: PresentationFile[];
+  slides: PresentationSlide[];
+  audio_assets: PresentationAudioAsset[];
+  pptx_url?: string | null;
+};
+
+export type PresentationSession = {
+  id: string;
+  presentation_id: string;
+  business_id: string;
+  name: string;
+  status: string;
+  current_slide_number: number;
+  enable_qna: boolean;
+  auto_start: boolean;
+  audience_count: number;
+  question_count: number;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PresentationQuestion = {
+  id: string;
+  session_id: string;
+  question: string;
+  answer: string;
+  status: string;
+  moderation_result: unknown;
+  source_references: unknown;
+  created_at: string;
+  answered_at: string | null;
+};
+
+export type PresentationSessionDetail = {
+  session: PresentationSession;
+  presentation: Presentation | null;
+  slides: PresentationSlide[];
+  questions: PresentationQuestion[];
+  audio_assets: PresentationAudioAsset[];
+  pptx_url?: string | null;
+};
+
+export type PresentationSessionAnalytics = {
+  session_id: string;
+  status: string;
+  audience_count: number;
+  question_count: number;
+  answered_count: number;
+  blocked_count: number;
+  session_duration_seconds: number;
+  completion_rate: number;
+  total_slides: number;
+  current_slide_number: number;
 };

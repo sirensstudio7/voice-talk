@@ -36,6 +36,7 @@ export interface MenuResponse {
   gradient_color?: string;
   display_orientation?: string;
   voice_preset?: string;
+  voice_gender?: string;
   capabilities?: BusinessCapabilities;
   vision?: VisionConfig;
   smart_photo_moment?: {

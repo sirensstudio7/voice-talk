@@ -2,6 +2,29 @@ export const VOICE_PRESETS = ["natural", "dark_beast", "deep", "robot", "bright"
 
 export type VoicePreset = (typeof VOICE_PRESETS)[number];
 
+export const VOICE_GENDERS = ["female", "male"] as const;
+
+export type VoiceGender = (typeof VOICE_GENDERS)[number];
+
+export type VoiceGenderOption = {
+  value: VoiceGender;
+  label: string;
+};
+
+export const VOICE_GENDER_OPTIONS: VoiceGenderOption[] = [
+  { value: "female", label: "Female" },
+  { value: "male", label: "Male" },
+];
+
+/** Gemini Live voice names by style × gender. */
+const GEMINI_VOICE_BY_PRESET_GENDER: Record<VoicePreset, Record<VoiceGender, string>> = {
+  natural: { female: "Aoede", male: "Charon" },
+  deep: { female: "Aoede", male: "Charon" },
+  bright: { female: "Kore", male: "Puck" },
+  robot: { female: "Aoede", male: "Puck" },
+  dark_beast: { female: "Aoede", male: "Fenrir" },
+};
+
 export type VoiceFilterType =
   | "lowpass"
   | "highpass"
@@ -119,27 +142,27 @@ export const VOICE_PRESET_OPTIONS: VoicePresetOption[] = [
   {
     value: "natural",
     label: "Natural",
-    description: "Clear, unprocessed assistant voice.",
+    description: "Warm human voice — no effects, closest to live speech.",
   },
   {
     value: "dark_beast",
     label: "Dark Beast",
-    description: "Gravelly dual-voice presence — deep, heavy, and cinematic.",
+    description: "Deeper cinematic tone — still clear and human.",
   },
   {
     value: "deep",
     label: "Deep",
-    description: "Male voice — lower pitch with a warm low end.",
+    description: "Natural male voice with a touch of warmth.",
   },
   {
     value: "robot",
     label: "Robot",
-    description: "Metallic, band-limited machine voice.",
+    description: "Light sci-fi tint — still easy to understand.",
   },
   {
     value: "bright",
     label: "Bright",
-    description: "Higher pitch with a clearer top end.",
+    description: "Clearer, slightly brighter human voice.",
   },
 ];
 
@@ -164,117 +187,49 @@ function layerPitchRatio(layer: VoiceLayerConfig): number {
 }
 
 const PRESET_CONFIGS: Record<VoicePreset, VoicePresetConfig> = {
+  // True dry path — Gemini voice only, no client DSP (human baseline).
   natural: {
     playbackRate: 1,
     gain: 1,
     filters: [],
     geminiVoiceName: "Aoede",
   },
+  // Subtle deeper color — no dual-voice / distortion stack (that sounded inhuman).
   dark_beast: {
-    // Gravelly male TTS base + dual-voice stack (main + near-equal twin + growl)
-    geminiVoiceName: "Algenib",
-    playbackRate: 0.82,
-    gain: 1.05,
-    layers: [
-      {
-        id: "main",
-        pitchSemitones: -4,
-        gain: 1,
-        filters: [
-          { type: "lowshelf", frequency: 120, gain: 2 },
-          { type: "lowpass", frequency: 5200, Q: 0.7 },
-        ],
-      },
-      {
-        // Second mouth — nearly as loud, slightly later and deeper
-        id: "twin",
-        pitchSemitones: -7,
-        gain: 0.78,
-        delayMs: 16,
-        filters: [
-          { type: "lowshelf", frequency: 100, gain: 4 },
-          { type: "lowpass", frequency: 2800, Q: 0.75 },
-        ],
-        distortion: 0.18,
-      },
-      {
-        id: "growl",
-        pitchSemitones: -11,
-        gain: 0.32,
-        delayMs: 28,
-        filters: [
-          { type: "highpass", frequency: 120, Q: 0.7 },
-          { type: "lowpass", frequency: 900, Q: 0.9 },
-        ],
-        distortion: 0.48,
-        noiseMix: 0.08,
-      },
-    ],
-    subBass: {
-      frequency: 55,
-      volume: 0.16,
-      attackMs: 4,
-      releaseMs: 80,
-    },
-    compressor: {
-      threshold: -18,
-      ratio: 4.5,
-      attack: 0.012,
-      release: 0.1,
-      knee: 4,
-      makeupDb: 4,
-    },
+    geminiVoiceName: "Fenrir",
+    playbackRate: 0.97,
+    gain: 1,
+    pitchSemitones: -1,
     filters: [
-      { type: "highpass", frequency: 55, Q: 0.7 },
-      { type: "peaking", frequency: 75, gain: 5, Q: 0.9 },
-      { type: "peaking", frequency: 140, gain: 4, Q: 1.0 },
-      { type: "peaking", frequency: 320, gain: -3, Q: 1.1 },
-      { type: "peaking", frequency: 2200, gain: 1.5, Q: 1.0 },
-      { type: "peaking", frequency: 4500, gain: -3, Q: 1.0 },
-      { type: "lowpass", frequency: 6500, Q: 0.7 },
+      { type: "lowshelf", frequency: 180, gain: 2.5 },
+      { type: "peaking", frequency: 3000, gain: -1, Q: 0.9 },
     ],
-    saturation: {
-      drive: 28,
-      mix: 35,
-    },
-    busDistortion: {
-      amount: 14,
-      mix: 22,
-    },
-    reverb: {
-      enabled: true,
-      mix: 8,
-      durationSec: 0.55,
-      preDelaySec: 0.012,
-    },
-    stereoWidth: 1.12,
-    limiter: {
-      threshold: -1,
-      release: 0.05,
-    },
     speakingStyle: DARK_BEAST_SPEAKING_STYLE,
   },
+  // Male Gemini voice + tiny warmth only.
   deep: {
-    // Male TTS base (Charon) — use for male assistants like Alex.
     geminiVoiceName: "Charon",
     playbackRate: 1,
-    gain: 1.15,
-    pitchSemitones: -2,
-    filters: [
-      { type: "lowshelf", frequency: 280, gain: 5 },
-      { type: "lowpass", frequency: 4200, Q: 0.7 },
-    ],
-  },
-  robot: {
-    playbackRate: 1.02,
-    gain: 1.05,
-    filters: [{ type: "bandpass", frequency: 1400, Q: 1.4 }],
-    distortion: 0.55,
-  },
-  bright: {
-    playbackRate: 1.08,
     gain: 1,
-    filters: [{ type: "highshelf", frequency: 2500, gain: 3.5 }],
+    filters: [{ type: "lowshelf", frequency: 200, gain: 1.5 }],
+  },
+  // Light sci-fi tint — keep intelligible (old bandpass+distortion sounded broken).
+  robot: {
+    geminiVoiceName: "Puck",
+    playbackRate: 1,
+    gain: 1,
+    filters: [
+      { type: "peaking", frequency: 1600, gain: 2, Q: 1.1 },
+      { type: "highshelf", frequency: 5500, gain: -2 },
+    ],
+    distortion: 0.12,
+  },
+  // Clearer top end without chipmunk playbackRate.
+  bright: {
+    geminiVoiceName: "Kore",
+    playbackRate: 1,
+    gain: 1,
+    filters: [{ type: "highshelf", frequency: 2800, gain: 2 }],
   },
 };
 
@@ -292,8 +247,37 @@ export function normalizeVoicePreset(value: unknown): VoicePreset {
   return LEGACY_PRESET_ALIASES[value] ?? "natural";
 }
 
+export function isVoiceGender(value: unknown): value is VoiceGender {
+  return typeof value === "string" && (VOICE_GENDERS as readonly string[]).includes(value);
+}
+
+export function normalizeVoiceGender(value: unknown): VoiceGender {
+  if (isVoiceGender(value)) return value;
+  return "female";
+}
+
 export function getVoicePresetConfig(preset: VoicePreset | string | null | undefined): VoicePresetConfig {
   return PRESET_CONFIGS[normalizeVoicePreset(preset)];
+}
+
+/** True when the preset should play Gemini audio with no client-side coloring. */
+export function isDryVoicePreset(preset: VoicePreset | string | null | undefined): boolean {
+  const id = normalizeVoicePreset(preset);
+  if (id !== "natural") return false;
+  const config = PRESET_CONFIGS.natural;
+  return (
+    (config.playbackRate ?? 1) === 1 &&
+    (config.gain ?? 1) === 1 &&
+    (config.filters?.length ?? 0) === 0 &&
+    !config.layers?.length &&
+    !config.distortion &&
+    !config.compressor &&
+    !config.saturation &&
+    !config.busDistortion &&
+    !config.reverb?.enabled &&
+    !config.subBass &&
+    (config.pitchSemitones ?? 0) === 0
+  );
 }
 
 export function getVoicePresetSpeakingStyle(
@@ -305,9 +289,16 @@ export function getVoicePresetSpeakingStyle(
 
 export function getVoicePresetGeminiVoice(
   preset: VoicePreset | string | null | undefined,
+  gender: VoiceGender | string | null | undefined = "female",
   fallback = "Aoede",
 ): string {
-  return getVoicePresetConfig(preset).geminiVoiceName?.trim() || fallback;
+  const style = normalizeVoicePreset(preset);
+  const sex = normalizeVoiceGender(gender);
+  return (
+    GEMINI_VOICE_BY_PRESET_GENDER[style][sex] ||
+    getVoicePresetConfig(style).geminiVoiceName?.trim() ||
+    fallback
+  );
 }
 
 export function resolveVoiceLayers(config: VoicePresetConfig): VoiceLayerConfig[] {

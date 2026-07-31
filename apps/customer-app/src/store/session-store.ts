@@ -20,7 +20,12 @@ import {
   TranscriptMessage,
   emptyOrder,
 } from "@/types/voice";
-import { normalizeVoicePreset, type VoicePreset } from "@voicetalk/shared";
+import {
+  normalizeVoiceGender,
+  normalizeVoicePreset,
+  type VoiceGender,
+  type VoicePreset,
+} from "@voicetalk/shared";
 
 const LANGUAGE_STORAGE_KEY = "voicetalk-language";
 
@@ -251,6 +256,7 @@ interface SessionStore {
   avatarModelPath: string;
   avatarCacheBust: number;
   voicePreset: VoicePreset;
+  voiceGender: VoiceGender;
   forceNewAssistantBubble: boolean;
   setStatus: (status: ConnectionStatus) => void;
   setCheckoutPanelOpen: (open: boolean) => void;
@@ -296,6 +302,7 @@ interface SessionStore {
   setAvatarUrl: (url: string) => void;
   setAvatarModelPath: (path: string) => void;
   setVoicePreset: (preset: VoicePreset | string | null | undefined) => void;
+  setVoiceGender: (gender: VoiceGender | string | null | undefined) => void;
   hydrateLanguageFromStorage: () => void;
   decrementItemFromOrder: (productId: string) => void;
   removeItemFromOrder: (productId: string) => void;
@@ -335,6 +342,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   avatarModelPath: "",
   avatarCacheBust: 0,
   voicePreset: "natural",
+  voiceGender: "female",
   forceNewAssistantBubble: false,
   setStatus: (status) => set({ status }),
   setCheckoutPanelOpen: (open) => set({ checkoutPanelOpen: open }),
@@ -693,6 +701,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         menuCacheSlug: slug,
         menuProductMeta,
         voicePreset: normalizeVoicePreset(menu.voice_preset),
+        voiceGender: normalizeVoiceGender(menu.voice_gender),
         orderingEnabled: menu.capabilities?.ordering_enabled ?? true,
         menuEnabled:
           menu.capabilities?.menu_enabled ?? (menu.capabilities?.ordering_enabled ?? true),
@@ -719,6 +728,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setAvatarModelPath: (path) => set({ avatarModelPath: path.trim() }),
   setVoicePreset: (preset) =>
     set({ voicePreset: normalizeVoicePreset(preset) }),
+  setVoiceGender: (gender) =>
+    set({ voiceGender: normalizeVoiceGender(gender) }),
   hydrateLanguageFromStorage: () => {
     const stored = readStoredLanguage();
     if (stored) {

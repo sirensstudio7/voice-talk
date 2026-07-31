@@ -27,7 +27,14 @@ import { PageHeader } from "@/components/ui";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
 import { AssistantPreviewHero } from "@/components/assistant-preview-hero";
-import { api, type AiLanguage, type AiRules, type AiTone, type VoicePreset } from "@/lib/api";
+import {
+  api,
+  type AiLanguage,
+  type AiRules,
+  type AiTone,
+  type VoiceGender,
+  type VoicePreset,
+} from "@/lib/api";
 import { useAssistantTemplate } from "@/lib/assistant-template-context";
 import { templateToAiRules } from "@/lib/assistant-templates";
 import { useAuth } from "@/lib/auth";
@@ -35,7 +42,7 @@ import {
   playVoicePresetPreview,
   stopVoicePresetPreview,
 } from "@/lib/voice-preset-preview";
-import { VOICE_PRESET_OPTIONS } from "@voicetalk/shared";
+import { VOICE_GENDER_OPTIONS, VOICE_PRESET_OPTIONS } from "@voicetalk/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const DEFAULT_ASSISTANT_AVATAR = "/lorescale-cashier-nobg.png";
@@ -166,7 +173,8 @@ function rulesEqual(a: AiRules, b: AiRules) {
     a.behavioral_rules === b.behavioral_rules &&
     a.tool_instructions === b.tool_instructions &&
     a.idle_timeout_seconds === b.idle_timeout_seconds &&
-    a.voice_preset === b.voice_preset
+    a.voice_preset === b.voice_preset &&
+    a.voice_gender === b.voice_gender
   );
 }
 
@@ -577,12 +585,16 @@ function ToneSelector({
 
 function VoicePresetSelector({
   value,
+  gender,
   language,
   onChange,
+  onGenderChange,
 }: {
   value: VoicePreset;
+  gender: VoiceGender;
   language: AiLanguage;
   onChange: (preset: VoicePreset) => void;
+  onGenderChange: (gender: VoiceGender) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [previewing, setPreviewing] = useState<VoicePreset | null>(null);
@@ -620,7 +632,7 @@ function VoicePresetSelector({
   useEffect(() => {
     stopVoicePresetPreview();
     setPreviewing(null);
-  }, [language]);
+  }, [language, gender]);
 
   const handlePreview = async (preset: VoicePreset, event: ReactMouseEvent) => {
     event.preventDefault();
@@ -636,7 +648,7 @@ function VoicePresetSelector({
     stopVoicePresetPreview();
     setPreviewing(preset);
     try {
-      await playVoicePresetPreview(preset, language);
+      await playVoicePresetPreview(preset, language, gender);
     } catch (error) {
       setPreviewError(error instanceof Error ? error.message : "Unable to play voice preview.");
     } finally {
@@ -655,10 +667,34 @@ function VoicePresetSelector({
             Voice style
           </p>
           <p className="mt-0.5 whitespace-pre-line text-xs leading-relaxed text-slate-500">
-            Changes how your assistant sounds to customers. Tap the speaker to preview each style.
-            Applies on the next session.
+            Choose gender and style. Tap the speaker to preview. Applies on the next session.
           </p>
         </div>
+      </div>
+
+      <div
+        className="mb-3 grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1"
+        role="group"
+        aria-label="Voice gender"
+      >
+        {VOICE_GENDER_OPTIONS.map((option) => {
+          const selectedGender = option.value === gender;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={selectedGender}
+              onClick={() => onGenderChange(option.value)}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                selectedGender
+                  ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
       </div>
 
       <div ref={containerRef} className="relative">
@@ -965,6 +1001,7 @@ export function AiRulesPageClient() {
         ...rulesData,
         avatar_model_path: rulesData.avatar_model_path ?? "",
         voice_preset: rulesData.voice_preset ?? ("natural" as const),
+        voice_gender: rulesData.voice_gender ?? ("female" as const),
       };
       setRules(normalized);
       setSavedRules(normalized);
@@ -1027,6 +1064,12 @@ export function AiRulesPageClient() {
   const updateVoicePreset = (voice_preset: VoicePreset) => {
     if (!rules) return;
     setRules({ ...rules, voice_preset });
+    setMessage(null);
+  };
+
+  const updateVoiceGender = (voice_gender: VoiceGender) => {
+    if (!rules) return;
+    setRules({ ...rules, voice_gender });
     setMessage(null);
   };
 
@@ -1194,8 +1237,10 @@ export function AiRulesPageClient() {
             <ToneSelector value={rules.tone} onChange={updateTone} />
             <VoicePresetSelector
               value={rules.voice_preset ?? "natural"}
+              gender={rules.voice_gender ?? "female"}
               language={rules.language ?? "id"}
               onChange={updateVoicePreset}
+              onGenderChange={updateVoiceGender}
             />
           </div>
           {faqOnlyMode ? (

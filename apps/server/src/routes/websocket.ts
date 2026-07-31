@@ -508,7 +508,10 @@ async function handleSession(
         photoMomentEnabled,
         businessId: tenant.id,
         voiceSessionId,
-        voiceName: getVoicePresetGeminiVoice(tenant.aiRules?.voicePreset),
+        voiceName: getVoicePresetGeminiVoice(
+          tenant.aiRules?.voicePreset,
+          tenant.aiRules?.voiceGender,
+        ),
         onConfirm,
         onSetCustomerName,
         onPhotoConsent,

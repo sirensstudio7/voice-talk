@@ -3,8 +3,10 @@ export const LORESCALE_TAGLINE = "Conversation that never sleeps";
 
 export const LORESCALE_ASSISTANT_NAME = "Alex";
 export const LORESCALE_AVATAR_MODEL_PATH = "/models/thanh.glb";
-/** Male Gemini voice (Charon) via deep preset — Alex is a man. */
-export const LORESCALE_VOICE_PRESET = "deep";
+/** Default assistant voice preset for Alex / Lorescale seed. */
+export const LORESCALE_VOICE_PRESET = "natural";
+/** Alex is male — use Charon via gender + natural style. */
+export const LORESCALE_VOICE_GENDER = "male";
 
 export const LORESCALE_PERSONALITY = `You are Alex, the AI assistant on the Lorescale website.
 You help visitors understand what the Lorescale platform is, how it works, pricing, features, and how to get started.

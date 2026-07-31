@@ -69,6 +69,13 @@
   --sidebar-accent-foreground: #0f172a;
   --sidebar-border: #e2e8f0;
   --sidebar-ring: #f97316;
+  /* Guard against pptx-react-viewer CSS overriding Tailwind theme tokens. */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-primary: var(--primary);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
 }
 
 body {

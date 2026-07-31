@@ -1,0 +1,2 @@
+ALTER TABLE ai_rules
+  ADD COLUMN IF NOT EXISTS voice_gender VARCHAR(10) NOT NULL DEFAULT 'female';

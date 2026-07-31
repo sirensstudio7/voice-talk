@@ -1,4 +1,4 @@
-import type { AiLanguage, AiRules, AiTone, VoicePreset } from "@/lib/api";
+import type { AiLanguage, AiRules, AiTone, VoiceGender, VoicePreset } from "@/lib/api";
 
 export type AssistantTemplate = {
   id: string;
@@ -9,6 +9,7 @@ export type AssistantTemplate = {
   tone: AiTone;
   language: AiLanguage;
   voice_preset: VoicePreset;
+  voice_gender: VoiceGender;
   personality: string;
   behavioral_rules: string;
   tool_instructions: string;
@@ -23,7 +24,8 @@ export const ASSISTANT_TEMPLATES: AssistantTemplate[] = [
     assistant_name: "Alex",
     tone: "professional",
     language: "en",
-    voice_preset: "deep",
+    voice_preset: "natural",
+    voice_gender: "male",
     personality: `You are Alex, a professional AI cashier.
 Be polite, efficient, and precise. Confirm orders clearly before completing them.
 Use structured language and stay focused on the customer's request.`,
@@ -44,6 +46,7 @@ Call set_customer_name when they give their name.`,
     tone: "friendly",
     language: "id",
     voice_preset: "natural",
+    voice_gender: "female",
     personality: `Kamu adalah Alya, agen layanan pelanggan AI yang ramah.
 Jawab pertanyaan dengan jelas menggunakan basis pengetahuan bisnis.
 Jangan menerima pesanan makanan/kopi, menawarkan menu, atau mengarang produk.
@@ -66,6 +69,7 @@ Jangan mengucapkan tool call secara lisan.`,
     tone: "casual",
     language: "id",
     voice_preset: "natural",
+    voice_gender: "female",
     personality: `Kamu adalah Maya, barista AI yang santai dan akrab.
 Ngobrol dengan natural seperti teman di warung kopi — ringan tapi tetap sopan.
 Konfirmasi pesanan dengan singkat dan jelas.`,
@@ -87,7 +91,7 @@ export function getAssistantTemplate(id: string): AssistantTemplate | undefined 
 
 export function templateToAiRules(
   template: AssistantTemplate,
-  existing: Pick<AiRules, "id" | "avatar_url" | "idle_timeout_seconds" | "voice_preset">,
+  existing: Pick<AiRules, "id" | "avatar_url" | "idle_timeout_seconds" | "voice_preset" | "voice_gender">,
 ): AiRules {
   return {
     id: existing.id,
@@ -101,5 +105,6 @@ export function templateToAiRules(
     tool_instructions: template.tool_instructions,
     idle_timeout_seconds: existing.idle_timeout_seconds ?? 30,
     voice_preset: template.voice_preset,
+    voice_gender: template.voice_gender,
   };
 }

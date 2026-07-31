@@ -42,6 +42,9 @@ async function migrate() {
     "027_smart_photo_moment.sql",
     "028_addon_payment_proof.sql",
     "029_addon_transaction_code.sql",
+    "030_ai_presenter.sql",
+    "031_presentation_slide_image.sql",
+    "032_ai_rules_voice_gender.sql",
   ];
 
   for (const file of migrationFiles) {
@@ -60,6 +63,24 @@ async function migrate() {
       }
       if (file === "027_smart_photo_moment.sql") {
         const tablesOnly = schema.split("-- Private photo bucket")[0] ?? schema;
+        try {
+          await sql.unsafe(tablesOnly);
+          console.log(`Applied ${file} (schema only; skipped Supabase storage policies).`);
+          continue;
+        } catch (inner) {
+          const innerCode =
+            inner && typeof inner === "object" && "code" in inner
+              ? String((inner as { code?: string }).code)
+              : "";
+          if (innerCode === "42701" || innerCode === "42P07" || innerCode === "23514") {
+            console.log(`Skipped ${file} (${innerCode}; already applied or conflicting).`);
+            continue;
+          }
+          throw inner;
+        }
+      }
+      if (file === "030_ai_presenter.sql") {
+        const tablesOnly = schema.split("-- Presentation assets bucket")[0] ?? schema;
         try {
           await sql.unsafe(tablesOnly);
           console.log(`Applied ${file} (schema only; skipped Supabase storage policies).`);

@@ -24,6 +24,7 @@ import {
   QueueListIcon,
   BanknotesIcon,
   ReceiptPercentIcon,
+  PresentationChartBarIcon,
   SparklesIcon,
   Squares2X2Icon,
   SwatchIcon,
@@ -95,6 +96,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/payment": "Payment QR",
   "/knowledge": "AI Knowledge",
   "/knowledge/new": "Add entry",
+  "/presentations": "AI Presenter",
   "/ai-rules": "AI Rules",
   "/vision-settings": "Vision Settings",
   "/conversations": "Conversations",
@@ -111,6 +113,10 @@ const ROUTE_LABELS: Record<string, string> = {
 function breadcrumbLabel(pathname: string) {
   if (ROUTE_LABELS[pathname]) return ROUTE_LABELS[pathname];
   if (/^\/knowledge\/[^/]+\/edit$/.test(pathname)) return "Edit entry";
+  if (/^\/presentations\/[^/]+$/.test(pathname)) return "Presentation";
+  if (/^\/presentations\/[^/]+\/preview$/.test(pathname)) return "Preview";
+  if (/^\/presentations\/[^/]+\/focus$/.test(pathname)) return "In focus";
+  if (/^\/sessions\/[^/]+\/live$/.test(pathname)) return "Live session";
   return pathname.split("/").filter(Boolean).pop()?.replace(/-/g, " ") ?? "";
 }
 
@@ -147,6 +153,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "AI Assistant",
     items: [
       { href: "/knowledge", label: "AI Knowledge", icon: BookOpenIcon },
+      { href: "/presentations", label: "AI Presenter", icon: PresentationChartBarIcon },
       { href: "/ai-rules", label: "AI Rules", icon: SparklesIcon },
       { href: "/vision-settings", label: "Vision Settings", icon: CameraIcon },
     ],
@@ -433,6 +440,14 @@ function UserMenu({
   );
 }
 
+function isFullscreenRoute(pathname: string) {
+  return (
+    /^\/presentations\/[^/]+\/preview$/.test(pathname) ||
+    /^\/presentations\/[^/]+\/focus$/.test(pathname) ||
+    /^\/sessions\/[^/]+\/live$/.test(pathname)
+  );
+}
+
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, businesses, business, setBusinessId, logout } = useAuth();
@@ -441,6 +456,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const menuEnabled = business?.capabilities?.menu_enabled ?? orderingEnabled;
   const bookingEnabled = business?.capabilities?.booking_enabled ?? false;
   const salonMode = business?.capabilities?.salon_mode ?? false;
+  const fullscreen = isFullscreenRoute(pathname);
 
   const navGroups = useMemo(
     () =>
@@ -461,6 +477,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       })).filter((group) => group.items.length > 0),
     [orderingEnabled, menuEnabled, bookingEnabled, salonMode],
   );
+
+  // Preview opens full-page (no sidebar) while keeping the white admin vibe.
+  if (fullscreen) {
+    return <div className="min-h-svh bg-background text-foreground">{children}</div>;
+  }
 
   return (
     <SidebarProvider>

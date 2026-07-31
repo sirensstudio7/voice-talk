@@ -11,12 +11,13 @@ import { env, getProductionDomains, hasSupabaseStorage, isAllowedOrigin } from "
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerPlatformRoutes } from "./routes/platform.js";
+import { registerPresentationRoutes } from "./routes/presentations.js";
 import { registerPublicRoutes } from "./routes/public.js";
 import { registerWebSocketRoutes } from "./routes/websocket.js";
 import { registerVisionWebSocketRoutes } from "./routes/vision-ws.js";
 import { initVisionEventBus } from "./services/vision-orchestrator.js";
 import { registerPhotoMomentJobs } from "./services/photo-jobs.js";
-import { getUploadRoot } from "./storage/index.js";
+import { getUploadRoot, MAX_PRESENTATION_UPLOAD_BYTES } from "./storage/index.js";
 
 const app = Fastify({ logger: true });
 
@@ -33,7 +34,9 @@ await app.register(cors, {
   methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
 });
 
-await app.register(multipart, { limits: { fileSize: 8 * 1024 * 1024 } });
+await app.register(multipart, {
+  limits: { fileSize: Math.max(8 * 1024 * 1024, MAX_PRESENTATION_UPLOAD_BYTES) },
+});
 await app.register(websocket);
 
 if (!hasSupabaseStorage()) {
@@ -49,6 +52,7 @@ if (!hasSupabaseStorage()) {
 await registerHealthRoutes(app);
 await registerPublicRoutes(app);
 await registerAdminRoutes(app);
+await registerPresentationRoutes(app);
 await registerPlatformRoutes(app);
 await registerWebSocketRoutes(app);
 await registerVisionWebSocketRoutes(app);

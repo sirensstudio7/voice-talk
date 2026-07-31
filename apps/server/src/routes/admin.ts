@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { mergeTranscriptMessages, normalizeVoicePreset } from "@voicetalk/shared";
+import {
+  mergeTranscriptMessages,
+  normalizeVoiceGender,
+  normalizeVoicePreset,
+} from "@voicetalk/shared";
 import { and, count, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   businessOut,
@@ -205,6 +209,7 @@ function aiRulesOut(r: typeof aiRules.$inferSelect) {
     tool_instructions: r.toolInstructions,
     idle_timeout_seconds: r.idleTimeoutSeconds,
     voice_preset: normalizeVoicePreset(r.voicePreset),
+    voice_gender: normalizeVoiceGender(r.voiceGender),
   };
 }
 
@@ -1036,6 +1041,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
       if (body.voice_preset !== undefined) {
         updates.voicePreset = normalizeVoicePreset(body.voice_preset);
+      }
+      if (body.voice_gender !== undefined) {
+        updates.voiceGender = normalizeVoiceGender(body.voice_gender);
       }
 
       const [updated] = await db

@@ -9,6 +9,8 @@ const UPLOAD_ROOT = join(process.cwd(), "uploads");
 
 export const PHOTO_BUCKET = "lorescale-photos";
 export const PHOTO_BRANDING_BUCKET = "photo-branding";
+export const PRESENTATION_BUCKET = "presentation-assets";
+export const MAX_PRESENTATION_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 let supabase: ReturnType<typeof createClient> | null = null;
 

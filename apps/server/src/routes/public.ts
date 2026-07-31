@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
-import { getBusinessCapabilities, normalizeVoicePreset } from "@voicetalk/shared";
+import {
+  getBusinessCapabilities,
+  normalizeVoiceGender,
+  normalizeVoicePreset,
+} from "@voicetalk/shared";
 import { db } from "../db/client.js";
 import { demoRequests, orderItems } from "../db/schema.js";
 import { env } from "../env.js";
@@ -130,6 +134,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       gradient_color: tenant.gradientColor || "",
       display_orientation: tenant.displayOrientation || "landscape",
       voice_preset: normalizeVoicePreset(tenant.aiRules?.voicePreset),
+      voice_gender: normalizeVoiceGender(tenant.aiRules?.voiceGender),
       capabilities,
       vision: visionSettingsOut(vision),
       smart_photo_moment: smartPhotoMoment,
