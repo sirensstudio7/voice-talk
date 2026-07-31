@@ -43,7 +43,7 @@ export function HeroVoicePreview() {
   return (
     <iframe
       src={iframeSrc}
-      title="Talk to Lorescale — ask about features, pricing, and how to get started"
+      title="Talk to Alex — ask about features, pricing, and how to get started"
       className={PREVIEW_CLASS}
       allow="microphone; autoplay"
       onError={() => setIframeFailed(true)}

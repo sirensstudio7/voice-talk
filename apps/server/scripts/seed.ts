@@ -23,6 +23,8 @@ import {
   TOOL_INSTRUCTIONS,
 } from "../src/seed-data.js";
 import {
+  LORESCALE_ASSISTANT_NAME,
+  LORESCALE_AVATAR_MODEL_PATH,
   LORESCALE_BEHAVIORAL_RULES,
   LORESCALE_BUSINESS_NAME,
   LORESCALE_KNOWLEDGE,
@@ -188,9 +190,10 @@ async function seed() {
 
     await db.insert(aiRules).values({
       businessId: lorescaleBusiness!.id,
-      assistantName: "Lorescale",
+      assistantName: LORESCALE_ASSISTANT_NAME,
+      avatarModelPath: LORESCALE_AVATAR_MODEL_PATH,
       personality: LORESCALE_PERSONALITY.trim(),
-      tone: "friendly",
+      tone: "professional",
       language: "en",
       behavioralRules: LORESCALE_BEHAVIORAL_RULES.trim(),
       toolInstructions: LORESCALE_TOOL_INSTRUCTIONS.trim(),
@@ -214,9 +217,10 @@ async function seed() {
   await db
     .update(aiRules)
     .set({
-      assistantName: "Lorescale",
+      assistantName: LORESCALE_ASSISTANT_NAME,
+      avatarModelPath: LORESCALE_AVATAR_MODEL_PATH,
       personality: LORESCALE_PERSONALITY.trim(),
-      tone: "friendly",
+      tone: "professional",
       language: "en",
       behavioralRules: LORESCALE_BEHAVIORAL_RULES.trim(),
       toolInstructions: LORESCALE_TOOL_INSTRUCTIONS.trim(),
@@ -229,9 +233,10 @@ async function seed() {
   if (!lorescaleRules) {
     await db.insert(aiRules).values({
       businessId: lorescaleBusiness!.id,
-      assistantName: "Lorescale",
+      assistantName: LORESCALE_ASSISTANT_NAME,
+      avatarModelPath: LORESCALE_AVATAR_MODEL_PATH,
       personality: LORESCALE_PERSONALITY.trim(),
-      tone: "friendly",
+      tone: "professional",
       language: "en",
       behavioralRules: LORESCALE_BEHAVIORAL_RULES.trim(),
       toolInstructions: LORESCALE_TOOL_INSTRUCTIONS.trim(),
