@@ -40,6 +40,8 @@ async function migrate() {
     "025_user_country.sql",
     "026_ai_rules_avatar_model_path.sql",
     "027_smart_photo_moment.sql",
+    "028_addon_payment_proof.sql",
+    "029_addon_transaction_code.sql",
   ];
 
   for (const file of migrationFiles) {
