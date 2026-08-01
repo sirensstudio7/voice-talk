@@ -975,6 +975,20 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  app.delete("/admin/businesses/:businessId/knowledge", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      const deleted = await db
+        .delete(knowledgeEntries)
+        .where(eq(knowledgeEntries.businessId, businessId))
+        .returning({ id: knowledgeEntries.id });
+      return { deleted: deleted.length };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
   app.get("/admin/businesses/:businessId/ai-rules", async (request, reply) => {
     try {
       const { businessId } = request.params as { businessId: string };

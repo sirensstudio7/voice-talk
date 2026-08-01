@@ -541,6 +541,7 @@ export const presentations = pgTable("presentations", {
   estimatedDuration: integer("estimated_duration").notNull().default(0),
   greetingScript: text("greeting_script").notNull().default(""),
   closingScript: text("closing_script").notNull().default(""),
+  thumbnailUrl: text("thumbnail_url").notNull().default(""),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -649,6 +650,21 @@ export const presentationEmbeddings = pgTable("presentation_embeddings", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Deck-scoped knowledge for AI Presenter (not shared workspace knowledge). */
+export const presentationKnowledgeEntries = pgTable("presentation_knowledge_entries", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  presentationId: varchar("presentation_id", { length: 36 })
+    .notNull()
+    .references(() => presentations.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 500 }).notNull().default(""),
+  content: text("content").notNull().default(""),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type Presentation = typeof presentations.$inferSelect;
 export type PresentationFile = typeof presentationFiles.$inferSelect;
 export type PresentationSlide = typeof presentationSlides.$inferSelect;
@@ -656,6 +672,7 @@ export type PresentationAudioAsset = typeof presentationAudioAssets.$inferSelect
 export type PresentationSession = typeof presentationSessions.$inferSelect;
 export type PresentationQuestion = typeof presentationQuestions.$inferSelect;
 export type PresentationEmbedding = typeof presentationEmbeddings.$inferSelect;
+export type PresentationKnowledgeEntry = typeof presentationKnowledgeEntries.$inferSelect;
 
 export type BusinessWithRelations = Business & {
   products: Product[];

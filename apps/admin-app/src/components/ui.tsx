@@ -34,15 +34,33 @@ export function PageHeader({
   subtitle,
   action,
   titleAction,
+  titleAccessory,
   align = "start",
 }: {
   title: string;
   subtitle?: string;
   action?: ReactNode;
   titleAction?: ReactNode;
+  /** Renders immediately to the right of the title (e.g. an info icon). */
+  titleAccessory?: ReactNode;
   align?: "start" | "center";
 }) {
   const centered = align === "center";
+
+  const titleBlock = (
+    <div className="space-y-1">
+      <div
+        className={cn(
+          "flex items-end gap-1.5",
+          centered ? "justify-center" : "justify-start",
+        )}
+      >
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        {titleAccessory}
+      </div>
+      {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
+    </div>
+  );
 
   if (titleAction) {
     return (
@@ -53,10 +71,7 @@ export function PageHeader({
             centered ? "justify-center text-center" : "justify-between",
           )}
         >
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-            {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
-          </div>
+          {titleBlock}
           <div className="flex shrink-0 items-center gap-2">{titleAction}</div>
         </div>
         {action ? <div className="flex flex-wrap items-center gap-2">{action}</div> : null}
@@ -71,10 +86,7 @@ export function PageHeader({
         centered ? "flex-col items-center justify-center text-center" : "justify-between",
       )}
     >
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
-      </div>
+      {titleBlock}
       {action ? <div className="flex items-center gap-2">{action}</div> : null}
     </div>
   );

@@ -11,12 +11,21 @@ import { db } from "../db/client.js";
 import {
   presentationAudioAssets,
   presentationFiles,
+  presentationKnowledgeEntries,
   presentationQuestions,
   presentations,
   presentationSessions,
   presentationSlides,
 } from "../db/schema.js";
-import { enqueuePresentationProcessing } from "../services/presentation-pipeline.js";
+import {
+  cancelPresentationProcessing,
+  enqueuePresentationProcessing,
+} from "../services/presentation-pipeline.js";
+import {
+  deleteKnowledgeEmbedding,
+  listPresentationKnowledge,
+  syncKnowledgeEmbedding,
+} from "../services/presentation-knowledge.js";
 import {
   advanceSession,
   getSessionBundle,
@@ -24,6 +33,10 @@ import {
 } from "../services/presentation-session.js";
 import { serializeUtcDatetime } from "../services/pricing.js";
 import { detectPresentationFileType } from "../services/pptx-parser.js";
+import {
+  enqueueMissingThumbnails,
+  persistPresentationThumbnail,
+} from "../services/presentation-thumbnail.js";
 import {
   downloadFromStorage,
   MAX_PRESENTATION_UPLOAD_BYTES,
@@ -47,6 +60,7 @@ function presentationOut(row: typeof presentations.$inferSelect) {
     estimated_duration: row.estimatedDuration,
     greeting_script: row.greetingScript,
     closing_script: row.closingScript,
+    thumbnail_url: row.thumbnailUrl || "",
     created_at: serializeUtcDatetime(row.createdAt),
     updated_at: serializeUtcDatetime(row.updatedAt),
   };
@@ -62,6 +76,18 @@ function fileOut(row: typeof presentationFiles.$inferSelect) {
     storage_path: row.storagePath,
     status: row.status,
     created_at: serializeUtcDatetime(row.createdAt),
+  };
+}
+
+function knowledgeOut(row: typeof presentationKnowledgeEntries.$inferSelect) {
+  return {
+    id: row.id,
+    presentation_id: row.presentationId,
+    title: row.title,
+    content: row.content,
+    sort_order: row.sortOrder,
+    created_at: serializeUtcDatetime(row.createdAt),
+    updated_at: serializeUtcDatetime(row.updatedAt),
   };
 }
 
@@ -151,6 +177,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         .from(presentations)
         .where(and(eq(presentations.businessId, businessId), isNull(presentations.deletedAt)))
         .orderBy(desc(presentations.updatedAt));
+      enqueueMissingThumbnails(rows);
       return rows.map(presentationOut);
     } catch (err) {
       return sendAuthError(reply, err);
@@ -213,11 +240,13 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
               .from(presentationAudioAssets)
               .where(inArray(presentationAudioAssets.slideId, slideIds));
 
+      const knowledge = await listPresentationKnowledge(presentationId);
       const pptxFile = files.find((f) => f.fileType === "pptx");
       return {
         ...presentationOut(row),
         files: files.map(fileOut),
         slides: slides.map(slideOut),
+        knowledge: knowledge.map(knowledgeOut),
         pptx_url: pptxFile?.storagePath ?? null,
         audio_assets: audioForSlides.map((a) => ({
           id: a.id,
@@ -232,6 +261,134 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
       return sendAuthError(reply, err);
     }
   });
+
+  app.get(
+    "/admin/businesses/:businessId/presentations/:presentationId/knowledge",
+    async (request, reply) => {
+      try {
+        const { businessId, presentationId } = request.params as {
+          businessId: string;
+          presentationId: string;
+        };
+        await requireBusinessAccess(request, businessId);
+        const row = await loadPresentationForBusiness(businessId, presentationId);
+        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        const knowledge = await listPresentationKnowledge(presentationId);
+        return knowledge.map(knowledgeOut);
+      } catch (err) {
+        return sendAuthError(reply, err);
+      }
+    },
+  );
+
+  app.post(
+    "/admin/businesses/:businessId/presentations/:presentationId/knowledge",
+    async (request, reply) => {
+      try {
+        const { businessId, presentationId } = request.params as {
+          businessId: string;
+          presentationId: string;
+        };
+        await requireBusinessAccess(request, businessId);
+        const row = await loadPresentationForBusiness(businessId, presentationId);
+        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+
+        const body = request.body as Record<string, unknown>;
+        const content = String(body.content ?? "").trim();
+        if (!content) return reply.status(400).send({ detail: "Content is required" });
+
+        const [entry] = await db
+          .insert(presentationKnowledgeEntries)
+          .values({
+            presentationId,
+            title: String(body.title ?? "").trim(),
+            content,
+            sortOrder: Number(body.sort_order ?? 0),
+          })
+          .returning();
+
+        await syncKnowledgeEmbedding(entry!);
+        return reply.status(201).send(knowledgeOut(entry!));
+      } catch (err) {
+        return sendAuthError(reply, err);
+      }
+    },
+  );
+
+  app.patch(
+    "/admin/businesses/:businessId/presentations/:presentationId/knowledge/:entryId",
+    async (request, reply) => {
+      try {
+        const { businessId, presentationId, entryId } = request.params as {
+          businessId: string;
+          presentationId: string;
+          entryId: string;
+        };
+        await requireBusinessAccess(request, businessId);
+        const row = await loadPresentationForBusiness(businessId, presentationId);
+        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+
+        const existing = await db.query.presentationKnowledgeEntries.findFirst({
+          where: and(
+            eq(presentationKnowledgeEntries.id, entryId),
+            eq(presentationKnowledgeEntries.presentationId, presentationId),
+          ),
+        });
+        if (!existing) return reply.status(404).send({ detail: "Knowledge entry not found" });
+
+        const body = request.body as Record<string, unknown>;
+        const updates: Partial<typeof presentationKnowledgeEntries.$inferInsert> = {
+          updatedAt: new Date(),
+        };
+        if (body.title !== undefined) updates.title = String(body.title).trim();
+        if (body.content !== undefined) updates.content = String(body.content).trim();
+        if (body.sort_order !== undefined) updates.sortOrder = Number(body.sort_order);
+
+        const [updated] = await db
+          .update(presentationKnowledgeEntries)
+          .set(updates)
+          .where(eq(presentationKnowledgeEntries.id, entryId))
+          .returning();
+
+        await syncKnowledgeEmbedding(updated!);
+        return knowledgeOut(updated!);
+      } catch (err) {
+        return sendAuthError(reply, err);
+      }
+    },
+  );
+
+  app.delete(
+    "/admin/businesses/:businessId/presentations/:presentationId/knowledge/:entryId",
+    async (request, reply) => {
+      try {
+        const { businessId, presentationId, entryId } = request.params as {
+          businessId: string;
+          presentationId: string;
+          entryId: string;
+        };
+        await requireBusinessAccess(request, businessId);
+        const row = await loadPresentationForBusiness(businessId, presentationId);
+        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+
+        const existing = await db.query.presentationKnowledgeEntries.findFirst({
+          where: and(
+            eq(presentationKnowledgeEntries.id, entryId),
+            eq(presentationKnowledgeEntries.presentationId, presentationId),
+          ),
+        });
+        if (!existing) return reply.status(404).send({ detail: "Knowledge entry not found" });
+
+        await db
+          .delete(presentationKnowledgeEntries)
+          .where(eq(presentationKnowledgeEntries.id, entryId));
+        await deleteKnowledgeEmbedding(presentationId, entryId);
+        return reply.status(204).send();
+      } catch (err) {
+        return sendAuthError(reply, err);
+      }
+    },
+  );
 
   app.patch("/admin/businesses/:businessId/presentations/:presentationId", async (request, reply) => {
     try {
@@ -331,6 +488,18 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           .update(presentations)
           .set({ status: "draft", updatedAt: new Date() })
           .where(eq(presentations.id, presentationId));
+
+        if (fileType === "pptx") {
+          try {
+            await persistPresentationThumbnail({
+              businessId,
+              presentationId,
+              pptxBuffer: buffer,
+            });
+          } catch (thumbErr) {
+            console.warn("[presentations] thumbnail after upload failed", thumbErr);
+          }
+        }
 
         return reply.status(201).send(fileOut(file!));
       } catch (err) {
@@ -447,13 +616,34 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           .update(presentations)
           .set({
             status: "processing",
-            processingStep: "queued",
+            processingStep: "parsing",
             processingError: "",
             updatedAt: new Date(),
           })
           .where(eq(presentations.id, presentationId));
 
-        enqueuePresentationProcessing(presentationId);
+        enqueuePresentationProcessing(presentationId, { force: true });
+        const updated = await loadPresentationForBusiness(businessId, presentationId);
+        return presentationOut(updated!);
+      } catch (err) {
+        return sendAuthError(reply, err);
+      }
+    },
+  );
+
+  app.post(
+    "/admin/businesses/:businessId/presentations/:presentationId/process/cancel",
+    async (request, reply) => {
+      try {
+        const { businessId, presentationId } = request.params as {
+          businessId: string;
+          presentationId: string;
+        };
+        await requireBusinessAccess(request, businessId);
+        const row = await loadPresentationForBusiness(businessId, presentationId);
+        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+
+        await cancelPresentationProcessing(presentationId);
         const updated = await loadPresentationForBusiness(businessId, presentationId);
         return presentationOut(updated!);
       } catch (err) {

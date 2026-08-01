@@ -27,33 +27,6 @@ type LorescaleHeroProps = {
 const USE_PNG_AVATAR = process.env.NEXT_PUBLIC_USE_PNG_AVATAR === "true";
 const DEFAULT_PNG = "/lorescale-cashier-nobg.png";
 
-function PngStandIn({
-  src,
-  name,
-  frameClassName,
-  isTalking,
-}: {
-  src: string;
-  name: string;
-  frameClassName?: string;
-  isTalking: boolean;
-}) {
-  return (
-    <div
-      className={`${frameClassName ?? ""} ${isTalking ? "avatar-talking" : ""}`}
-      aria-label={`${name}, AI assistant`}
-      role="img"
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt=""
-        className="h-full w-full object-contain object-bottom"
-      />
-    </div>
-  );
-}
-
 export function LorescaleHero({
   isTalking,
   mode = "idle",
@@ -64,7 +37,8 @@ export function LorescaleHero({
   const avatarModelPath = useSessionStore((s) => s.avatarModelPath);
   const avatarUrl = useSessionStore((s) => s.avatarUrl);
   const name = assistantName || "Lorescale";
-  const pngSrc = avatarUrl ? resolveMediaUrl(avatarUrl) : DEFAULT_PNG;
+  // 2D assistant photo is header/chat only — never used as a 3D stage stand-in.
+  const pngOnlySrc = avatarUrl ? resolveMediaUrl(avatarUrl) : DEFAULT_PNG;
 
   // Warm the GLB in the browser cache as soon as the menu path is known.
   useEffect(() => {
@@ -84,20 +58,19 @@ export function LorescaleHero({
         mouthOpen={mouthOpen}
         assistantName={name}
         usePngFallback
-        pngSrc={pngSrc}
+        pngSrc={pngOnlySrc}
         frameClassName={frameClassName}
       />
     );
   }
 
-  // Stand-in photo while menu path / GLB still loading — no long spinner void.
+  // Wait for the GLB path — keep the stage empty (no 2D assistant photo flash).
   if (!avatarModelPath) {
     return (
-      <PngStandIn
-        src={pngSrc}
-        name={name}
-        frameClassName={frameClassName}
-        isTalking={isTalking}
+      <div
+        className={frameClassName}
+        aria-label={`${name}, AI assistant`}
+        role="img"
       />
     );
   }
@@ -111,7 +84,6 @@ export function LorescaleHero({
       framing="bust"
       mouthOpen={mouthOpen}
       assistantName={name}
-      pngSrc={pngSrc}
       frameClassName={frameClassName}
     />
   );

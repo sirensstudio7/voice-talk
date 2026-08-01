@@ -24,3 +24,19 @@ export async function renderPptxToPngs(buffer: Buffer): Promise<RenderedSlideIma
     height: slide.height,
   }));
 }
+
+/** Lightweight first-slide PNG for list/card thumbnails. */
+export async function renderFirstSlideThumbnail(buffer: Buffer): Promise<Buffer | null> {
+  try {
+    const results = await convertPptxToPng(buffer, {
+      slides: [1],
+      width: 640,
+      logLevel: "off",
+    });
+    const first = results[0];
+    return first ? Buffer.from(first.png) : null;
+  } catch (err) {
+    console.warn("[pptx-render] first-slide thumbnail failed", err);
+    return null;
+  }
+}

@@ -4,6 +4,7 @@ export {
   type AvatarFraming,
   type AvatarIdleLabClock,
   type AvatarMode,
+  type AvatarPerformanceMode,
 } from "./avatar-3d";
 export {
   Avatar,

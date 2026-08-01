@@ -626,6 +626,8 @@ function Scene({
   );
 }
 
+export type AvatarPerformanceMode = "default" | "lite";
+
 export type Avatar3DProps = {
   isTalking: boolean;
   mode?: AvatarMode;
@@ -649,7 +651,28 @@ export type Avatar3DProps = {
   };
   /** Pause the render loop when the canvas is off-screen. */
   pauseWhenOffscreen?: boolean;
+  /**
+   * Rendering budget. Defaults keep full quality for customer kiosk.
+   * `lite` caps DPR, disables MSAA, prefers low-power GPU, and ticks
+   * idle at a lower rate (Present / laptop-friendly).
+   */
+  performanceMode?: AvatarPerformanceMode;
+  /** Pause WebGL when the document tab is hidden (Present-friendly). */
+  pauseWhenHidden?: boolean;
 };
+
+/** ~20 fps idle ticks when Canvas frameloop is "demand" (Present lite). */
+function DemandIdleTicker({ active }: { active: boolean }) {
+  const invalidate = useThree((s) => s.invalidate);
+
+  useEffect(() => {
+    if (!active) return;
+    const id = window.setInterval(() => invalidate(), 50);
+    return () => window.clearInterval(id);
+  }, [active, invalidate]);
+
+  return null;
+}
 
 export function Avatar3D({
   isTalking,
@@ -663,9 +686,13 @@ export function Avatar3D({
   enableOrbit = false,
   resize,
   pauseWhenOffscreen = false,
+  performanceMode = "default",
+  pauseWhenHidden = false,
 }: Avatar3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(true);
+  const [tabVisible, setTabVisible] = useState(true);
+  const lite = performanceMode === "lite";
 
   useEffect(() => {
     if (!pauseWhenOffscreen) {
@@ -687,17 +714,39 @@ export function Avatar3D({
     return () => observer.disconnect();
   }, [pauseWhenOffscreen]);
 
+  useEffect(() => {
+    if (!pauseWhenHidden) {
+      setTabVisible(true);
+      return;
+    }
+
+    const sync = () => setTabVisible(document.visibilityState === "visible");
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, [pauseWhenHidden]);
+
+  const paused =
+    (pauseWhenOffscreen && !isVisible) || (pauseWhenHidden && !tabVisible);
+  const demandIdle = lite && !isTalking && !paused;
+  const frameloop = paused ? "never" : lite && !isTalking ? "demand" : "always";
+
   return (
     <div ref={containerRef} className="h-full w-full">
       <Canvas
         className="h-full w-full"
-        dpr={[1, 2]}
-        frameloop={pauseWhenOffscreen && !isVisible ? "never" : "always"}
-        gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
+        dpr={lite ? 1 : [1, 2]}
+        frameloop={frameloop}
+        gl={{
+          alpha: true,
+          antialias: !lite,
+          powerPreference: lite ? "low-power" : "high-performance",
+        }}
         camera={{ fov: 28, near: 0.01, far: 100 }}
         resize={resize}
         style={{ width: "100%", height: "100%", display: "block", background: "transparent" }}
       >
+        <DemandIdleTicker active={demandIdle} />
         <Scene
           isTalking={isTalking}
           mode={mode}

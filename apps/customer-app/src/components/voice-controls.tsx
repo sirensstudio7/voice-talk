@@ -195,15 +195,10 @@ export function ExperienceHeader({
     useSessionStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const isLive = status === "connected" || status === "connecting";
-  const assistantInitial = (assistantName?.trim().charAt(0) || "A").toUpperCase();
-  // Skip the 2D photo during idle preload; show it once a session is active.
   const resolvedAvatarUrl = avatarUrl ? resolveMediaUrl(avatarUrl) : "";
-  const assistantAvatarSrc =
-    isLive && resolvedAvatarUrl
-      ? `${resolvedAvatarUrl}${resolvedAvatarUrl.includes("?") ? "&" : "?"}v=${avatarCacheBust || 0}`
-      : isLive
-        ? DEFAULT_ASSISTANT_AVATAR
-        : null;
+  const assistantAvatarSrc = resolvedAvatarUrl
+    ? `${resolvedAvatarUrl}${resolvedAvatarUrl.includes("?") ? "&" : "?"}v=${avatarCacheBust || 0}`
+    : DEFAULT_ASSISTANT_AVATAR;
 
   const statusDot =
     status === "connecting"
@@ -244,33 +239,30 @@ export function ExperienceHeader({
               compact ? "h-6 w-6 text-[10px]" : "h-8 w-8 text-xs"
             }`}
           >
-            {assistantAvatarSrc ? (
-              assistantAvatarSrc.startsWith("http") ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  key={assistantAvatarSrc}
-                  src={assistantAvatarSrc}
-                  alt=""
-                  width={32}
-                  height={32}
-                  loading="eager"
-                  decoding="async"
-                  referrerPolicy="no-referrer"
-                  className="h-full w-full object-cover object-center"
-                  aria-hidden
-                />
-              ) : (
-                <Image
-                  src={assistantAvatarSrc}
-                  alt=""
-                  width={32}
-                  height={32}
-                  className="h-full w-full object-cover object-center"
-                  aria-hidden
-                />
-              )
+            {assistantAvatarSrc.startsWith("http") ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={assistantAvatarSrc}
+                src={assistantAvatarSrc}
+                alt=""
+                width={32}
+                height={32}
+                loading="lazy"
+                decoding="async"
+                referrerPolicy="no-referrer"
+                className="h-full w-full object-cover object-center"
+                aria-hidden
+              />
             ) : (
-              <span aria-hidden>{assistantInitial}</span>
+              <Image
+                src={assistantAvatarSrc}
+                alt=""
+                width={32}
+                height={32}
+                loading="lazy"
+                className="h-full w-full object-cover object-center"
+                aria-hidden
+              />
             )}
             <span
               className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-white transition-colors duration-300 ease-out ${statusDot}`}

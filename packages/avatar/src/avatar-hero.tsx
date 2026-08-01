@@ -11,7 +11,7 @@ import {
 import { DEFAULT_MODEL_PATH } from "./model-calibration";
 
 export const HERO_FRAME_CLASS =
-  "absolute bottom-12 left-1/2 aspect-[2/3] h-[120vh] max-h-none max-w-[100vw] -translate-x-1/2 overflow-visible";
+  "absolute bottom-0 left-1/2 aspect-[2/3] h-[120vh] max-h-none max-w-[100vw] -translate-x-1/2 overflow-visible";
 
 export const COMPACT_HERO_FRAME_CLASS =
   "relative mx-auto aspect-[2/3] h-full max-h-[420px] w-auto overflow-visible";
@@ -104,6 +104,8 @@ export type AvatarHeroProps = {
   usePngFallback?: boolean;
   resize?: Avatar3DProps["resize"];
   pauseWhenOffscreen?: Avatar3DProps["pauseWhenOffscreen"];
+  performanceMode?: Avatar3DProps["performanceMode"];
+  pauseWhenHidden?: Avatar3DProps["pauseWhenHidden"];
 };
 
 export function AvatarHero({
@@ -122,6 +124,8 @@ export function AvatarHero({
   usePngFallback = false,
   resize,
   pauseWhenOffscreen = false,
+  performanceMode = "default",
+  pauseWhenHidden = false,
 }: AvatarHeroProps) {
   const ariaLabel = `${assistantName}, AI assistant`;
 
@@ -150,7 +154,7 @@ export function AvatarHero({
         role="img"
       >
         <Suspense
-          fallback={<AvatarHeroFallback assistantName={assistantName} pngSrc={pngSrc} />}
+          fallback={<AvatarHeroFallback assistantName={assistantName} />}
         >
           {/*
             Keep a normal in-flow 2/3 box for layout/height. For kiosk bust, paint
@@ -177,6 +181,8 @@ export function AvatarHero({
                 enableOrbit={enableOrbit}
                 resize={resize}
                 pauseWhenOffscreen={pauseWhenOffscreen}
+                performanceMode={performanceMode}
+                pauseWhenHidden={pauseWhenHidden}
               />
             </div>
           </div>

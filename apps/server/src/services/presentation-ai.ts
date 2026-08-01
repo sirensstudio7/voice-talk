@@ -61,16 +61,59 @@ Return ONLY the spoken narration script, no markdown or labels.`;
   }
 }
 
+/**
+ * Fast talking points from PPT extract — no LLM.
+ * Live Present paraphrases these at speak time.
+ */
+export function buildTalkingPointsFromSlide(input: {
+  title: string;
+  texts: string[];
+  notes: string;
+}): string {
+  const title = input.title.trim() || "this slide";
+  const notes = input.notes.trim();
+  const texts = input.texts.map((t) => t.trim()).filter(Boolean);
+
+  const parts: string[] = [];
+  if (title) parts.push(title);
+
+  // Prefer unique body lines (skip duplicate title).
+  for (const line of texts) {
+    if (line.toLowerCase() === title.toLowerCase()) continue;
+    parts.push(line);
+  }
+
+  if (notes) parts.push(notes);
+
+  if (parts.length === 0) return `Let's look at ${title}.`;
+  if (parts.length === 1) return `On this slide: ${parts[0]}.`;
+  return parts.join(". ").replace(/\.\s*\./g, ".").trim();
+}
+
+/** @deprecated alias — prefer buildTalkingPointsFromSlide */
 function buildFallbackScript(input: {
   title: string;
   texts: string[];
   notes: string;
 }): string {
-  if (input.notes.trim()) return input.notes.trim();
-  if (input.texts.length > 0) {
-    return `On this slide, ${input.title}. ${input.texts.slice(1).join(". ")}`.trim();
+  return buildTalkingPointsFromSlide(input);
+}
+
+export function buildDefaultGreetingClosing(input: {
+  language: string;
+  title: string;
+}): { greeting: string; closing: string } {
+  const title = input.title.trim() || "this presentation";
+  if (input.language === "id") {
+    return {
+      greeting: `Selamat datang. Hari ini kami akan membahas ${title}.`,
+      closing: `Terima kasih. Saya siap menjawab pertanyaan Anda.`,
+    };
   }
-  return `Let's look at ${input.title}.`;
+  return {
+    greeting: `Welcome everyone. Today we will cover ${title}.`,
+    closing: `Thank you. I'm ready for your questions.`,
+  };
 }
 
 export async function generateGreetingClosing(input: {
@@ -79,14 +122,8 @@ export async function generateGreetingClosing(input: {
   description: string;
 }): Promise<{ greeting: string; closing: string }> {
   const client = getClient();
-  const greetingFallback =
-    input.language === "id"
-      ? `Selamat datang. Hari ini kami akan membahas ${input.title}.`
-      : `Welcome everyone. Today we will cover ${input.title}.`;
-  const closingFallback =
-    input.language === "id"
-      ? `Terima kasih. Saya siap menjawab pertanyaan Anda.`
-      : `Thank you. I'm ready for your questions.`;
+  const { greeting: greetingFallback, closing: closingFallback } =
+    buildDefaultGreetingClosing(input);
 
   if (!client) return { greeting: greetingFallback, closing: closingFallback };
 
@@ -209,7 +246,7 @@ export async function answerPresentationQuestion(input: {
 Language: ${input.language}
 Question: ${input.question}
 
-Context (priority: ppt slides, notes, supporting docs):
+Context (priority: ppt slides, presentation knowledge, notes, supporting docs):
 ${context || "(empty)"}
 
 Return a concise spoken answer (2-5 sentences).`,
@@ -231,6 +268,7 @@ function rankChunks(
     .filter((t) => t.length > 2);
   const priority: Record<string, number> = {
     ppt: 50,
+    knowledge: 48,
     notes: 40,
     pdf: 30,
     docx: 20,

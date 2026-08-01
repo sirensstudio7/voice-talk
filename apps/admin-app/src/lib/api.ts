@@ -502,6 +502,10 @@ export const api = {
     }),
   deleteKnowledge: (token: string, businessId: string, id: string) =>
     request<void>(`/admin/businesses/${businessId}/knowledge/${id}`, token, { method: "DELETE" }),
+  deleteAllKnowledge: (token: string, businessId: string) =>
+    request<{ deleted: number }>(`/admin/businesses/${businessId}/knowledge`, token, {
+      method: "DELETE",
+    }),
   getAiRules: (token: string, businessId: string) =>
     request<AiRules>(`/admin/businesses/${businessId}/ai-rules`, token),
   updateAiRules: (token: string, businessId: string, body: Partial<AiRules>) =>
@@ -734,6 +738,22 @@ export const api = {
       `/admin/businesses/${businessId}/presentations/${presentationId}`,
       token,
     ),
+  updatePresentation: (
+    token: string,
+    businessId: string,
+    presentationId: string,
+    body: {
+      title?: string;
+      description?: string;
+      language?: AiLanguage | string;
+      category?: string;
+    },
+  ) =>
+    request<Presentation>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}`,
+      token,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
   /** Absolute URL to fetch the uploaded PPTX with the admin bearer token. */
   presentationPptxUrl: (businessId: string, presentationId: string) =>
     `${API_URL}/admin/businesses/${businessId}/presentations/${presentationId}/pptx`,
@@ -760,6 +780,51 @@ export const api = {
       `/admin/businesses/${businessId}/presentations/${presentationId}/process`,
       token,
       { method: "POST", body: JSON.stringify({}) },
+    ),
+  cancelPresentationProcess: (token: string, businessId: string, presentationId: string) =>
+    request<Presentation>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}/process/cancel`,
+      token,
+      { method: "POST", body: JSON.stringify({}) },
+    ),
+  listPresentationKnowledge: (token: string, businessId: string, presentationId: string) =>
+    request<PresentationKnowledgeEntry[]>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}/knowledge`,
+      token,
+    ),
+  createPresentationKnowledge: (
+    token: string,
+    businessId: string,
+    presentationId: string,
+    body: { title?: string; content: string; sort_order?: number },
+  ) =>
+    request<PresentationKnowledgeEntry>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}/knowledge`,
+      token,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  updatePresentationKnowledge: (
+    token: string,
+    businessId: string,
+    presentationId: string,
+    entryId: string,
+    body: Partial<{ title: string; content: string; sort_order: number }>,
+  ) =>
+    request<PresentationKnowledgeEntry>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}/knowledge/${entryId}`,
+      token,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  deletePresentationKnowledge: (
+    token: string,
+    businessId: string,
+    presentationId: string,
+    entryId: string,
+  ) =>
+    request<void>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}/knowledge/${entryId}`,
+      token,
+      { method: "DELETE" },
     ),
   launchPresentationSession: (
     token: string,
@@ -820,6 +885,7 @@ export type Presentation = {
   estimated_duration: number;
   greeting_script: string;
   closing_script: string;
+  thumbnail_url: string;
   created_at: string;
   updated_at: string;
 };
@@ -856,9 +922,20 @@ export type PresentationAudioAsset = {
   duration_seconds: number;
 };
 
+export type PresentationKnowledgeEntry = {
+  id: string;
+  presentation_id: string;
+  title: string;
+  content: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export type PresentationDetail = Presentation & {
   files: PresentationFile[];
   slides: PresentationSlide[];
+  knowledge: PresentationKnowledgeEntry[];
   audio_assets: PresentationAudioAsset[];
   pptx_url?: string | null;
 };

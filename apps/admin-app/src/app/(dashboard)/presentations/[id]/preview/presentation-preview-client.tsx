@@ -129,7 +129,7 @@ export function PresentationPreviewClient({ presentationId }: { presentationId: 
       } catch {
         // ignore
       }
-      window.open(`/sessions/${session.id}/live`, "_blank", "noopener,noreferrer");
+      window.location.assign(`/sessions/${session.id}/live`);
     } catch (err) {
       setLaunchError(err instanceof Error ? err.message : "Failed to start AI presentation");
     } finally {

@@ -10,7 +10,6 @@ import {
 } from "../db/schema.js";
 import { answerPresentationQuestion } from "./presentation-ai.js";
 import { moderateAudienceQuestion } from "./presentation-moderation.js";
-import { ensurePresentationStageAudio } from "./presentation-pipeline.js";
 
 export const SESSION_STATUSES = [
   "initializing",
@@ -87,12 +86,7 @@ export async function advanceSession(
       .update(presentations)
       .set({ status: "live", updatedAt: new Date() })
       .where(eq(presentations.id, presentation.id));
-    // Backfill greeting/closing WAV if a prior run skipped them (TTS quota).
-    try {
-      await ensurePresentationStageAudio(presentation.id);
-    } catch (err) {
-      console.warn("[presentation-session] ensure stage audio failed", sessionId, err);
-    }
+    // Voice is streamed via Gemini Live on the client — no pre-generated WAVs.
     return touchSession(sessionId, {
       status: "greeting",
       currentSlideNumber: 0,
@@ -102,9 +96,10 @@ export async function advanceSession(
 
   if (action === "next" || action === "finish_stage") {
     if (session.status === "greeting") {
+      const first = slides[0];
       return touchSession(sessionId, {
         status: "presenting",
-        currentSlideNumber: slides[0]?.slideNumber ?? 1,
+        currentSlideNumber: first?.slideNumber ?? 1,
       });
     }
     if (session.status === "presenting" || session.status === "paused") {
