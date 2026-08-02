@@ -10,6 +10,7 @@ import {
   OnboardingLayout,
   SelectionCard,
 } from "@/components/onboarding-shell";
+import { adminPath } from "@/lib/admin-path";
 import { ApiRequestError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
@@ -104,7 +105,7 @@ export function BusinessOnboardingClient() {
       });
       await refreshBusinesses();
       clearOnboardingDrafts();
-      router.push("/");
+      router.push(adminPath(business.slug, "/"));
     } catch (err) {
       setError(
         err instanceof ApiRequestError ? err.message : "Could not save your preferences. Try again.",

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 
 type MenuFeatureGateProps = {
@@ -18,7 +19,7 @@ export function MenuFeatureGate({ children }: MenuFeatureGateProps) {
   useEffect(() => {
     if (!business) return;
     if (!menuEnabled) {
-      router.replace("/");
+      router.replace(adminPath(business.slug, "/"));
     }
   }, [business, menuEnabled, router]);
 

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 
 import { SignInPage, type Testimonial } from "@/components/sign-in-page";
 import { ApiRequestError } from "@/lib/api";
+import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 import { getOnboardingRedirectPath } from "@/lib/onboarding";
 
@@ -56,7 +57,9 @@ export function LoginPageClient() {
     if (!authReady || freshLogin) return;
     if (businessesError) return;
     if (token && businesses.length > 0) {
-      router.replace(getOnboardingRedirectPath(businesses, business) ?? "/");
+      const onboarding = getOnboardingRedirectPath(businesses, business);
+      const slug = business?.slug ?? businesses[0]?.slug;
+      router.replace(onboarding ?? (slug ? adminPath(slug, "/") : "/workspaces"));
     }
   }, [authReady, freshLogin, token, businesses, business, businessesError, router]);
 
@@ -71,7 +74,9 @@ export function LoginPageClient() {
 
     try {
       const list = await login(email, password);
-      router.push(getOnboardingRedirectPath(list, list[0] ?? null) ?? "/");
+      const onboarding = getOnboardingRedirectPath(list, list[0] ?? null);
+      const slug = list[0]?.slug;
+      router.push(onboarding ?? (slug ? adminPath(slug, "/") : "/workspaces"));
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "Invalid email or password.");
     } finally {

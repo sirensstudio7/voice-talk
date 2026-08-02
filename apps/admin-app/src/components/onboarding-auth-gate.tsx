@@ -3,8 +3,9 @@
 import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
-import { getOnboardingRedirectPath, isOnboardingComplete } from "@/lib/onboarding";
+import { isOnboardingComplete } from "@/lib/onboarding";
 
 export function OnboardingAuthGate({
   children,
@@ -26,9 +27,14 @@ export function OnboardingAuthGate({
     }
     if (businessesLoading) return;
 
+    const home =
+      business?.slug || businesses[0]?.slug
+        ? adminPath(business?.slug ?? businesses[0]!.slug, "/")
+        : "/workspaces";
+
     if (!requireBusiness) {
       if (!isNewWorkspace && businesses.length > 0 && isOnboardingComplete(business)) {
-        router.replace("/");
+        router.replace(home);
       }
       return;
     }
@@ -39,7 +45,7 @@ export function OnboardingAuthGate({
     }
 
     if (isOnboardingComplete(business)) {
-      router.replace("/");
+      router.replace(home);
     }
   }, [authReady, token, businesses, business, businessesLoading, requireBusiness, isNewWorkspace, router]);
 

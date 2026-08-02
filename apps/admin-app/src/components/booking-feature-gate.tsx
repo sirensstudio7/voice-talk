@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 
 type BookingFeatureGateProps = {
@@ -17,7 +18,7 @@ export function BookingFeatureGate({ children }: BookingFeatureGateProps) {
   useEffect(() => {
     if (!business) return;
     if (!bookingEnabled) {
-      router.replace("/");
+      router.replace(adminPath(business.slug, "/"));
     }
   }, [business, bookingEnabled, router]);
 

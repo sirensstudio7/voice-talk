@@ -1,3 +1,5 @@
+import { isReservedAdminSlug } from "@/lib/admin-path";
+
 export function nameToSlug(name: string): string {
   return name
     .toLowerCase()
@@ -10,7 +12,12 @@ export function nameToSlug(name: string): string {
 }
 
 export function isValidSlug(slug: string): boolean {
-  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) && slug.length > 0 && slug.length <= 100;
+  return (
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) &&
+    slug.length > 0 &&
+    slug.length <= 100 &&
+    !isReservedAdminSlug(slug)
+  );
 }
 
 const WORKSPACE_KEY = "lorescale_onboarding_workspace";

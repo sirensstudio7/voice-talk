@@ -63,6 +63,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { adminPath, matchAdminPath, stripBusinessSlug } from "@/lib/admin-path";
 import { api, getHealth, type Business } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { customerAppUrl } from "@/lib/customer-app";
@@ -110,14 +111,15 @@ const ROUTE_LABELS: Record<string, string> = {
   "/add-ons/smart-photo-moment/payment": "Checkout",
 };
 
-function breadcrumbLabel(pathname: string) {
-  if (ROUTE_LABELS[pathname]) return ROUTE_LABELS[pathname];
-  if (/^\/knowledge\/[^/]+\/edit$/.test(pathname)) return "Edit entry";
-  if (/^\/presentations\/[^/]+$/.test(pathname)) return "Presentation";
-  if (/^\/presentations\/[^/]+\/preview$/.test(pathname)) return "Preview";
-  if (/^\/presentations\/[^/]+\/focus$/.test(pathname)) return "In focus";
-  if (/^\/sessions\/[^/]+\/live$/.test(pathname)) return "Live session";
-  return pathname.split("/").filter(Boolean).pop()?.replace(/-/g, " ") ?? "";
+function breadcrumbLabel(pathname: string, businessSlug?: string | null) {
+  const path = stripBusinessSlug(pathname, businessSlug);
+  if (ROUTE_LABELS[path]) return ROUTE_LABELS[path];
+  if (/^\/knowledge\/[^/]+\/edit$/.test(path)) return "Edit entry";
+  if (/^\/presentations\/[^/]+$/.test(path)) return "Presentation";
+  if (/^\/presentations\/[^/]+\/preview$/.test(path)) return "Preview";
+  if (/^\/presentations\/[^/]+\/focus$/.test(path)) return "In focus";
+  if (/^\/sessions\/[^/]+\/live$/.test(path)) return "Live session";
+  return path.split("/").filter(Boolean).pop()?.replace(/-/g, " ") ?? "";
 }
 
 const NAV_GROUPS: NavGroup[] = [
@@ -440,23 +442,27 @@ function UserMenu({
   );
 }
 
-function isFullscreenRoute(pathname: string) {
+function isFullscreenRoute(pathname: string, businessSlug?: string | null) {
+  const path = stripBusinessSlug(pathname, businessSlug);
   return (
-    /^\/presentations\/[^/]+\/preview$/.test(pathname) ||
-    /^\/presentations\/[^/]+\/focus$/.test(pathname) ||
-    /^\/sessions\/[^/]+\/live$/.test(pathname)
+    /^\/presentations\/[^/]+\/preview$/.test(path) ||
+    /^\/presentations\/[^/]+\/focus$/.test(path) ||
+    /^\/sessions\/[^/]+\/live$/.test(path)
   );
 }
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, businesses, business, setBusinessId, logout } = useAuth();
   const aiStatus = useAiStatus();
+  const slug = business?.slug ?? "";
+  const pathSuffix = stripBusinessSlug(pathname, slug || null);
   const orderingEnabled = business?.capabilities?.ordering_enabled ?? true;
   const menuEnabled = business?.capabilities?.menu_enabled ?? orderingEnabled;
   const bookingEnabled = business?.capabilities?.booking_enabled ?? false;
   const salonMode = business?.capabilities?.salon_mode ?? false;
-  const fullscreen = isFullscreenRoute(pathname);
+  const fullscreen = isFullscreenRoute(pathname, slug || null);
 
   const navGroups = useMemo(
     () =>
@@ -471,12 +477,25 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           })
           .map((item) => ({
             ...item,
+            href: slug ? adminPath(slug, item.href) : item.href,
             label:
               item.href === "/menu" && salonMode && item.salonLabel ? item.salonLabel : item.label,
+            suffix: item.href,
           })),
       })).filter((group) => group.items.length > 0),
-    [orderingEnabled, menuEnabled, bookingEnabled, salonMode],
+    [orderingEnabled, menuEnabled, bookingEnabled, salonMode, slug],
   );
+
+  const handleBusinessSelect = (id: string) => {
+    const next = businesses.find((item) => item.id === id);
+    setBusinessId(id);
+    if (!next?.slug) return;
+
+    const currentSlug = business?.slug;
+    if (currentSlug && (pathname === `/${currentSlug}` || pathname.startsWith(`/${currentSlug}/`))) {
+      router.push(adminPath(next.slug, pathSuffix));
+    }
+  };
 
   // Preview opens full-page (no sidebar) while keeping the white admin vibe.
   if (fullscreen) {
@@ -492,7 +511,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               <BusinessSwitcher
                 businesses={businesses}
                 business={business}
-                onSelect={setBusinessId}
+                onSelect={handleBusinessSelect}
               />
             </SidebarMenuItem>
           </SidebarMenu>
@@ -504,9 +523,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {group.items.map(({ href, label, icon: Icon }) => (
-                    <SidebarMenuItem key={href}>
-                      <SidebarMenuButton asChild isActive={pathname === href} tooltip={label}>
+                  {group.items.map(({ href, label, icon: Icon, suffix }) => (
+                    <SidebarMenuItem key={suffix}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={slug ? matchAdminPath(pathname, slug, suffix) : pathname === href}
+                        tooltip={label}
+                      >
                         <Link href={href}>
                           <Icon />
                           <span>{label}</span>
@@ -558,15 +581,15 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               <BreadcrumbList>
                 <BreadcrumbItem>
                   <BreadcrumbLink asChild>
-                    <Link href="/">Dashboard</Link>
+                    <Link href={slug ? adminPath(slug, "/") : "/"}>Dashboard</Link>
                   </BreadcrumbLink>
                 </BreadcrumbItem>
-                {pathname !== "/" ? (
+                {pathSuffix !== "/" ? (
                   <>
                     <BreadcrumbSeparator />
                     <BreadcrumbItem>
                       <BreadcrumbPage>
-                        {breadcrumbLabel(pathname)}
+                        {breadcrumbLabel(pathname, slug || null)}
                       </BreadcrumbPage>
                     </BreadcrumbItem>
                   </>

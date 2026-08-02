@@ -1,5 +1,32 @@
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+/** Must stay in sync with admin-app RESERVED_ADMIN_SLUGS + BUSINESS_SCOPED_ROOTS. */
+const RESERVED_SLUGS = new Set([
+  "login",
+  "signup",
+  "onboarding",
+  "billing",
+  "workspaces",
+  "transactions",
+  "settings",
+  "api",
+  "_next",
+  "analytics",
+  "menu",
+  "appointments",
+  "schedule",
+  "orders",
+  "payment",
+  "knowledge",
+  "presentations",
+  "sessions",
+  "ai-rules",
+  "vision-settings",
+  "conversations",
+  "appearance",
+  "add-ons",
+]);
+
 export type BusinessType =
   | "restaurant"
   | "cafe"
@@ -22,7 +49,12 @@ export function nameToSlug(name: string): string {
 }
 
 export function isValidSlug(slug: string): boolean {
-  return slug.length > 0 && slug.length <= 100 && SLUG_RE.test(slug);
+  return (
+    slug.length > 0 &&
+    slug.length <= 100 &&
+    SLUG_RE.test(slug) &&
+    !RESERVED_SLUGS.has(slug.toLowerCase())
+  );
 }
 
 export function slugSuggestions(baseSlug: string): string[] {

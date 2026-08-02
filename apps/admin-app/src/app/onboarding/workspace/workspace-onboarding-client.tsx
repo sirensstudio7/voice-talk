@@ -11,6 +11,7 @@ import {
 } from "@/components/onboarding-shell";
 import { ApiRequestError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { isReservedAdminSlug } from "@/lib/admin-path";
 import {
   clearBusinessDraft,
   clearWorkspaceDraft,
@@ -252,7 +253,11 @@ export function WorkspaceOnboardingClient() {
                 </button>
               </div>
             ) : slugStatus === "invalid" && name.trim() ? (
-              <span className="text-red-600">Workspace name needs at least one letter or number</span>
+              <span className="text-red-600">
+                {isReservedAdminSlug(slug)
+                  ? "This URL is reserved. Choose a different workspace name."
+                  : "Workspace name needs at least one letter or number"}
+              </span>
             ) : null}
           </div>
         </div>

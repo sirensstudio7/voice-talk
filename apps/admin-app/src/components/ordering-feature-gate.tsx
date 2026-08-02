@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 
 type OrderingFeatureGateProps = {
@@ -17,7 +18,7 @@ export function OrderingFeatureGate({ children }: OrderingFeatureGateProps) {
   useEffect(() => {
     if (!business) return;
     if (!orderingEnabled) {
-      router.replace("/");
+      router.replace(adminPath(business.slug, "/"));
     }
   }, [business, orderingEnabled, router]);
 

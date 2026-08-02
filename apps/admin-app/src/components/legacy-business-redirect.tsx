@@ -1,22 +1,26 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { useAuth } from "@/lib/auth";
 import { adminPath } from "@/lib/admin-path";
 
-/** Bare `/` → `/{businessSlug}` overview. */
-export default function DashboardRootRedirect() {
+/** Redirect flat business routes (/knowledge) to /{slug}/knowledge. */
+export function LegacyBusinessRedirect() {
   const router = useRouter();
+  const pathname = usePathname();
   const { business, businesses, authReady } = useAuth();
 
   useEffect(() => {
     if (!authReady) return;
     const slug = business?.slug ?? businesses[0]?.slug;
-    if (slug) router.replace(adminPath(slug, "/"));
-    else router.replace("/workspaces");
-  }, [authReady, business, businesses, router]);
+    if (!slug) {
+      router.replace("/workspaces");
+      return;
+    }
+    router.replace(adminPath(slug, pathname || "/"));
+  }, [authReady, business, businesses, pathname, router]);
 
   return (
     <div className="flex min-h-[40vh] items-center justify-center">
