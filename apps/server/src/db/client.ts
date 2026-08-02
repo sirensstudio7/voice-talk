@@ -18,14 +18,14 @@ if (usesTransactionPooler) {
 const client = postgres(env.DATABASE_URL, {
   // Supabase pooler has a low connection cap — keep the pool small.
   prepare: false,
-  max: usesSupabasePooler ? 3 : 10,
-  connect_timeout: usesSupabasePooler ? 15 : 10,
+  max: usesSupabasePooler ? 2 : 10,
+  connect_timeout: usesSupabasePooler ? 10 : 10,
   // Recycle idle / old sockets so a bad pooler connection cannot linger.
-  idle_timeout: usesTransactionPooler ? 10 : 20,
-  max_lifetime: usesTransactionPooler ? 60 * 2 : 60 * 10,
+  idle_timeout: usesTransactionPooler ? 5 : 20,
+  max_lifetime: usesTransactionPooler ? 60 : 60 * 10,
   // Fail stuck queries instead of holding pool slots forever (login/UI hang).
   connection: {
-    statement_timeout: usesSupabasePooler ? 15_000 : 30_000,
+    statement_timeout: usesSupabasePooler ? 10_000 : 30_000,
   },
 });
 

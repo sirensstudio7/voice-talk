@@ -20,6 +20,7 @@ import {
   verifyPassword,
 } from "../auth/jwt.js";
 import { db } from "../db/client.js";
+import { withLoginDb } from "../db/login-db.js";
 import {
   aiRules,
   addonRequests,
@@ -272,29 +273,38 @@ function buildConversationDetail(
 export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   app.post("/admin/auth/login", async (request, reply) => {
     const body = request.body as { email: string; password: string };
-    const user = await db.query.users.findFirst({
-      where: eq(users.email, body.email.toLowerCase().trim()),
-    });
-    if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
-      return reply.status(401).send({ detail: "Invalid credentials" });
+    try {
+      const normalizedEmail = body.email.toLowerCase().trim();
+      const user = await withLoginDb((loginDb) =>
+        loginDb.query.users.findFirst({
+          where: eq(users.email, normalizedEmail),
+        }),
+      );
+      if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
+        return reply.status(401).send({ detail: "Invalid credentials" });
+      }
+      if (user.status === "suspended") {
+        return reply.status(403).send({
+          detail: user.lastLoginAt
+            ? "Account suspended"
+            : "Your registration was not approved.",
+        });
+      }
+      if (user.status === "pending") {
+        return reply.status(403).send({ detail: "Your account is awaiting admin approval." });
+      }
+      await withLoginDb((loginDb) =>
+        loginDb.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id)),
+      );
+      return {
+        access_token: createAccessToken(user.id),
+        token_type: "bearer",
+        user: userOut(user),
+        businesses: await listBusinessesForUser(user.id),
+      };
+    } catch (err) {
+      return sendAuthError(reply, err);
     }
-    if (user.status === "suspended") {
-      return reply.status(403).send({
-        detail: user.lastLoginAt
-          ? "Account suspended"
-          : "Your registration was not approved.",
-      });
-    }
-    if (user.status === "pending") {
-      return reply.status(403).send({ detail: "Your account is awaiting admin approval." });
-    }
-    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
-    return {
-      access_token: createAccessToken(user.id),
-      token_type: "bearer",
-      user: userOut(user),
-      businesses: await listBusinessesForUser(user.id),
-    };
   });
 
   app.post("/admin/auth/signup", async (request, reply) => {

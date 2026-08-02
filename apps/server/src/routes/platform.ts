@@ -16,6 +16,7 @@ import {
 } from "../auth/platform-auth.js";
 import { requirePermission } from "../auth/platform-rbac.js";
 import { db } from "../db/client.js";
+import { withLoginDb } from "../db/login-db.js";
 import {
   aiRules,
   auditLogs,
@@ -167,21 +168,27 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
     const body = request.body as { email?: string; password?: string };
     try {
       const admin = await authenticatePlatformPassword(body.email ?? "", body.password ?? "");
-      await db
-        .update(platformAdmins)
-        .set({ lastLoginAt: new Date() })
-        .where(eq(platformAdmins.id, admin.id));
-      await writeAuditLog({
+      const now = new Date();
+      // Keep post-auth writes off the shared pool so a stuck pool cannot block login.
+      await withLoginDb(async (loginDb) => {
+        await loginDb
+          .update(platformAdmins)
+          .set({ lastLoginAt: now })
+          .where(eq(platformAdmins.id, admin.id));
+      });
+      void writeAuditLog({
         adminId: admin.id,
         action: "login",
         entityType: "platform_admin",
         entityId: admin.id,
         request,
+      }).catch(() => {
+        // Best-effort — never block login on audit insert.
       });
       return {
         access_token: createPlatformAccessToken(admin.id, admin.role),
         token_type: "bearer",
-        admin: platformAdminOut({ ...admin, lastLoginAt: new Date() }),
+        admin: platformAdminOut({ ...admin, lastLoginAt: now }),
       };
     } catch (err) {
       return sendAuthError(reply, err);

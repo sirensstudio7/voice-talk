@@ -3,6 +3,7 @@ import type { FastifyRequest } from "fastify";
 import jwt from "jsonwebtoken";
 import * as OTPAuth from "otpauth";
 import { db } from "../db/client.js";
+import { withLoginDb } from "../db/login-db.js";
 import { auditLogs, platformAdmins, type PlatformAdmin } from "../db/schema.js";
 import { env } from "../env.js";
 import { hashPassword, verifyPassword } from "./jwt.js";
@@ -144,9 +145,12 @@ export async function authenticatePlatformPassword(
   email: string,
   password: string,
 ): Promise<PlatformAdmin> {
-  const admin = await db.query.platformAdmins.findFirst({
-    where: eq(platformAdmins.email, email.toLowerCase().trim()),
-  });
+  const normalizedEmail = email.toLowerCase().trim();
+  const admin = await withLoginDb((loginDb) =>
+    loginDb.query.platformAdmins.findFirst({
+      where: eq(platformAdmins.email, normalizedEmail),
+    }),
+  );
   if (!admin || !(await verifyPassword(password, admin.passwordHash))) {
     throw authError("Invalid credentials");
   }
