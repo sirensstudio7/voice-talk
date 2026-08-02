@@ -87,9 +87,11 @@ export async function getPlatformAdminFromPending(
 ): Promise<PlatformAdmin> {
   const token = readBearerToken(request);
   const payload = verifyPlatformToken(token, "platform_pending");
-  const admin = await db.query.platformAdmins.findFirst({
-    where: eq(platformAdmins.id, payload.sub),
-  });
+  const admin = await withLoginDb((loginDb) =>
+    loginDb.query.platformAdmins.findFirst({
+      where: eq(platformAdmins.id, payload.sub),
+    }),
+  );
   if (!admin || admin.status !== "active") {
     throw authError("Admin not found or disabled");
   }
@@ -101,9 +103,12 @@ export async function getCurrentPlatformAdmin(
 ): Promise<PlatformAdmin & { role: PlatformRole }> {
   const token = readBearerToken(request);
   const payload = verifyPlatformToken(token, "platform");
-  const admin = await db.query.platformAdmins.findFirst({
-    where: eq(platformAdmins.id, payload.sub),
-  });
+  // Fresh connection — shared pool stalls must not block every authenticated page.
+  const admin = await withLoginDb((loginDb) =>
+    loginDb.query.platformAdmins.findFirst({
+      where: eq(platformAdmins.id, payload.sub),
+    }),
+  );
   if (!admin || admin.status !== "active") {
     throw authError("Admin not found or disabled");
   }

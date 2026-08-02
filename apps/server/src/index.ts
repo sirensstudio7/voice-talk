@@ -5,7 +5,7 @@ import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
-import { closeDb } from "./db/client.js";
+import { closeDb, startDbPoolWatchdog } from "./db/client.js";
 import { warmDbConnection } from "./db/health.js";
 import { env, getProductionDomains, hasSupabaseStorage, isAllowedOrigin } from "./env.js";
 import { registerAdminRoutes } from "./routes/admin.js";
@@ -86,6 +86,7 @@ const start = async () => {
   console.info(`CORS production domains: ${productionDomains.join(", ") || "(none)"}`);
 
   await warmDbConnection();
+  startDbPoolWatchdog();
   await app.listen({ port: env.PORT ?? env.API_PORT, host: "0.0.0.0" });
 };
 
