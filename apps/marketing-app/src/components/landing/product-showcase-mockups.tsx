@@ -205,7 +205,7 @@ export const PRODUCT_SHOWCASE_SLIDES: ProductShowcaseSlide[] = [
       "Voice transcript appears on screen so customers can follow along",
       "Mic, menu, and basket controls stay within thumb reach on kiosk",
     ],
-    browserTitle: "lore.app/b/your-store",
+    browserTitle: "display.lorescale.com/your-store",
     mockup: <CustomerVoiceMockup />,
   },
   {
@@ -219,7 +219,7 @@ export const PRODUCT_SHOWCASE_SLIDES: ProductShowcaseSlide[] = [
       "Basket count stays visible so guests always know what's added",
       "Voice replies confirm each item before moving to checkout",
     ],
-    browserTitle: "lore.app/b/your-store",
+    browserTitle: "display.lorescale.com/your-store",
     mockup: <CustomerMenuMockup />,
   },
   {
@@ -233,7 +233,7 @@ export const PRODUCT_SHOWCASE_SLIDES: ProductShowcaseSlide[] = [
       "Guests tap I've paid when done — staff see the order instantly",
       "Order number appears on screen for pickup or counter handoff",
     ],
-    browserTitle: "lore.app/b/your-store",
+    browserTitle: "display.lorescale.com/your-store",
     mockup: <CustomerCheckoutMockup />,
   },
   {

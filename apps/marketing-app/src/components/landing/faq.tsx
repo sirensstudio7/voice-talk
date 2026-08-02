@@ -31,7 +31,7 @@ const FAQ_ITEMS = [
   {
     question: "How do I get started?",
     answer:
-      "Sign in to the admin dashboard, set up your menu and AI rules, then share your /b/your-store link. Try the Sunrise Coffee demo to see it in action.",
+      "Sign in to the admin dashboard, set up your menu and AI rules, then share your display.lorescale.com/your-store link. Try the Sunrise Coffee demo to see it in action.",
   },
 ];
 

@@ -1,5 +1,11 @@
-import { BusinessVoicePage } from "@/components/business-voice-page";
+import { redirect } from "next/navigation";
 
-export default function BusinessPage() {
-  return <BusinessVoicePage />;
+/** Legacy /b/{slug} links redirect to /{slug}. */
+export default async function LegacyBusinessPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  redirect(`/${slug}`);
 }

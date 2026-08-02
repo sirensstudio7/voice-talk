@@ -75,7 +75,7 @@ export function ShareLinkVisual() {
     <VisualFrame bgSrc={BG_SHARE}>
       <MockCard title="Customer Link">
         <div className="rounded-md border border-[#f0f0f0] bg-[#fafafa] px-3 py-2 text-center text-xs text-[#181818]">
-          lore.app/b/your-store
+          display.lorescale.com/your-store
         </div>
         <div className="mt-3 flex items-center gap-3">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-[#f0f0f0] bg-white">

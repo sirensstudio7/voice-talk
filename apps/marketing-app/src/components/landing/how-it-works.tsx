@@ -19,7 +19,7 @@ const SOLUTIONS = [
     tag: "Share link",
     title: "Give Customers a Simple URL",
     description:
-      "Give customers a simple URL like lore.app/b/your-store. No app download — works on any modern phone or desktop.",
+      "Give customers a simple URL like display.lorescale.com/your-store. No app download — works on any modern phone or desktop.",
     bullets: ["No app download needed", "Works on any device", "Share via QR or link"],
     visual: ShareLinkVisual,
   },

@@ -2,7 +2,7 @@ const DEFAULT_DEMO_SLUG = "sunrise-coffee";
 const isProduction = process.env.NODE_ENV === "production";
 
 const DEFAULT_CUSTOMER_URL = isProduction
-  ? "https://kiosk.lorescale.com"
+  ? "https://display.lorescale.com"
   : "http://localhost:6670";
 const DEFAULT_ADMIN_URL = isProduction
   ? "https://app.lorescale.com"
@@ -48,8 +48,8 @@ export const adminAppUrl = resolvePublicAppUrl(
 export const demoSlug = process.env.NEXT_PUBLIC_DEFAULT_BUSINESS_SLUG ?? DEFAULT_DEMO_SLUG;
 export const heroDemoSlug = process.env.NEXT_PUBLIC_HERO_DEMO_SLUG ?? "lorescale";
 
-export const demoUrl = `${customerAppUrl}/b/${demoSlug}`;
-export const heroDemoUrl = `${customerAppUrl}/b/${heroDemoSlug}?embed=hero`;
+export const demoUrl = `${customerAppUrl}/${demoSlug}`;
+export const heroDemoUrl = `${customerAppUrl}/${heroDemoSlug}?embed=hero`;
 export const adminLoginUrl = `${adminAppUrl}/login?fresh=1`;
 export const adminSignupUrl = `${adminAppUrl}/signup`;
 export const requestDemoUrl = "/request-demo";

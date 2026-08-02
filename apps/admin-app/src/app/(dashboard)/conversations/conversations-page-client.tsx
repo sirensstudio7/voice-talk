@@ -568,7 +568,7 @@ export function ConversationsPageClient() {
               ? "Try switching the order filter to All, or pick another date range."
               : selectedDate
                 ? `There are no voice sessions for ${formatSelectedDateLabel(selectedDate)}. Try another date, click All dates, or confirm you're viewing the same business as your customer app (${business?.slug ?? "check sidebar"}).`
-                : `When a customer talks to Lorescale at /b/${business?.slug ?? "your-slug"}, the conversation transcript will appear here. Check the business switcher in the sidebar if you tested on a different workspace.`}
+                : `When a customer talks to Lorescale at display.lorescale.com/${business?.slug ?? "your-slug"}, the conversation transcript will appear here. Check the business switcher in the sidebar if you tested on a different workspace.`}
           </p>
         </div>
       ) : null}
