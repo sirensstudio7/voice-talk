@@ -213,7 +213,7 @@ export function AiPresenterPageClient() {
               </dl>
             </section>
           </>
-        )}
+        ) : null}
       </div>
 
       <footer
