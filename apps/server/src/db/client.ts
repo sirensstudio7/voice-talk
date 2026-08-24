@@ -19,12 +19,12 @@ if (usesTransactionPooler) {
 
 function createSqlClient(): Sql {
   return postgres(env.DATABASE_URL, {
-    // Supabase pooler has a low connection cap — keep the pool small.
+    // Transaction pooler cannot multiplex; session pooler can hold a few.
     prepare: false,
-    max: usesSupabasePooler ? 2 : 10,
+    max: usesTransactionPooler ? 1 : usesSupabasePooler ? 4 : 10,
     connect_timeout: 10,
     // Recycle idle / old sockets so a bad pooler connection cannot linger.
-    idle_timeout: usesTransactionPooler ? 5 : 15,
+    idle_timeout: usesTransactionPooler ? 5 : 20,
     max_lifetime: usesTransactionPooler ? 60 : 60 * 5,
     // Fail stuck queries instead of holding pool slots forever (login/UI hang).
     connection: {
@@ -95,10 +95,12 @@ export function startDbPoolWatchdog(intervalMs = 30_000): void {
   const tick = async () => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      // Must be longer than a busy Super Admin dashboard burst. A 5s probe
+      // was resetting live queries and every page then reported a DB timeout.
       await Promise.race([
         client`select 1`,
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error("Shared pool watchdog timed out")), 5_000);
+          timer = setTimeout(() => reject(new Error("Shared pool watchdog timed out")), 20_000);
         }),
       ]);
     } catch (error) {

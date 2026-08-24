@@ -98,24 +98,45 @@ export async function getPlatformAdminFromPending(
   return admin;
 }
 
+const ADMIN_CACHE_TTL_MS = 60_000;
+const adminCache = new Map<
+  string,
+  { admin: PlatformAdmin & { role: PlatformRole }; expiresAt: number }
+>();
+const adminInflight = new Map<string, Promise<PlatformAdmin & { role: PlatformRole }>>();
+
 export async function getCurrentPlatformAdmin(
   request: FastifyRequest,
 ): Promise<PlatformAdmin & { role: PlatformRole }> {
   const token = readBearerToken(request);
   const payload = verifyPlatformToken(token, "platform");
-  // Fresh connection — shared pool stalls must not block every authenticated page.
-  const admin = await withLoginDb((loginDb) =>
-    loginDb.query.platformAdmins.findFirst({
-      where: eq(platformAdmins.id, payload.sub),
-    }),
-  );
-  if (!admin || admin.status !== "active") {
-    throw authError("Admin not found or disabled");
-  }
-  if (!isPlatformRole(admin.role)) {
-    throw authError("Invalid admin role", 403);
-  }
-  return admin as PlatformAdmin & { role: PlatformRole };
+  const cached = adminCache.get(payload.sub);
+  if (cached && cached.expiresAt > Date.now()) return cached.admin;
+
+  const pending = adminInflight.get(payload.sub);
+  if (pending) return pending;
+
+  const load = (async () => {
+    const admin = await withLoginDb((loginDb) =>
+      loginDb.query.platformAdmins.findFirst({
+        where: eq(platformAdmins.id, payload.sub),
+      }),
+    );
+    if (!admin || admin.status !== "active") {
+      throw authError("Admin not found or disabled");
+    }
+    if (!isPlatformRole(admin.role)) {
+      throw authError("Invalid admin role", 403);
+    }
+    const result = admin as PlatformAdmin & { role: PlatformRole };
+    adminCache.set(payload.sub, { admin: result, expiresAt: Date.now() + ADMIN_CACHE_TTL_MS });
+    return result;
+  })().finally(() => {
+    adminInflight.delete(payload.sub);
+  });
+
+  adminInflight.set(payload.sub, load);
+  return load;
 }
 
 export function generateTotpSecret(email: string): { secret: string; otpauthUrl: string } {
