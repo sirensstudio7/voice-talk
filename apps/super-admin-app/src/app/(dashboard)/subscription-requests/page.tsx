@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/select";
 import { api, type SubscriptionRequestDetail, type SubscriptionRequestItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { cn } from "@/lib/cn";
 
 const STATUS_OPTIONS = [
   { value: "pending", label: "Pending" },
@@ -251,48 +250,115 @@ export default function SubscriptionRequestsPage() {
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
         title="Subscription request"
+        description={detail?.customer.email}
+        footer={
+          detail?.status === "pending" ? (
+            <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Button
+                disabled={acting}
+                variant="outline"
+                className="text-destructive hover:bg-destructive/5 hover:text-destructive"
+                onClick={() => void reject()}
+              >
+                Reject
+              </Button>
+              <Button className="sm:min-w-40" disabled={acting} onClick={() => void activate()}>
+                {acting ? "Working…" : "Activate plan"}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex w-full justify-end">
+              <Button variant="outline" onClick={() => setDetail(null)}>
+                Close
+              </Button>
+            </div>
+          )
+        }
       >
         {detail ? (
-          <div className="space-y-5">
-            <div className="space-y-1 text-sm">
-              <p>
-                <span className="text-muted-foreground">Customer:</span>{" "}
-                {detail.customer.name || "—"}
-              </p>
-              <p>
-                <span className="text-muted-foreground">Email:</span> {detail.customer.email}
-              </p>
-              <p>
-                <span className="text-muted-foreground">Phone:</span>{" "}
-                {detail.customer.phone || "—"}
-              </p>
-              <p>
-                <span className="text-muted-foreground">Requested:</span>{" "}
-                {detail.requested_plan.name} ({detail.requested_plan.workspace_limit} workspaces)
-              </p>
-              <p>
-                <span className="text-muted-foreground">Entitlement:</span>{" "}
-                {detail.entitlement.plan_name} · {detail.entitlement.status}
-              </p>
-              <p>
-                <span className="text-muted-foreground">Workspaces:</span>{" "}
-                {detail.entitlement.workspace_count} / {detail.entitlement.workspace_limit}
-              </p>
-              <p>
-                <span className="text-muted-foreground">Trial:</span>{" "}
-                {formatDate(detail.entitlement.trial_started_at)} →{" "}
-                {formatDate(detail.entitlement.trial_ends_at)}
-              </p>
-              <p>
-                <span className="text-muted-foreground">Request status:</span>{" "}
+          <div className="space-y-6">
+            <section className="rounded-xl border border-border bg-muted/30 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold tracking-tight">
+                    {detail.customer.name || "Unnamed customer"}
+                  </p>
+                  <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                    {detail.customer.email}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {detail.customer.phone || "No phone on file"}
+                  </p>
+                </div>
                 <StatusBadge status={detail.status} />
-              </p>
-            </div>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <h4 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                Request
+              </h4>
+              <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-border px-3 py-2.5">
+                  <dt className="text-xs text-muted-foreground">Requested plan</dt>
+                  <dd className="mt-0.5 text-sm font-medium">
+                    {detail.requested_plan.name}
+                  </dd>
+                  <dd className="text-xs text-muted-foreground">
+                    {detail.requested_plan.workspace_limit} workspaces
+                  </dd>
+                </div>
+                <div className="rounded-lg border border-border px-3 py-2.5">
+                  <dt className="text-xs text-muted-foreground">Submitted</dt>
+                  <dd className="mt-0.5 text-sm font-medium">{formatDate(detail.created_at)}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="space-y-3">
+              <h4 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                Current entitlement
+              </h4>
+              <dl className="space-y-2 rounded-xl border border-border p-3">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <dt className="text-muted-foreground">Plan</dt>
+                  <dd className="font-medium">
+                    {detail.entitlement.plan_name}{" "}
+                    <span className="font-normal text-muted-foreground">
+                      · {detail.entitlement.status}
+                    </span>
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <dt className="text-muted-foreground">Workspaces</dt>
+                  <dd className="font-medium tabular-nums">
+                    {detail.entitlement.workspace_count} / {detail.entitlement.workspace_limit}
+                  </dd>
+                </div>
+                <div className="flex items-start justify-between gap-3 text-sm">
+                  <dt className="text-muted-foreground">Trial</dt>
+                  <dd className="max-w-[60%] text-right text-xs leading-relaxed text-foreground">
+                    {formatDate(detail.entitlement.trial_started_at)}
+                    <span className="text-muted-foreground"> → </span>
+                    {formatDate(detail.entitlement.trial_ends_at)}
+                  </dd>
+                </div>
+              </dl>
+            </section>
 
             {detail.status === "pending" ? (
-              <>
+              <section className="space-y-4">
+                <div>
+                  <h4 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                    Activation
+                  </h4>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Confirm the plan and period after offline payment is verified.
+                  </p>
+                </div>
+
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Activate plan</label>
+                  <label className="text-sm font-medium">Plan to activate</label>
                   <Select value={planCode} onValueChange={setPlanCode}>
                     <SelectTrigger>
                       <SelectValue />
@@ -300,7 +366,7 @@ export default function SubscriptionRequestsPage() {
                     <SelectContent>
                       {detail.available_plans.map((p) => (
                         <SelectItem key={p.code} value={p.code}>
-                          {p.name} ({p.workspace_limit} ws)
+                          {p.name} ({p.workspace_limit} workspaces)
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -336,34 +402,25 @@ export default function SubscriptionRequestsPage() {
                 ) : null}
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Notes</label>
+                  <label className="text-sm font-medium">Internal notes</label>
                   <textarea
-                    className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    className="min-h-24 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Payment reference, invoice #…"
+                    placeholder="Payment reference, invoice #, bank transfer note…"
                   />
                 </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button disabled={acting} onClick={() => void activate()}>
-                    {acting ? "Working…" : "Activate Plan"}
-                  </Button>
-                  <Button
-                    disabled={acting}
-                    variant="outline"
-                    className={cn("text-destructive")}
-                    onClick={() => void reject()}
-                  >
-                    Reject
-                  </Button>
-                </div>
-              </>
+              </section>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                This request was already {detail.status}.
-                {detail.notes ? ` Notes: ${detail.notes}` : ""}
-              </p>
+              <section className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                This request was already <span className="font-medium text-foreground">{detail.status}</span>.
+                {detail.notes ? (
+                  <p className="mt-2 text-foreground">
+                    <span className="text-muted-foreground">Notes: </span>
+                    {detail.notes}
+                  </p>
+                ) : null}
+              </section>
             )}
           </div>
         ) : null}

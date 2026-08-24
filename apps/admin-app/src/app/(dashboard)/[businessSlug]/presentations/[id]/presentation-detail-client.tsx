@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftIcon,
@@ -19,21 +20,22 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   api,
+  ApiRequestError,
   type AiLanguage,
   type PresentationDetail,
   type PresentationKnowledgeEntry,
 } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
+import { useAddonStatus } from "@/lib/use-addon-status";
 import { cn } from "@/lib/cn";
-
-const PRESENTATION_LANGUAGES: { value: AiLanguage; label: string; short: string }[] = [
-  { value: "id", label: "Bahasa Indonesia", short: "ID" },
-  { value: "en", label: "English", short: "EN" },
-];
+import {
+  availableLanguageOptions,
+  isAiLanguage,
+} from "@voicetalk/shared";
 
 function normalizePresentationLanguage(value: string | null | undefined): AiLanguage {
-  return value === "id" ? "id" : "en";
+  return isAiLanguage(value) ? value : "en";
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -312,7 +314,10 @@ function CircleProgress({ percent, size = 36 }: { percent: number; size?: number
 }
 
 export function PresentationDetailClient({ presentationId }: { presentationId: string }) {
+  const router = useRouter();
   const { token, business } = useAuth();
+  const { isActive: hasLanguagePack } = useAddonStatus("language_pack");
+  const languageOptions = availableLanguageOptions(hasLanguagePack);
   const [detail, setDetail] = useState<PresentationDetail | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -335,11 +340,15 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
       setDetail(await api.getPresentation(token, business.id, presentationId));
       setError("");
     } catch (err) {
+      if (err instanceof ApiRequestError && err.status === 403) {
+        router.replace(adminPath(business.slug, "/add-ons/ai-presenter"));
+        return;
+      }
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
       loadInFlight.current = false;
     }
-  }, [token, business, presentationId]);
+  }, [token, business, presentationId, router]);
 
   useEffect(() => {
     void load();
@@ -627,33 +636,26 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
                 </span>
 
                 <div
-                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5"
-                  role="group"
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5"
                   aria-label="AI Present language"
                 >
-                  <GlobeAltIcon className="ml-1 hidden h-3.5 w-3.5 text-slate-400 sm:block" />
-                  {PRESENTATION_LANGUAGES.map((option) => {
-                    const selected =
-                      normalizePresentationLanguage(detail.language) === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        disabled={busy || isProcessing}
-                        title={`Speak ${option.label}`}
-                        aria-pressed={selected}
-                        className={cn(
-                          "rounded px-1.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-50",
-                          selected
-                            ? "bg-slate-900 text-white"
-                            : "text-slate-500 hover:text-slate-800",
-                        )}
-                        onClick={() => void onLanguageChange(option.value)}
-                      >
-                        {option.short}
-                      </button>
-                    );
-                  })}
+                  <GlobeAltIcon className="hidden h-3.5 w-3.5 text-slate-400 sm:block" />
+                  <select
+                    value={normalizePresentationLanguage(detail.language)}
+                    disabled={busy || isProcessing}
+                    aria-label="AI Present language"
+                    className="max-w-[9.5rem] bg-transparent py-0.5 text-[11px] font-semibold text-slate-700 outline-none disabled:opacity-50"
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      if (isAiLanguage(next)) void onLanguageChange(next);
+                    }}
+                  >
+                    {languageOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.short} · {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 {primaryFile ? (

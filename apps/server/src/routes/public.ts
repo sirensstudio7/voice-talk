@@ -18,6 +18,7 @@ import {
 import { effectivePrice, serializeUtcDatetime } from "../services/pricing.js";
 import {
   getActiveProducts,
+  getSellableProducts,
   resolveAssistantName,
 } from "../services/config-builder.js";
 import { getBusinessBySlug, mapBusinessRow } from "../services/tenant.js";
@@ -26,7 +27,12 @@ import {
   getAvailableSlots,
   listAppointments,
 } from "../services/appointments.js";
-import { getSmartPhotoMomentPublicConfig } from "../services/addon-entitlement.js";
+import {
+  getLanguagePackPublicConfig,
+  getSmartPhotoMomentPublicConfig,
+} from "../services/addon-entitlement.js";
+import { getLuckySpinPublicConfig } from "../services/lucky-spin.js";
+import { getCampaignBannerPublicConfig } from "../services/campaign-banner.js";
 import {
   completePhotoSession,
   markPhotoOfferResponse,
@@ -42,6 +48,9 @@ function orderToOut(order: {
   status: string;
   total: number;
   customerName: string | null;
+  customerPhone?: string | null;
+  customerAddress?: string | null;
+  customerNotes?: string | null;
   createdAt: Date;
   confirmedAt: Date | null;
   items: Array<{
@@ -56,6 +65,9 @@ function orderToOut(order: {
     status: order.status,
     total: order.total,
     customer_name: order.customerName,
+    customer_phone: order.customerPhone?.trim() || null,
+    customer_address: order.customerAddress?.trim() || null,
+    customer_notes: order.customerNotes?.trim() || null,
     created_at: serializeUtcDatetime(order.createdAt),
     confirmed_at: order.confirmedAt ? serializeUtcDatetime(order.confirmedAt) : null,
     items: order.items.map((item) => ({
@@ -98,7 +110,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
 
     try {
       const snapshot = buildValidatedOrderSnapshot(
-        getActiveProducts(business),
+        getSellableProducts(business),
         body.items.map((i) => ({ productId: i.product_id, quantity: i.quantity })),
       );
       const order = await persistConfirmedOrder(business.id, null, snapshot);
@@ -122,6 +134,9 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
     const productList = capabilities.menu_enabled ? getActiveProducts(tenant) : [];
     const vision = await getOrCreateVisionSettings(tenant.id);
     const smartPhotoMoment = await getSmartPhotoMomentPublicConfig(tenant.id);
+    const luckySpin = await getLuckySpinPublicConfig(tenant.id);
+    const campaignBanner = await getCampaignBannerPublicConfig(tenant.id);
+    const languagePack = await getLanguagePackPublicConfig(tenant.id);
     return {
       business: tenant.name,
       slug: tenant.slug,
@@ -138,6 +153,9 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       capabilities,
       vision: visionSettingsOut(vision),
       smart_photo_moment: smartPhotoMoment,
+      lucky_spin: luckySpin,
+      campaign_banner: campaignBanner,
+      languages: languagePack,
       products: productList.map((p) => ({
         id: p.productId,
         name: p.name,

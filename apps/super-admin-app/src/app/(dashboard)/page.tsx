@@ -73,7 +73,13 @@ export default function DashboardPage() {
         />
         <StatCard
           label="Voice minutes (month)"
-          value={String(metrics?.voice_minutes_this_month ?? "—")}
+          value={
+            metrics
+              ? metrics.voice_minutes_this_month.toLocaleString(undefined, {
+                  maximumFractionDigits: 1,
+                })
+              : "—"
+          }
         />
       </StatCardGrid>
 

@@ -79,6 +79,7 @@ type NavItem = {
   requiresMenu?: boolean;
   requiresOrdering?: boolean;
   requiresBooking?: boolean;
+  requiresAiPresenter?: boolean;
   salonLabel?: string;
 };
 
@@ -109,6 +110,16 @@ const ROUTE_LABELS: Record<string, string> = {
   "/add-ons": "Add On",
   "/add-ons/smart-photo-moment": "Smart Photo Moment",
   "/add-ons/smart-photo-moment/payment": "Checkout",
+  "/add-ons/lucky-spin": "Lucky Spin",
+  "/add-ons/lucky-spin/payment": "Checkout",
+  "/add-ons/ai-presenter": "AI Presenter",
+  "/add-ons/ai-presenter/payment": "Checkout",
+  "/add-ons/campaign-banner": "Campaign Banner",
+  "/add-ons/campaign-banner/payment": "Checkout",
+  "/add-ons/language-pack": "Language Pack",
+  "/add-ons/language-pack/payment": "Checkout",
+  "/add-ons/live": "LORESCALE LIVE",
+  "/add-ons/live/payment": "Checkout",
 };
 
 function breadcrumbLabel(pathname: string, businessSlug?: string | null) {
@@ -119,6 +130,7 @@ function breadcrumbLabel(pathname: string, businessSlug?: string | null) {
   if (/^\/presentations\/[^/]+\/preview$/.test(path)) return "Preview";
   if (/^\/presentations\/[^/]+\/focus$/.test(path)) return "In focus";
   if (/^\/sessions\/[^/]+\/live$/.test(path)) return "Live session";
+  if (/^\/add-ons\/live\/[^/]+$/.test(path)) return "Control Room";
   return path.split("/").filter(Boolean).pop()?.replace(/-/g, " ") ?? "";
 }
 
@@ -155,7 +167,12 @@ const NAV_GROUPS: NavGroup[] = [
     label: "AI Assistant",
     items: [
       { href: "/knowledge", label: "AI Knowledge", icon: BookOpenIcon },
-      { href: "/presentations", label: "AI Presenter", icon: PresentationChartBarIcon },
+      {
+        href: "/presentations",
+        label: "AI Presenter",
+        icon: PresentationChartBarIcon,
+        requiresAiPresenter: true,
+      },
       { href: "/ai-rules", label: "AI Rules", icon: SparklesIcon },
       { href: "/vision-settings", label: "Vision Settings", icon: CameraIcon },
     ],
@@ -454,8 +471,9 @@ function isFullscreenRoute(pathname: string, businessSlug?: string | null) {
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, businesses, business, setBusinessId, logout } = useAuth();
+  const { user, businesses, business, setBusinessId, logout, token } = useAuth();
   const aiStatus = useAiStatus();
+  const [aiPresenterActive, setAiPresenterActive] = useState(false);
   const slug = business?.slug ?? "";
   const pathSuffix = stripBusinessSlug(pathname, slug || null);
   const orderingEnabled = business?.capabilities?.ordering_enabled ?? true;
@@ -463,6 +481,27 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const bookingEnabled = business?.capabilities?.booking_enabled ?? false;
   const salonMode = business?.capabilities?.salon_mode ?? false;
   const fullscreen = isFullscreenRoute(pathname, slug || null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!token || !business?.id) {
+        setAiPresenterActive(false);
+        return;
+      }
+      try {
+        const status = await api.getAddonStatus(token, business.id, "ai_presenter");
+        if (!cancelled) {
+          setAiPresenterActive(status.subscription_status === "active");
+        }
+      } catch {
+        if (!cancelled) setAiPresenterActive(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, business?.id]);
 
   const navGroups = useMemo(
     () =>
@@ -473,6 +512,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             if (item.requiresOrdering && !orderingEnabled) return false;
             if (item.requiresBooking && !bookingEnabled) return false;
             if (item.requiresMenu && !menuEnabled) return false;
+            if (item.requiresAiPresenter && !aiPresenterActive) return false;
             return true;
           })
           .map((item) => ({
@@ -483,7 +523,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             suffix: item.href,
           })),
       })).filter((group) => group.items.length > 0),
-    [orderingEnabled, menuEnabled, bookingEnabled, salonMode, slug],
+    [orderingEnabled, menuEnabled, bookingEnabled, salonMode, slug, aiPresenterActive],
   );
 
   const handleBusinessSelect = (id: string) => {

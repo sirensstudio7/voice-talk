@@ -39,6 +39,39 @@ export type PrimaryUseCase = "orders" | "faqs" | "both" | "appointments";
 
 export type OnboardingLanguage = "id" | "en";
 
+/** Matches the Alex admin template — used for every new workspace. */
+export const DEFAULT_ASSISTANT_NAME = "Alex";
+export const DEFAULT_ASSISTANT_AVATAR_MODEL = "/models/thanh.glb";
+export const DEFAULT_VOICE_GENDER = "male" as const;
+export const DEFAULT_VOICE_PRESET = "natural" as const;
+export const DEFAULT_ASSISTANT_TONE = "professional" as const;
+
+export function defaultAiRulesValues(input: {
+  businessId: string;
+  businessName: string;
+  language?: OnboardingLanguage;
+  primaryUseCase?: PrimaryUseCase | string | null;
+  businessType?: BusinessType | string | null;
+}) {
+  const language = input.language ?? "en";
+  return {
+    businessId: input.businessId,
+    assistantName: DEFAULT_ASSISTANT_NAME,
+    avatarModelPath: DEFAULT_ASSISTANT_AVATAR_MODEL,
+    voiceGender: DEFAULT_VOICE_GENDER,
+    voicePreset: DEFAULT_VOICE_PRESET,
+    tone: DEFAULT_ASSISTANT_TONE,
+    language,
+    personality: defaultAssistantPersonality({
+      businessName: input.businessName,
+      language,
+      primaryUseCase: input.primaryUseCase,
+      businessType: input.businessType,
+      assistantName: DEFAULT_ASSISTANT_NAME,
+    }),
+  };
+}
+
 export function nameToSlug(name: string): string {
   return name
     .toLowerCase()
@@ -161,10 +194,10 @@ export function buildOnboardingAiRules(options: {
 
     const roleLine =
       role === "faq"
-        ? `You are a friendly AI customer service agent for ${name}, a ${typeWord}. Speak in clear, natural English. Be warm, concise, and helpful. Do not invent a coffee shop or restaurant context.`
+        ? `You are ${DEFAULT_ASSISTANT_NAME}, a friendly AI customer service agent for ${name}, a ${typeWord}. Speak in clear, natural English. Be warm, concise, and helpful. Do not invent a coffee shop or restaurant context.`
         : role === "receptionist"
-          ? `You are a friendly AI receptionist for ${name}, a ${typeWord}. Speak in clear, natural English. Be warm, concise, and helpful.`
-          : `You are a friendly AI cashier for ${name}, a ${typeWord}. Speak in clear, natural English. Be warm, concise, and helpful.`;
+          ? `You are ${DEFAULT_ASSISTANT_NAME}, a friendly AI receptionist for ${name}, a ${typeWord}. Speak in clear, natural English. Be warm, concise, and helpful.`
+          : `You are ${DEFAULT_ASSISTANT_NAME}, a friendly AI cashier for ${name}, a ${typeWord}. Speak in clear, natural English. Be warm, concise, and helpful.`;
 
     return {
       language: "en",
@@ -188,10 +221,10 @@ export function buildOnboardingAiRules(options: {
 
   const roleLine =
     role === "faq"
-      ? `Kamu adalah agen layanan pelanggan AI yang ramah di ${name}, sebuah ${typeWord}. Selalu berbicara dalam Bahasa Indonesia yang natural. Bersikap hangat, ringkas, dan membantu. Jangan mengarang konteks kafe, kopi, atau restoran.`
+      ? `Kamu adalah ${DEFAULT_ASSISTANT_NAME}, agen layanan pelanggan AI yang ramah di ${name}, sebuah ${typeWord}. Selalu berbicara dalam Bahasa Indonesia yang natural. Bersikap hangat, ringkas, dan membantu. Jangan mengarang konteks kafe, kopi, atau restoran.`
       : role === "receptionist"
-        ? `Kamu adalah resepsionis AI yang ramah di ${name}, sebuah ${typeWord}. Selalu berbicara dalam Bahasa Indonesia yang natural. Bersikap hangat, ringkas, dan membantu.`
-        : `Kamu adalah kasir AI yang ramah di ${name}, sebuah ${typeWord}. Selalu berbicara dalam Bahasa Indonesia yang natural. Bersikap hangat, ringkas, dan membantu.`;
+        ? `Kamu adalah ${DEFAULT_ASSISTANT_NAME}, resepsionis AI yang ramah di ${name}, sebuah ${typeWord}. Selalu berbicara dalam Bahasa Indonesia yang natural. Bersikap hangat, ringkas, dan membantu.`
+        : `Kamu adalah ${DEFAULT_ASSISTANT_NAME}, kasir AI yang ramah di ${name}, sebuah ${typeWord}. Selalu berbicara dalam Bahasa Indonesia yang natural. Bersikap hangat, ringkas, dan membantu.`;
 
   return {
     language: "id",

@@ -1,5 +1,5 @@
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
-import type { BusinessCapabilities } from "@voicetalk/shared";
+import type { AiLanguage, BusinessCapabilities } from "@voicetalk/shared";
 
 import type { VisionConfig } from "@/types/kiosk";
 
@@ -44,6 +44,36 @@ export interface MenuResponse {
     enabled: boolean;
     voice_prompt: string;
     countdown_seconds: number;
+  };
+  lucky_spin?: {
+    active: boolean;
+    enabled: boolean;
+    ai_voice_enabled?: boolean;
+    campaign: { id: string; name: string } | null;
+    prizes: Array<{
+      id: string;
+      name: string;
+      image_url: string;
+      probability: number;
+    }>;
+  };
+  campaign_banner?: {
+    active: boolean;
+    enabled: boolean;
+    layout: "top" | "right" | "bottom";
+    items: Array<{
+      id: string;
+      title: string;
+      image_url: string;
+      target_url: string | null;
+      qr_url: string | null;
+      duration_sec: number;
+      display_order: number;
+    }>;
+  };
+  languages?: {
+    active: boolean;
+    available: AiLanguage[];
   };
   products: MenuProduct[];
 }

@@ -183,3 +183,97 @@ body {
   touch-action: pan-y;
   overscroll-behavior: contain;
 }
+
+@keyframes lucky-spin-win-pop {
+  0% {
+    transform: scale(0.55) translateX(0) rotate(0deg);
+    opacity: 0.7;
+  }
+  8% {
+    transform: scale(1.22) translateX(0) rotate(0deg);
+    opacity: 1;
+  }
+  16% {
+    transform: scale(1.12) translateX(-14px) rotate(-5deg);
+  }
+  24% {
+    transform: scale(1.14) translateX(14px) rotate(5deg);
+  }
+  32% {
+    transform: scale(1.1) translateX(-14px) rotate(-5deg);
+  }
+  40% {
+    transform: scale(1.14) translateX(14px) rotate(5deg);
+  }
+  48% {
+    transform: scale(1.1) translateX(-12px) rotate(-5deg);
+  }
+  56% {
+    transform: scale(1.12) translateX(12px) rotate(5deg);
+  }
+  64% {
+    transform: scale(1.1) translateX(-12px) rotate(-5deg);
+  }
+  72% {
+    transform: scale(1.12) translateX(12px) rotate(5deg);
+  }
+  80% {
+    transform: scale(1.1) translateX(-10px) rotate(-4deg);
+  }
+  88% {
+    transform: scale(1.1) translateX(10px) rotate(4deg);
+  }
+  94% {
+    transform: scale(1.08) translateX(-6px) rotate(-3deg);
+  }
+  100% {
+    transform: scale(1.08) translateX(0) rotate(0deg);
+  }
+}
+
+.lucky-spin-win-pop {
+  animation-name: lucky-spin-win-pop;
+  animation-duration: 5s;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  transform-origin: center center;
+}
+
+@keyframes lucky-spin-win-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.lucky-spin-win-card {
+  animation: lucky-spin-win-card-in 420ms ease-out both;
+}
+
+@keyframes lucky-spin-confetti-fall {
+  0% {
+    top: -8%;
+    opacity: 1;
+    transform: translateX(0) rotate(0deg);
+  }
+  100% {
+    top: 108%;
+    opacity: 0;
+    transform: translateX(var(--confetti-x, 0px)) rotate(var(--confetti-rot, 720deg));
+  }
+}
+
+.lucky-spin-confetti-piece {
+  position: absolute;
+  display: block;
+  top: -8%;
+  animation-name: lucky-spin-confetti-fall;
+  animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation-fill-mode: forwards;
+  will-change: transform, opacity, top;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+}

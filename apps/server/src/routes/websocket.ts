@@ -28,6 +28,7 @@ import {
   DEFAULT_PHOTO_READY_PROMPT,
   getSmartPhotoMomentPublicConfig,
 } from "../services/addon-entitlement.js";
+import { getOrCreateLuckySpinSettings } from "../services/lucky-spin.js";
 import { getOrCreateVisionSettings, ensureVisionHub, setKioskSessionActive, releaseKioskSession, getVisionHub } from "../services/vision-orchestrator.js";
 import { handleClientOrderMessage } from "../services/client-order.js";
 import {
@@ -50,6 +51,11 @@ import {
 import { OrderStore } from "../services/order-store.js";
 import type { ProductInfo } from "../services/tools.js";
 import { getBusinessBySlug } from "../services/tenant.js";
+import {
+  getOwnerUserIdForBusiness,
+  safeAssertCanStartVoiceSession,
+  safeDebitEndedSession,
+} from "../services/voice-minutes.js";
 
 const CONVERSATION_COMPLETION_GRACE_MS = 5_000;
 
@@ -133,6 +139,27 @@ async function handleSession(
   const bookingEnabled = capabilities.booking_enabled;
   const faqEnabled = !orderingEnabled && !bookingEnabled;
   const idleTimeoutMs = resolveIdleTimeoutMs(tenant.aiRules);
+
+  const ownerUserId = await getOwnerUserIdForBusiness(tenant.id);
+  let minuteWalletSeconds: number | null = null;
+  if (ownerUserId) {
+    try {
+      const wallet = await safeAssertCanStartVoiceSession(ownerUserId);
+      minuteWalletSeconds = wallet?.available_seconds ?? null;
+    } catch (err) {
+      const status = (err as Error & { statusCode?: number }).statusCode;
+      if (status === 402) {
+        safeSendJson(socket, {
+          type: "error",
+          code: "minutes_exhausted",
+          error: "You've reached your Lore Voice Minute limit.",
+        });
+        socket.close();
+        return;
+      }
+      throw err;
+    }
+  }
 
   const voiceSession = await createVoiceSession(tenant.id);
   const voiceSessionId = voiceSession.id;
@@ -244,10 +271,24 @@ async function handleSession(
     }, idleTimeoutMs);
   };
 
+  let minutesCutoffTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearMinutesCutoff = () => {
+    if (minutesCutoffTimer) {
+      clearTimeout(minutesCutoffTimer);
+      minutesCutoffTimer = null;
+    }
+  };
+  if (minuteWalletSeconds != null && minuteWalletSeconds > 0) {
+    minutesCutoffTimer = setTimeout(() => {
+      completeConversation("minutes_exhausted");
+    }, minuteWalletSeconds * 1000);
+  }
+
   const completeConversation = (reason: string) => {
     if (completionScheduled) return;
     completionScheduled = true;
     clearIdleTimer();
+    clearMinutesCutoff();
     visionSilenceStage = "none";
     endReason = reason;
     safeSendJson(socket, { type: "conversation.complete", reason });
@@ -427,6 +468,28 @@ async function handleSession(
               `Do not ask questions. Say: "${promptText.replace(/"/g, '\\"')}"`,
           ),
         );
+      } else if (msgType === "session.lucky_spin_win") {
+        void (async () => {
+          const prizeName = String(payload.prize_name ?? "").trim();
+          if (!prizeName) return;
+          const settings = await getOrCreateLuckySpinSettings(tenant.id);
+          if (!settings.aiVoiceEnabled) return;
+          const voucherCode = String(payload.voucher_code ?? "").trim();
+          clearIdleTimer();
+          visionSilenceStage = "none";
+          const safePrize = prizeName.replace(/"/g, '\\"');
+          const voucherBit = voucherCode
+            ? ` Briefly mention their voucher code ${voucherCode.replace(/"/g, '\\"')} so they can redeem it with staff.`
+            : "";
+          audioQueue.push(
+            new ClientTextEvent(
+              `The customer just won a Lucky Spin prize on the kiosk. ` +
+                `Speak a short, excited congratulations in the conversation language (one or two sentences), then stop and wait. ` +
+                `Do not ask questions or start a new topic. ` +
+                `Congratulate them that they won "${safePrize}".${voucherBit}`,
+            ),
+          );
+        })();
       } else if (msgType === "session.goodbye") {
         void (async () => {
           if (completionScheduled) return;
@@ -474,6 +537,7 @@ async function handleSession(
     audioQueue.push(SHUTDOWN);
   });
 
+  try {
   if (!safeSendJson(socket, { type: "session.status", status: "connecting" })) return;
 
   await waitRestore;
@@ -669,11 +733,14 @@ async function handleSession(
   } catch (err) {
     console.error("Gemini session failed:", err);
     safeSendJson(socket, { type: "error", error: formatConnectionError(err) });
+  }
   } finally {
     clearIdleTimer();
+    clearMinutesCutoff();
     audioQueue.push(SHUTDOWN);
     await transcriptBuffer.flushAll(voiceSessionId);
     await endVoiceSession(voiceSessionId, endReason ?? (faqEnabled ? "disconnected" : null));
+    await safeDebitEndedSession(voiceSessionId);
     safeSendJson(socket, { type: "session.status", status: "disconnected" });
     try {
       socket.close();

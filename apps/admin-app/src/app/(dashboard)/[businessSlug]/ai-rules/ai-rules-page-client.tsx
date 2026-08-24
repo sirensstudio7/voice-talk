@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ArrowUpTrayIcon,
@@ -27,6 +28,7 @@ import { PageHeader } from "@/components/ui";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
 import { AssistantPreviewHero } from "@/components/assistant-preview-hero";
+import { StartHotkeyCard } from "@/components/start-hotkey-card";
 import {
   api,
   type AiLanguage,
@@ -37,12 +39,18 @@ import {
 } from "@/lib/api";
 import { useAssistantTemplate } from "@/lib/assistant-template-context";
 import { templateToAiRules } from "@/lib/assistant-templates";
+import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
+import { useAddonStatus } from "@/lib/use-addon-status";
 import {
   playVoicePresetPreview,
   stopVoicePresetPreview,
 } from "@/lib/voice-preset-preview";
-import { VOICE_GENDER_OPTIONS, VOICE_PRESET_OPTIONS } from "@voicetalk/shared";
+import {
+  availableLanguageOptions,
+  VOICE_GENDER_OPTIONS,
+  VOICE_PRESET_OPTIONS,
+} from "@voicetalk/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const DEFAULT_ASSISTANT_AVATAR = "/lorescale-cashier-nobg.png";
@@ -55,18 +63,6 @@ function resolveMediaUrl(path: string): string {
 
 type RuleField = "personality" | "behavioral_rules" | "tool_instructions";
 
-const LANGUAGE_OPTIONS: { value: AiLanguage; label: string; description: string }[] = [
-  {
-    value: "id",
-    label: "Bahasa Indonesia",
-    description: "Your assistant speaks Indonesian with customers by default.",
-  },
-  {
-    value: "en",
-    label: "English",
-    description: "Your assistant speaks English with customers by default.",
-  },
-];
 
 const IDLE_TIMEOUT_OPTIONS: { value: string; label: string; description: string }[] = [
   {
@@ -334,7 +330,7 @@ function AssistantNameField({
         type="text"
         maxLength={50}
         className="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm text-slate-900 outline-none transition-colors focus-visible:border-orange-300 focus-visible:ring-2 focus-visible:ring-orange-500/20"
-        placeholder="Lorescale"
+        placeholder="Alex"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -550,16 +546,32 @@ function LanguageSelector({
   value: AiLanguage;
   onChange: (language: AiLanguage) => void;
 }) {
+  const { business, isActive } = useAddonStatus("language_pack");
+  const options = availableLanguageOptions(isActive);
   return (
-    <SettingsSelect
-      id="ai-language"
-      label="Language"
-      description={"Default language your assistant uses when talking to customers.\nCustomers can still switch languages in the app."}
-      icon={GlobeAltIcon}
-      value={value}
-      options={LANGUAGE_OPTIONS}
-      onChange={onChange}
-    />
+    <div className="space-y-2">
+      <SettingsSelect
+        id="ai-language"
+        label="Language"
+        description={"Default language your assistant uses when talking to customers.\nCustomers can still switch languages in the app."}
+        icon={GlobeAltIcon}
+        value={value}
+        options={options}
+        onChange={onChange}
+      />
+      {!isActive ? (
+        <p className="px-1 text-xs text-slate-500">
+          Indonesian and English are included. Unlock Russian, Chinese, Uzbek and more with{" "}
+          <Link
+            href={adminPath(business?.slug ?? "", "/add-ons/language-pack")}
+            className="font-medium text-orange-600 hover:text-orange-700"
+          >
+            Language Pack
+          </Link>
+          .
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -987,21 +999,33 @@ export function AiRulesPageClient() {
   const [avatarCacheBust, setAvatarCacheBust] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [visionSettings, setVisionSettings] = useState<{
+    camera_trigger_enabled: boolean;
+    start_hotkey: string;
+  } | null>(null);
+  const [savingHotkey, setSavingHotkey] = useState(false);
 
   const load = async () => {
     if (!token || !business) return;
     setLoading(true);
     setError(null);
     try {
-      const [rulesData, previewData] = await Promise.all([
+      const [rulesData, previewData, visionData] = await Promise.all([
         api.getAiRules(token, business.id),
         api.getPromptPreview(token, business.id),
+        api.getVisionSettings(token, business.id).catch(() => null),
       ]);
+      if (visionData) {
+        setVisionSettings({
+          camera_trigger_enabled: visionData.camera_trigger_enabled,
+          start_hotkey: visionData.start_hotkey || "Enter",
+        });
+      }
       const normalized = {
         ...rulesData,
         avatar_model_path: rulesData.avatar_model_path ?? "",
         voice_preset: rulesData.voice_preset ?? ("natural" as const),
-        voice_gender: rulesData.voice_gender ?? ("female" as const),
+        voice_gender: rulesData.voice_gender ?? ("male" as const),
       };
       setRules(normalized);
       setSavedRules(normalized);
@@ -1065,6 +1089,28 @@ export function AiRulesPageClient() {
     if (!rules) return;
     setRules({ ...rules, voice_preset });
     setMessage(null);
+  };
+
+  const saveStartHotkey = async (start_hotkey: string) => {
+    if (!token || !business) return;
+    const previous = visionSettings;
+    setVisionSettings({
+      camera_trigger_enabled: previous?.camera_trigger_enabled ?? false,
+      start_hotkey,
+    });
+    setSavingHotkey(true);
+    try {
+      const updated = await api.updateVisionSettings(token, business.id, { start_hotkey });
+      setVisionSettings({
+        camera_trigger_enabled: updated.camera_trigger_enabled,
+        start_hotkey: updated.start_hotkey || start_hotkey,
+      });
+    } catch (err) {
+      setVisionSettings(previous);
+      setError(err instanceof Error ? err.message : "Unable to save start button key.");
+    } finally {
+      setSavingHotkey(false);
+    }
   };
 
   const updateVoiceGender = (voice_gender: VoiceGender) => {
@@ -1216,12 +1262,12 @@ export function AiRulesPageClient() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
         <div className="space-y-4">
           <AssistantNameField
-            value={rules.assistant_name ?? "Lorescale"}
+            value={rules.assistant_name ?? "Alex"}
             onChange={updateAssistantName}
           />
           <AssistantAvatarField
             avatarUrl={rules.avatar_url ?? ""}
-            assistantName={rules.assistant_name ?? "Lorescale"}
+            assistantName={rules.assistant_name ?? "Alex"}
             localPreview={localAvatarPreview}
             cacheBust={avatarCacheBust}
             uploading={uploadingAvatar}
@@ -1237,10 +1283,18 @@ export function AiRulesPageClient() {
             <ToneSelector value={rules.tone} onChange={updateTone} />
             <VoicePresetSelector
               value={rules.voice_preset ?? "natural"}
-              gender={rules.voice_gender ?? "female"}
+              gender={rules.voice_gender ?? "male"}
               language={rules.language ?? "id"}
               onChange={updateVoicePreset}
               onGenderChange={updateVoiceGender}
+            />
+            <StartHotkeyCard
+              cameraTriggerEnabled={visionSettings?.camera_trigger_enabled ?? false}
+              hotkey={visionSettings?.start_hotkey ?? "Enter"}
+              saving={savingHotkey}
+              onChange={(hotkey) => {
+                void saveStartHotkey(hotkey);
+              }}
             />
           </div>
           {faqOnlyMode ? (

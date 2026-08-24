@@ -5,6 +5,7 @@ import { db } from "../db/client.js";
 import { visionEvents, visionSettings, type VisionSettings } from "../db/schema.js";
 import {
   DEFAULT_VISION_SETTINGS,
+  isBrowserClassVisionSource,
   normalizeVisionSource,
   visionSettingsOut,
 } from "./vision-settings.js";
@@ -28,12 +29,17 @@ type VisionSourceClient = {
 
 type VisionEventSource = "python" | "browser";
 
-function shouldIgnoreBrowserVisionEvent(
+function shouldIgnoreVisionEvent(
   hub: BusinessVisionHub,
   source: VisionEventSource,
   event: VisionEventType,
 ): boolean {
   const visionSource = normalizeVisionSource(hub.settings.visionSource);
+
+  // Browser-class only (MediaPipe browser or Human): ignore Python sidecar events.
+  if (source === "python" && isBrowserClassVisionSource(visionSource)) {
+    return true;
+  }
 
   if (source === "browser" && visionSource === "python") {
     return true;
@@ -143,6 +149,16 @@ function broadcastToKiosks(hub: BusinessVisionHub, payload: Record<string, unkno
     }
   }
   return delivered;
+}
+
+/** Broadcast an arbitrary JSON payload to connected kiosk clients for a business. */
+export function broadcastKioskPayload(
+  businessSlug: string,
+  payload: Record<string, unknown>,
+): number {
+  const hub = getVisionHub(businessSlug);
+  if (!hub) return 0;
+  return broadcastToKiosks(hub, payload);
 }
 
 function notifyVisionSources(hub: BusinessVisionHub, payload: Record<string, unknown>): void {
@@ -403,7 +419,7 @@ export async function handleVisionEvent(
   trackId?: number,
   source: VisionEventSource = "python",
 ): Promise<void> {
-  if (shouldIgnoreBrowserVisionEvent(hub, source, event)) {
+  if (shouldIgnoreVisionEvent(hub, source, event)) {
     return;
   }
 

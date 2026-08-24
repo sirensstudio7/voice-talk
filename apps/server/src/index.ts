@@ -16,8 +16,13 @@ import { registerPublicRoutes } from "./routes/public.js";
 import { registerPresentationWebSocketRoutes } from "./routes/presentation-websocket.js";
 import { registerWebSocketRoutes } from "./routes/websocket.js";
 import { registerVisionWebSocketRoutes } from "./routes/vision-ws.js";
+import { registerLuckySpinRoutes } from "./routes/lucky-spin.js";
+import { registerCampaignBannerRoutes } from "./routes/campaign-banner.js";
+import { registerLiveRoutes } from "./routes/live.js";
+import { registerLiveWebSocketRoutes } from "./routes/live-websocket.js";
 import { initVisionEventBus } from "./services/vision-orchestrator.js";
 import { registerPhotoMomentJobs } from "./services/photo-jobs.js";
+import { registerVoiceMinuteJobs } from "./services/voice-minute-jobs.js";
 import { getUploadRoot, MAX_PRESENTATION_UPLOAD_BYTES } from "./storage/index.js";
 
 const app = Fastify({ logger: true });
@@ -54,12 +59,17 @@ await registerHealthRoutes(app);
 await registerPublicRoutes(app);
 await registerAdminRoutes(app);
 await registerPresentationRoutes(app);
+await registerLuckySpinRoutes(app);
+await registerCampaignBannerRoutes(app);
+await registerLiveRoutes(app);
 await registerPlatformRoutes(app);
 await registerWebSocketRoutes(app);
 await registerPresentationWebSocketRoutes(app);
+await registerLiveWebSocketRoutes(app);
 await registerVisionWebSocketRoutes(app);
 await initVisionEventBus();
 registerPhotoMomentJobs(app);
+registerVoiceMinuteJobs(app);
 
 app.setErrorHandler((error, _request, reply) => {
   const err = error as Error & { statusCode?: number; cause?: Error };

@@ -1,5 +1,13 @@
 import { create } from "zustand";
-import { mergeTranscriptChunk } from "@voicetalk/shared";
+import {
+  BASE_AI_LANGUAGES,
+  isAiLanguage,
+  mergeTranscriptChunk,
+  normalizeVoiceGender,
+  normalizeVoicePreset,
+  type VoiceGender,
+  type VoicePreset,
+} from "@voicetalk/shared";
 
 import {
   acknowledgeServerOrder,
@@ -20,19 +28,13 @@ import {
   TranscriptMessage,
   emptyOrder,
 } from "@/types/voice";
-import {
-  normalizeVoiceGender,
-  normalizeVoicePreset,
-  type VoiceGender,
-  type VoicePreset,
-} from "@voicetalk/shared";
 
 const LANGUAGE_STORAGE_KEY = "voicetalk-language";
 
 function readStoredLanguage(): AiLanguage | null {
   if (typeof window === "undefined") return null;
   const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
-  return stored === "en" || stored === "id" ? stored : null;
+  return isAiLanguage(stored) ? stored : null;
 }
 
 export interface FlyAnimationRequest {
@@ -228,6 +230,7 @@ interface SessionStore {
   isTalking: boolean;
   error: string | null;
   language: AiLanguage;
+  availableLanguages: AiLanguage[];
   transcript: TranscriptMessage[];
   order: OrderState;
   checkoutPhase: CheckoutPhase;
@@ -315,6 +318,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   isTalking: false,
   error: null,
   language: "id",
+  availableLanguages: [...BASE_AI_LANGUAGES],
   transcript: [],
   order: emptyOrder(),
   checkoutPhase: "shopping",
@@ -337,12 +341,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   conversationPhase: "complete",
   bookingPanelOpen: false,
   selectedTreatment: null,
-  assistantName: "Lorescale",
+  assistantName: "Alex",
   avatarUrl: "",
   avatarModelPath: "",
   avatarCacheBust: 0,
   voicePreset: "natural",
-  voiceGender: "female",
+  voiceGender: "male",
   forceNewAssistantBubble: false,
   setStatus: (status) => set({ status }),
   setCheckoutPanelOpen: (open) => set({ checkoutPanelOpen: open }),
@@ -366,10 +370,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setTalking: (isTalking) => set({ isTalking }),
   setError: (error) => set({ error }),
   setLanguage: (language) => {
+    const allowed = get().availableLanguages;
+    const next = allowed.includes(language) ? language : allowed[0] ?? "id";
     if (typeof window !== "undefined") {
-      localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, next);
     }
-    set({ language });
+    set({ language: next });
   },
   addTranscript: (role, text) =>
     set((state) => {
@@ -696,10 +702,21 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         { ...state.menuProductMeta },
       );
 
+      const available =
+        menu.languages?.available?.filter(isAiLanguage) ?? [...BASE_AI_LANGUAGES];
+      const nextLanguage = available.includes(state.language)
+        ? state.language
+        : available[0] ?? "id";
+      if (typeof window !== "undefined" && nextLanguage !== state.language) {
+        localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
+      }
+
       return {
         menuCache: menu,
         menuCacheSlug: slug,
         menuProductMeta,
+        availableLanguages: available,
+        language: nextLanguage,
         voicePreset: normalizeVoicePreset(menu.voice_preset),
         voiceGender: normalizeVoiceGender(menu.voice_gender),
         orderingEnabled: menu.capabilities?.ordering_enabled ?? true,
@@ -722,7 +739,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
   setAssistantName: (name) =>
-    set({ assistantName: name.trim() || "Lorescale" }),
+    set({ assistantName: name.trim() || "Alex" }),
   setAvatarUrl: (url) =>
     set({ avatarUrl: url, avatarCacheBust: url ? Date.now() : 0 }),
   setAvatarModelPath: (path) => set({ avatarModelPath: path.trim() }),
@@ -732,7 +749,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set({ voiceGender: normalizeVoiceGender(gender) }),
   hydrateLanguageFromStorage: () => {
     const stored = readStoredLanguage();
-    if (stored) {
+    if (!stored) return;
+    const allowed = get().availableLanguages;
+    if (allowed.includes(stored)) {
       set({ language: stored });
     }
   },

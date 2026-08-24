@@ -1,5 +1,8 @@
 import { GoogleGenAI, Modality } from "@google/genai";
+import { eq } from "drizzle-orm";
 
+import { db } from "../db/client.js";
+import { platformSettings } from "../db/schema.js";
 import { env } from "../env.js";
 
 // gemini-2.5-flash is blocked for many new API keys; prefer a current flash model.
@@ -9,6 +12,17 @@ const TTS_MODEL = process.env.GEMINI_TTS_MODEL ?? "gemini-2.5-flash-preview-tts"
 function getClient(): GoogleGenAI | null {
   if (!env.GEMINI_API_KEY) return null;
   return new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+}
+
+async function resolveDefaultTtsModel() {
+  try {
+    const row = await db.query.platformSettings.findFirst({
+      where: eq(platformSettings.key, "default_tts_model"),
+    });
+    return row?.value?.trim() || TTS_MODEL;
+  } catch {
+    return TTS_MODEL;
+  }
 }
 
 function estimateDurationSeconds(script: string): number {
@@ -155,13 +169,15 @@ Return JSON only: {"greeting":"...","closing":"..."}`,
 export async function synthesizeSpeechWav(
   text: string,
   voiceName = "Kore",
+  modelName?: string,
 ): Promise<{ buffer: Buffer; durationSeconds: number } | null> {
   const client = getClient();
   if (!client || !text.trim()) return null;
+  const model = modelName?.trim() || (await resolveDefaultTtsModel());
 
   try {
     const response = await client.models.generateContent({
-      model: TTS_MODEL,
+      model,
       contents: [{ parts: [{ text: `Say clearly: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],

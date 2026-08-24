@@ -10,17 +10,29 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { AddonConfigPending } from "@/components/addon-config-pending";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
+import { Switch } from "@/components/ui/switch";
 import {
   api,
-  type AddonStatus,
   type PhotoAnalytics,
   type PhotoGalleryItem,
   type PhotoSettings,
 } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
-import { useAuth } from "@/lib/auth";
+import { peekAddonStatus } from "@/lib/addon-status-cache";
+import { cn } from "@/lib/cn";
+import { useAddonStatus } from "@/lib/use-addon-status";
+
+type ManageTab = "display" | "branding" | "gallery" | "analytics";
+
+const MANAGE_TABS: Array<{ id: ManageTab; label: string }> = [
+  { id: "display", label: "Display" },
+  { id: "branding", label: "Branding" },
+  { id: "gallery", label: "Gallery" },
+  { id: "analytics", label: "Analytics" },
+];
 
 const FEATURES = [
   {
@@ -64,63 +76,70 @@ const SCREENSHOTS = [
 ] as const;
 
 export function SmartPhotoMomentPageClient() {
-  const { token, business } = useAuth();
+  const { token, business, status, loading, error, setError, isActive, isPending } =
+    useAddonStatus("smart_photo_moment");
   const { state: sidebarState, isMobile } = useSidebar();
-  const [status, setStatus] = useState<AddonStatus | null>(null);
-  const [settings, setSettings] = useState<PhotoSettings | null>(null);
+  const [settings, setSettings] = useState<PhotoSettings | null>(() => {
+    const cached = business?.id ? peekAddonStatus(business.id, "smart_photo_moment") : null;
+    return cached?.subscription_status === "active" ? cached.settings : null;
+  });
   const [analytics, setAnalytics] = useState<PhotoAnalytics | null>(null);
   const [gallery, setGallery] = useState<PhotoGalleryItem[]>([]);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [manageTab, setManageTab] = useState<ManageTab>("display");
 
-  const isActive = status?.subscription_status === "active";
-  const isPending = Boolean(status?.pending_request);
-
-  const loadStatus = useCallback(async () => {
-    if (!token || !business?.id) return;
-    const addon = await api.getAddonStatus(token, business.id);
-    setStatus(addon);
-    return addon;
-  }, [token, business?.id]);
+  useEffect(() => {
+    if (status?.subscription_status === "active" && status.settings) {
+      setSettings((current) => current ?? status.settings);
+    }
+  }, [status]);
 
   const loadActiveData = useCallback(async () => {
     if (!token || !business?.id) return;
-    const [photoSettings, stats, galleryResult] = await Promise.all([
-      api.getPhotoSettings(token, business.id),
-      api.getPhotoAnalytics(token, business.id),
-      api.listPhotoGallery(token, business.id, {
-        from: fromDate || undefined,
-        to: toDate || undefined,
-      }),
-    ]);
-    setSettings(photoSettings);
-    setAnalytics(stats);
-    setGallery(galleryResult.items);
-  }, [token, business?.id, fromDate, toDate]);
-
-  const load = useCallback(async () => {
-    if (!token || !business?.id) return;
-    setError(null);
-    setLoading(true);
     try {
-      const addon = await loadStatus();
-      if (addon?.subscription_status === "active") {
-        await loadActiveData();
-      }
+      const [photoSettings, stats, galleryResult] = await Promise.all([
+        api.getPhotoSettings(token, business.id),
+        api.getPhotoAnalytics(token, business.id),
+        api.listPhotoGallery(token, business.id, {
+          from: fromDate || undefined,
+          to: toDate || undefined,
+        }),
+      ]);
+      setSettings(photoSettings);
+      setAnalytics(stats);
+      setGallery(galleryResult.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
-    } finally {
-      setLoading(false);
     }
-  }, [token, business?.id, loadStatus, loadActiveData]);
+  }, [token, business?.id, fromDate, toDate, setError]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!token || !business?.id || !isActive) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [photoSettings, stats, galleryResult] = await Promise.all([
+          api.getPhotoSettings(token, business.id),
+          api.getPhotoAnalytics(token, business.id),
+          api.listPhotoGallery(token, business.id),
+        ]);
+        if (cancelled) return;
+        setSettings(photoSettings);
+        setAnalytics(stats);
+        setGallery(galleryResult.items);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, business?.id, isActive, setError]);
 
   async function saveSettings() {
     if (!token || !business?.id || !settings) return;
@@ -148,6 +167,44 @@ export function SmartPhotoMomentPageClient() {
   async function onUpload(kind: "logo" | "frame", file: File | null) {
     if (!token || !business?.id || !file) return;
     setError(null);
+    if (kind === "frame") {
+      if (file.type !== "image/png") {
+        setError("Frame must be a PNG with transparency (twibbon-style).");
+        return;
+      }
+      try {
+        const dims = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+          const objectUrl = URL.createObjectURL(file);
+          const img = new Image();
+          img.onload = () => {
+            const width = img.naturalWidth;
+            const height = img.naturalHeight;
+            URL.revokeObjectURL(objectUrl);
+            resolve({ width, height });
+          };
+          img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error("Could not read frame image."));
+          };
+          img.src = objectUrl;
+        });
+        if (dims.height <= 0) {
+          setError("Could not read frame dimensions.");
+          return;
+        }
+        const ratio = dims.width / dims.height;
+        const storyRatio = 9 / 16;
+        if (Math.abs(ratio - storyRatio) > 0.02) {
+          setError(
+            `Frame must be 9:16 (Instagram Story), e.g. 1080×1920. Got ${dims.width}×${dims.height}.`,
+          );
+          return;
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not validate frame.");
+        return;
+      }
+    }
     try {
       const updated = await api.uploadPhotoBranding(token, business.id, kind, file);
       setSettings(updated);
@@ -198,7 +255,7 @@ export function SmartPhotoMomentPageClient() {
 
   return (
     <>
-    <div className="mx-auto max-w-3xl space-y-10 pb-24">
+    <div className="mx-auto w-full max-w-3xl space-y-10 pb-24">
       {error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
@@ -252,283 +309,384 @@ export function SmartPhotoMomentPageClient() {
         </header>
       )}
 
-      {/* Screenshots carousel */}
-      <section className="-mx-4 sm:mx-0">
-        <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] sm:px-0 [&::-webkit-scrollbar]:hidden">
-          {SCREENSHOTS.map((shot) => (
-            <div
-              key={shot.id}
-              className="w-[72%] shrink-0 snap-center overflow-hidden rounded-[20px] bg-slate-100 sm:w-[240px]"
-            >
-              <div className="aspect-[9/16]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={shot.src}
-                  alt=""
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* About */}
-      <section className="space-y-3">
-        <h2 className="text-xl font-semibold tracking-tight text-slate-900">About</h2>
-        <p className="text-[15px] leading-relaxed text-slate-600">
-          {productDescription} After a successful kiosk payment, the assistant offers a souvenir
-          photo. Guests are captured automatically, then receive a QR code to download a branded
-          photo on their phone.
-        </p>
-        <p className="text-[15px] leading-relaxed text-slate-600">
-          Photos are only for guest download and are deleted automatically when retention expires.
-        </p>
-      </section>
-
-      {/* Features */}
-      <section>
-        <h2 className="mb-1 text-xl font-semibold tracking-tight text-slate-900">Features</h2>
-        <ul className="divide-y divide-slate-100">
-          {FEATURES.map(({ icon: Icon, title, body }) => (
-            <li key={title} className="flex gap-4 py-4">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-50 text-slate-700">
-                <Icon className="size-5" aria-hidden />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-[15px] font-semibold text-slate-900">{title}</h3>
-                <p className="mt-0.5 text-sm leading-relaxed text-slate-500">{body}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* Information */}
-      <section>
-        <h2 className="mb-3 text-xl font-semibold tracking-tight text-slate-900">Information</h2>
-        <dl className="space-y-3 text-sm">
-          <div className="flex justify-between gap-4 border-b border-slate-100 pb-3">
-            <dt className="text-slate-400">Provider</dt>
-            <dd className="font-medium text-slate-900">LORESCALE</dd>
-          </div>
-          <div className="flex justify-between gap-4 border-b border-slate-100 pb-3">
-            <dt className="text-slate-400">Category</dt>
-            <dd className="font-medium text-slate-900">Guest Experience</dd>
-          </div>
-          <div className="flex justify-between gap-4 border-b border-slate-100 pb-3">
-            <dt className="text-slate-400">Billing</dt>
-            <dd className="font-medium text-slate-900">Monthly · per workspace</dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-slate-400">Price</dt>
-            <dd className="font-medium text-slate-900">{priceLabel}/mo</dd>
-          </div>
-        </dl>
-      </section>
-
-      {isActive && settings ? (
+      {!loading && !isActive ? (
         <>
-          <section className="space-y-4 rounded-2xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold">Configuration</h2>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={settings.enabled}
-                onChange={(e) => setSettings({ ...settings, enabled: e.target.checked })}
-              />
-              Enabled on kiosk
-            </label>
-            <label className="block text-sm">
-              <span className="text-muted-foreground">Voice prompt</span>
-              <textarea
-                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2"
-                rows={2}
-                value={settings.voice_prompt}
-                onChange={(e) => setSettings({ ...settings, voice_prompt: e.target.value })}
-              />
-            </label>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <label className="block text-sm">
-                <span className="text-muted-foreground">Countdown seconds</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={10}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2"
-                  value={settings.countdown_seconds}
-                  onChange={(e) =>
-                    setSettings({ ...settings, countdown_seconds: Number(e.target.value) })
-                  }
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="text-muted-foreground">QR expiry hours</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={168}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2"
-                  value={settings.qr_expiry_hours}
-                  onChange={(e) =>
-                    setSettings({ ...settings, qr_expiry_hours: Number(e.target.value) })
-                  }
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="text-muted-foreground">Auto-delete days</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={90}
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2"
-                  value={settings.auto_delete_days}
-                  onChange={(e) =>
-                    setSettings({ ...settings, auto_delete_days: Number(e.target.value) })
-                  }
-                />
-              </label>
-            </div>
-            <Button onClick={() => void saveSettings()} disabled={saving}>
-              {saving ? "Saving…" : "Save settings"}
-            </Button>
-          </section>
-
-          <section className="space-y-4 rounded-2xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold">Branding</h2>
-            <label className="block text-sm">
-              <span className="text-muted-foreground">Campaign text</span>
-              <input
-                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2"
-                value={settings.campaign_text}
-                maxLength={120}
-                onChange={(e) => setSettings({ ...settings, campaign_text: e.target.value })}
-              />
-            </label>
-            <div className="grid gap-6 sm:grid-cols-2">
-              {(["logo", "frame"] as const).map((kind) => (
-                <div key={kind} className="space-y-2">
-                  <p className="text-sm font-medium capitalize">{kind}</p>
-                  {(kind === "logo" ? settings.logo_url : settings.frame_url) ? (
-                    // eslint-disable-next-line @next/next/no-img-element
+          <section className="-mx-4 sm:mx-0">
+            <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] sm:px-0 [&::-webkit-scrollbar]:hidden">
+              {SCREENSHOTS.map((shot) => (
+                <div
+                  key={shot.id}
+                  className="w-[72%] shrink-0 snap-center overflow-hidden rounded-[20px] bg-slate-100 sm:w-[240px]"
+                >
+                  <div className="aspect-[9/16]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={kind === "logo" ? settings.logo_url : settings.frame_url}
-                      alt={kind}
-                      className="h-24 w-auto rounded border border-border object-contain"
+                      src={shot.src}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      loading="lazy"
                     />
-                  ) : (
-                    <p className="text-xs text-muted-foreground">No {kind} uploaded</p>
-                  )}
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
-                    onChange={(e) => void onUpload(kind, e.target.files?.[0] ?? null)}
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void onDeleteBranding(kind)}
-                  >
-                    Remove
-                  </Button>
+                  </div>
                 </div>
               ))}
             </div>
-            <Button onClick={() => void saveSettings()} disabled={saving}>
-              Save campaign text
-            </Button>
           </section>
 
-          {analytics ? (
-            <section className="rounded-2xl border border-border bg-card p-6">
-              <h2 className="text-lg font-semibold">Analytics</h2>
-              <div className="mt-4 grid gap-4 sm:grid-cols-4">
-                {[
-                  ["Photos today", analytics.photos_today],
-                  ["Acceptance rate", `${analytics.acceptance_rate}%`],
-                  ["Downloads today", analytics.downloads_today],
-                  ["Downloads this month", analytics.downloads_this_month],
-                ].map(([label, value]) => (
-                  <div key={String(label)} className="rounded-xl bg-muted/40 px-4 py-3">
-                    <p className="text-xs text-muted-foreground">{label}</p>
-                    <p className="mt-1 text-2xl font-semibold">{value}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold tracking-tight text-slate-900">About</h2>
+            <p className="text-[15px] leading-relaxed text-slate-600">
+              {productDescription} After a successful kiosk payment, the assistant offers a souvenir
+              photo. Guests are captured automatically, then receive a QR code to download a branded
+              photo on their phone.
+            </p>
+            <p className="text-[15px] leading-relaxed text-slate-600">
+              Photos are only for guest download and are deleted automatically when retention
+              expires.
+            </p>
+          </section>
 
-          <section className="space-y-4 rounded-2xl border border-border bg-card p-6">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <h2 className="text-lg font-semibold">Gallery</h2>
-              <div className="flex flex-wrap gap-2">
-                <input
-                  type="date"
-                  className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                />
-                <input
-                  type="date"
-                  className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                />
-                <Button type="button" variant="secondary" onClick={() => void loadActiveData()}>
-                  Search
-                </Button>
-              </div>
-            </div>
-            {gallery.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No photos yet.</p>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                {gallery.map((item) => (
-                  <div key={item.id} className="overflow-hidden rounded-xl border border-border">
-                    {item.thumbnail_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={item.thumbnail_url}
-                        alt="Souvenir"
-                        className="aspect-square w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex aspect-square items-center justify-center bg-muted text-xs text-muted-foreground">
-                        No preview
-                      </div>
-                    )}
-                    <div className="space-y-2 p-3">
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(item.created_at).toLocaleString()}
-                      </p>
-                      <div className="flex gap-2">
-                        {item.photo_url ? (
-                          <a
-                            href={item.photo_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs font-medium text-primary underline"
-                          >
-                            Download
-                          </a>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="text-xs font-medium text-destructive"
-                          onClick={() => void onDeletePhoto(item.id)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
+          <section>
+            <h2 className="mb-1 text-xl font-semibold tracking-tight text-slate-900">Features</h2>
+            <ul className="divide-y divide-slate-100">
+              {FEATURES.map(({ icon: Icon, title, body }) => (
+                <li key={title} className="flex gap-4 py-4">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-50 text-slate-700">
+                    <Icon className="size-5" aria-hidden />
                   </div>
-                ))}
+                  <div className="min-w-0">
+                    <h3 className="text-[15px] font-semibold text-slate-900">{title}</h3>
+                    <p className="mt-0.5 text-sm leading-relaxed text-slate-500">{body}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="mb-3 text-xl font-semibold tracking-tight text-slate-900">Information</h2>
+            <dl className="space-y-3 text-sm">
+              <div className="flex justify-between gap-4 border-b border-slate-100 pb-3">
+                <dt className="text-slate-400">Provider</dt>
+                <dd className="font-medium text-slate-900">LORESCALE</dd>
               </div>
-            )}
+              <div className="flex justify-between gap-4 border-b border-slate-100 pb-3">
+                <dt className="text-slate-400">Category</dt>
+                <dd className="font-medium text-slate-900">Guest Experience</dd>
+              </div>
+              <div className="flex justify-between gap-4 border-b border-slate-100 pb-3">
+                <dt className="text-slate-400">Billing</dt>
+                <dd className="font-medium text-slate-900">Monthly · per workspace</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-400">Price</dt>
+                <dd className="font-medium text-slate-900">{priceLabel}/mo</dd>
+              </div>
+            </dl>
           </section>
         </>
+      ) : null}
+
+      {isActive && settings ? (
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold tracking-tight text-slate-900">Configuration</h2>
+          <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
+            {MANAGE_TABS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setManageTab(item.id)}
+                className={cn(
+                  "rounded-lg px-3 py-2 text-sm font-medium transition",
+                  manageTab === item.id
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900",
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          {manageTab === "display" ? (
+            <div className="space-y-5">
+              <p className="text-sm text-muted-foreground">
+                After a successful kiosk payment, the assistant offers a souvenir photo with QR
+                download.
+              </p>
+              <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <label
+                  htmlFor="smart-photo-enabled"
+                  className="text-sm font-medium text-slate-800"
+                >
+                  Enabled on kiosk
+                </label>
+                <Switch
+                  id="smart-photo-enabled"
+                  checked={settings.enabled}
+                  disabled={saving}
+                  onCheckedChange={(checked) =>
+                    setSettings({ ...settings, enabled: checked })
+                  }
+                />
+              </div>
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-slate-800">Voice prompt</span>
+                <textarea
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-500/20"
+                  rows={3}
+                  value={settings.voice_prompt}
+                  onChange={(e) => setSettings({ ...settings, voice_prompt: e.target.value })}
+                />
+              </label>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <label className="block space-y-1.5">
+                  <span className="text-sm font-medium text-slate-800">Countdown seconds</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-500/20"
+                    value={settings.countdown_seconds}
+                    onChange={(e) =>
+                      setSettings({ ...settings, countdown_seconds: Number(e.target.value) })
+                    }
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-sm font-medium text-slate-800">QR expiry hours</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={168}
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-500/20"
+                    value={settings.qr_expiry_hours}
+                    onChange={(e) =>
+                      setSettings({ ...settings, qr_expiry_hours: Number(e.target.value) })
+                    }
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-sm font-medium text-slate-800">Auto-delete days</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={90}
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-500/20"
+                    value={settings.auto_delete_days}
+                    onChange={(e) =>
+                      setSettings({ ...settings, auto_delete_days: Number(e.target.value) })
+                    }
+                  />
+                </label>
+              </div>
+              <Button
+                type="button"
+                className="rounded-xl"
+                onClick={() => void saveSettings()}
+                disabled={saving}
+              >
+                {saving ? "Saving…" : "Save settings"}
+              </Button>
+            </div>
+          ) : null}
+
+          {manageTab === "branding" ? (
+            <div className="space-y-5">
+              <p className="text-sm text-muted-foreground">
+                Branding is stamped onto each souvenir photo before guests download it.
+              </p>
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-slate-800">Campaign text</span>
+                <input
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-500/20"
+                  value={settings.campaign_text}
+                  maxLength={120}
+                  placeholder="Optional caption on the photo"
+                  onChange={(e) => setSettings({ ...settings, campaign_text: e.target.value })}
+                />
+              </label>
+              <div className="grid items-start gap-6 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)]">
+                {(["logo", "frame"] as const).map((kind) => {
+                  const url = kind === "logo" ? settings.logo_url : settings.frame_url;
+                  return (
+                    <div key={kind} className="space-y-2">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="text-sm font-medium capitalize text-slate-800">{kind}</p>
+                        {kind === "frame" ? (
+                          <p className="text-[11px] text-muted-foreground">PNG · 9:16</p>
+                        ) : null}
+                      </div>
+                      <label
+                        className={cn(
+                          "relative flex cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-slate-50 transition hover:border-orange-400 hover:bg-orange-50/40",
+                          kind === "frame" ? "aspect-[9/16] w-full max-w-[14rem]" : "aspect-[4/3]",
+                        )}
+                      >
+                        {url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={url}
+                            alt={kind}
+                            className={
+                              kind === "frame"
+                                ? "h-full w-full object-cover"
+                                : "h-full w-full object-contain p-3"
+                            }
+                          />
+                        ) : (
+                          <span className="px-4 text-center text-sm text-slate-500">
+                            {kind === "frame"
+                              ? "Upload 9:16 PNG frame"
+                              : "Click to upload logo"}
+                          </span>
+                        )}
+                        <input
+                          type="file"
+                          accept={
+                            kind === "frame"
+                              ? "image/png"
+                              : "image/png,image/jpeg,image/webp,image/gif"
+                          }
+                          className="hidden"
+                          onChange={(e) => void onUpload(kind, e.target.files?.[0] ?? null)}
+                        />
+                      </label>
+                      {url ? (
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-slate-500 transition hover:text-red-600"
+                          onClick={() => void onDeleteBranding(kind)}
+                        >
+                          Remove {kind}
+                        </button>
+                      ) : kind === "frame" ? (
+                        <p className="text-xs text-muted-foreground">
+                          Instagram Story size (9:16), e.g. 1080×1920. Transparent center.
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+              <Button
+                type="button"
+                className="rounded-xl"
+                onClick={() => void saveSettings()}
+                disabled={saving}
+              >
+                {saving ? "Saving…" : "Save campaign text"}
+              </Button>
+            </div>
+          ) : null}
+
+          {manageTab === "gallery" ? (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Guest souvenir photos for this workspace.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    type="date"
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-500/20"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                  />
+                  <input
+                    type="date"
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-500/20"
+                    value={toDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="rounded-xl"
+                    onClick={() => void loadActiveData()}
+                  >
+                    Search
+                  </Button>
+                </div>
+              </div>
+              {gallery.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-12 text-center text-sm text-muted-foreground">
+                  No photos yet.
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  {gallery.map((item) => (
+                    <div
+                      key={item.id}
+                      className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
+                    >
+                      {item.thumbnail_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={item.thumbnail_url}
+                          alt="Souvenir"
+                          className="aspect-square w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex aspect-square items-center justify-center bg-slate-50 text-xs text-muted-foreground">
+                          No preview
+                        </div>
+                      )}
+                      <div className="space-y-2 p-3">
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(item.created_at).toLocaleString()}
+                        </p>
+                        <div className="flex gap-3">
+                          {item.photo_url ? (
+                            <a
+                              href={item.photo_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs font-medium text-orange-600 hover:underline"
+                            >
+                              Download
+                            </a>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="text-xs font-medium text-slate-500 transition hover:text-red-600"
+                            onClick={() => void onDeletePhoto(item.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {manageTab === "analytics" ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                ["Photos today", analytics?.photos_today ?? 0],
+                ["Acceptance rate", `${analytics?.acceptance_rate ?? 0}%`],
+                ["Downloads today", analytics?.downloads_today ?? 0],
+                ["Downloads this month", analytics?.downloads_this_month ?? 0],
+              ].map(([label, value]) => (
+                <div
+                  key={String(label)}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-4"
+                >
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {label}
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+                    {value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : isActive ? (
+        <AddonConfigPending />
       ) : null}
     </div>
 

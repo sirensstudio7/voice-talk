@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
+import sharp from "sharp";
 import {
   mergeTranscriptMessages,
   normalizeVoiceGender,
@@ -38,6 +39,7 @@ import {
   users,
   voiceSessions,
   visionSettings,
+  topupOrders,
 } from "../db/schema.js";
 import { deleteBusinessAsOwner } from "../services/delete-business.js";
 import {
@@ -47,10 +49,22 @@ import {
   listPaidPlans,
   assertCanCreateWorkspace,
 } from "../services/entitlement.js";
+import {
+  createTopupOrder,
+  getVoiceMinuteWallet,
+  listActiveTopupPackages,
+  listUserTopupOrders,
+  orderOut,
+  packageOut,
+} from "../services/voice-minutes.js";
 import { buildSystemInstruction, normalizeIdleTimeoutSeconds } from "../services/config-builder.js";
 import {
   buildOnboardingAiRules,
-  defaultAssistantPersonality,
+  DEFAULT_ASSISTANT_AVATAR_MODEL,
+  DEFAULT_ASSISTANT_NAME,
+  DEFAULT_VOICE_GENDER,
+  DEFAULT_VOICE_PRESET,
+  defaultAiRulesValues,
   isValidSlug,
   slugSuggestions,
   type BusinessType,
@@ -80,6 +94,7 @@ import {
   normalizeDetectionDistanceM,
   normalizeGreetingDelaySeconds,
   normalizeGreetingTriggerMode,
+  normalizeStartHotkey,
   normalizeVisionSource,
   normalizeLostTimeoutSeconds,
   normalizeSilenceTimeoutSeconds,
@@ -101,6 +116,7 @@ import {
   uploadToStorage,
 } from "../storage/index.js";
 import {
+  assertLanguageAllowed,
   createAddonRequest,
   getAddonStatusForBusiness,
   getOrCreatePhotoSettings,
@@ -182,6 +198,7 @@ function productOut(p: typeof products.$inferSelect) {
     description: p.description,
     image_url: p.imageUrl,
     is_active: p.isActive,
+    live_only: p.liveOnly,
     sort_order: p.sortOrder,
     duration_min: p.durationMin,
   };
@@ -468,18 +485,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         businessId: business!.id,
         role: "owner",
       });
-      await db.insert(aiRules).values({
-        businessId: business!.id,
-        assistantName: "Lorescale",
-        personality: defaultAssistantPersonality({
+      await db.insert(aiRules).values(
+        defaultAiRulesValues({
+          businessId: business!.id,
           businessName: String(body.name ?? business!.name),
-          language: "id",
+          language: "en",
           primaryUseCase: "both",
           businessType: "other",
-          assistantName: "Lorescale",
         }),
-        tone: "friendly",
-      });
+      );
 
       return reply.status(201).send(businessOut(business!));
     } catch (err) {
@@ -523,11 +537,14 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         [rules] = await db
           .insert(aiRules)
           .values({
-            businessId,
-            assistantName: "Lorescale",
+            ...defaultAiRulesValues({
+              businessId,
+              businessName: business.name,
+              language: aiConfig.language,
+              primaryUseCase: body.primary_use_case,
+              businessType: body.business_type,
+            }),
             personality: aiConfig.personality,
-            tone: "friendly",
-            language: aiConfig.language,
             toolInstructions: aiConfig.toolInstructions,
           })
           .returning();
@@ -535,6 +552,10 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         [rules] = await db
           .update(aiRules)
           .set({
+            assistantName: DEFAULT_ASSISTANT_NAME,
+            avatarModelPath: DEFAULT_ASSISTANT_AVATAR_MODEL,
+            voiceGender: DEFAULT_VOICE_GENDER,
+            voicePreset: DEFAULT_VOICE_PRESET,
             personality: aiConfig.personality,
             language: aiConfig.language,
             toolInstructions: aiConfig.toolInstructions,
@@ -784,7 +805,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       const rows = await db
         .select()
         .from(products)
-        .where(eq(products.businessId, businessId))
+        .where(and(eq(products.businessId, businessId), eq(products.liveOnly, false)))
         .orderBy(products.sortOrder, products.name);
       return rows.map(productOut);
     } catch (err) {
@@ -1007,18 +1028,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       if (!rules) {
         [rules] = await db
           .insert(aiRules)
-          .values({
-            businessId,
-            assistantName: "Lorescale",
-            personality: defaultAssistantPersonality({
+          .values(
+            defaultAiRulesValues({
+              businessId,
               businessName: business.name,
-              language: "id",
+              language: "en",
               primaryUseCase: business.primaryUseCase,
               businessType: business.businessType,
-              assistantName: "Lorescale",
             }),
-            tone: "friendly",
-          })
+          )
           .returning();
       }
       return aiRulesOut(rules!);
@@ -1035,18 +1053,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       if (!rules) {
         [rules] = await db
           .insert(aiRules)
-          .values({
-            businessId,
-            assistantName: "Lorescale",
-            personality: defaultAssistantPersonality({
+          .values(
+            defaultAiRulesValues({
+              businessId,
               businessName: business.name,
-              language: "id",
+              language: "en",
               primaryUseCase: business.primaryUseCase,
               businessType: business.businessType,
-              assistantName: "Lorescale",
             }),
-            tone: "friendly",
-          })
+          )
           .returning();
       }
       const body = request.body as Record<string, unknown>;
@@ -1057,7 +1072,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
       if (body.personality !== undefined) updates.personality = String(body.personality);
       if (body.tone !== undefined) updates.tone = String(body.tone);
-      if (body.language !== undefined) updates.language = String(body.language);
+      if (body.language !== undefined) {
+        updates.language = await assertLanguageAllowed(businessId, String(body.language));
+      }
       if (body.behavioral_rules !== undefined) updates.behavioralRules = String(body.behavioral_rules);
       if (body.tool_instructions !== undefined) updates.toolInstructions = String(body.tool_instructions);
       if (body.idle_timeout_seconds !== undefined) {
@@ -1106,18 +1123,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       if (!rules) {
         [rules] = await db
           .insert(aiRules)
-          .values({
-            businessId,
-            assistantName: "Lorescale",
-            personality: defaultAssistantPersonality({
+          .values(
+            defaultAiRulesValues({
+              businessId,
               businessName: business.name,
-              language: "id",
+              language: "en",
               primaryUseCase: business.primaryUseCase,
               businessType: business.businessType,
-              assistantName: "Lorescale",
             }),
-            tone: "friendly",
-          })
+          )
           .returning();
       }
 
@@ -1422,18 +1436,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       if (!rules) {
         [rules] = await db
           .insert(aiRules)
-          .values({
-            businessId,
-            assistantName: "Lorescale",
-            personality: defaultAssistantPersonality({
+          .values(
+            defaultAiRulesValues({
+              businessId,
               businessName: business.name,
-              language: "id",
+              language: "en",
               primaryUseCase: business.primaryUseCase,
               businessType: business.businessType,
-              assistantName: "Lorescale",
             }),
-            tone: "friendly",
-          })
+          )
           .returning();
       }
 
@@ -1547,6 +1558,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       if (body.camera_trigger_enabled !== undefined) {
         updates.cameraTriggerEnabled = Boolean(body.camera_trigger_enabled);
       }
+      if (body.start_hotkey !== undefined) {
+        updates.startHotkey = normalizeStartHotkey(body.start_hotkey);
+      }
       if (body.vision_source !== undefined) {
         updates.visionSource = normalizeVisionSource(body.vision_source);
       }
@@ -1625,7 +1639,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     try {
       const user = await getCurrentUser(request);
 
-      const [planRows, addonRows] = await Promise.all([
+      const [planRows, addonRows, topupRows] = await Promise.all([
         db
           .select({
             id: subscriptionRequests.id,
@@ -1662,6 +1676,12 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           .where(eq(addonRequests.userId, user.id))
           .orderBy(desc(addonRequests.createdAt))
           .limit(50),
+        db
+          .select()
+          .from(topupOrders)
+          .where(eq(topupOrders.userId, user.id))
+          .orderBy(desc(topupOrders.createdAt))
+          .limit(50),
       ]);
 
       const items = [
@@ -1693,6 +1713,20 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           created_at: row.createdAt.toISOString(),
           reviewed_at: row.reviewedAt?.toISOString() ?? null,
         })),
+        ...topupRows.map((row) => ({
+          id: row.id,
+          type: "topup" as const,
+          title: row.packageName,
+          subtitle: row.transactionCode,
+          status: row.status === "paid" ? "approved" : row.status,
+          amount_label: `Rp${row.priceIdr.toLocaleString("id-ID")}`,
+          workspace_name: null as string | null,
+          payment_proof_url: row.paymentProofUrl,
+          transaction_code: row.transactionCode,
+          notes: row.notes,
+          created_at: row.createdAt.toISOString(),
+          reviewed_at: row.paidAt?.toISOString() ?? null,
+        })),
       ].sort((a, b) => b.created_at.localeCompare(a.created_at));
 
       return { items };
@@ -1718,6 +1752,10 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         code: p.code,
         name: p.name,
         workspace_limit: p.workspaceLimit,
+        monthly_price_idr: p.monthlyPriceIdr,
+        yearly_price_idr: p.yearlyPriceIdr,
+        yearly_discount_percent: p.yearlyDiscountPercent,
+        monthly_voice_minutes: Math.round(p.monthlyVoiceSeconds / 60),
       }));
     } catch (err) {
       return sendAuthError(reply, err);
@@ -1764,6 +1802,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         name: a.name,
         description: a.description,
         price_display: a.priceDisplay,
+        monthly_price_idr: a.monthlyPriceIdr,
       }));
     } catch (err) {
       return sendAuthError(reply, err);
@@ -1937,10 +1976,18 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       if (!data) return reply.status(400).send({ detail: "No file uploaded." });
 
       const contentType = (data.mimetype || "").toLowerCase();
+      if (kind === "frame" && contentType !== "image/png") {
+        return reply.status(400).send({
+          detail: "Frame must be a PNG with transparency (twibbon-style).",
+        });
+      }
       const extension = ALLOWED_IMAGE_TYPES[contentType];
       if (!extension) {
         return reply.status(400).send({
-          detail: "Upload a PNG, JPG, WEBP, or GIF image.",
+          detail:
+            kind === "frame"
+              ? "Frame must be a PNG with transparency (twibbon-style)."
+              : "Upload a PNG, JPG, WEBP, or GIF image.",
         });
       }
 
@@ -1948,6 +1995,22 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
       if (buffer.length > MAX_UPLOAD_BYTES) {
         return reply.status(400).send({ detail: "Image must be 5 MB or smaller." });
+      }
+
+      if (kind === "frame") {
+        const meta = await sharp(buffer).metadata();
+        const width = meta.width ?? 0;
+        const height = meta.height ?? 0;
+        if (height <= 0) {
+          return reply.status(400).send({ detail: "Could not read frame dimensions." });
+        }
+        const ratio = width / height;
+        const storyRatio = 9 / 16;
+        if (Math.abs(ratio - storyRatio) > 0.02) {
+          return reply.status(400).send({
+            detail: `Frame must be 9:16 (Instagram Story), e.g. 1080×1920. Got ${width}×${height}.`,
+          });
+        }
       }
 
       const objectPath = `${businessId}/${kind}${extension}`;
@@ -2023,6 +2086,92 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       await requireBusinessAccess(request, businessId);
       return getPhotoAnalytics(businessId);
     } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/voice-minutes/wallet", async (request, reply) => {
+    try {
+      const user = await getCurrentUser(request);
+      return getVoiceMinuteWallet(user.id);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/voice-minutes/packages", async (request, reply) => {
+    try {
+      await getCurrentUser(request);
+      const packages = await listActiveTopupPackages();
+      return { items: packages.map(packageOut) };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/voice-minutes/orders", async (request, reply) => {
+    try {
+      const user = await getCurrentUser(request);
+      const orders = await listUserTopupOrders(user.id);
+      return { items: orders.map(orderOut) };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/admin/voice-minutes/payment-proof", async (request, reply) => {
+    try {
+      const user = await getCurrentUser(request);
+      const data = await request.file();
+      if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+      const contentType = (data.mimetype || "").toLowerCase();
+      const extension = ALLOWED_IMAGE_TYPES[contentType];
+      if (!extension) {
+        return reply.status(400).send({ detail: "Upload a PNG, JPG, WEBP, or GIF image." });
+      }
+      const buffer = await data.toBuffer();
+      if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+      if (buffer.length > MAX_UPLOAD_BYTES) {
+        return reply.status(400).send({ detail: "Payment proof must be 5 MB or smaller." });
+      }
+      const url = await uploadToStorage(
+        "payment-proofs",
+        `${user.id}/topup-${Date.now()}${extension}`,
+        buffer,
+        contentType,
+      );
+      return { url };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/admin/voice-minutes/orders", async (request, reply) => {
+    try {
+      const user = await getCurrentUser(request);
+      const body = (request.body ?? {}) as {
+        package_id?: string;
+        payment_method?: string;
+        payment_proof_url?: string;
+        notes?: string;
+      };
+      if (!body.package_id) {
+        return reply.status(400).send({ detail: "package_id is required." });
+      }
+      const order = await createTopupOrder({
+        userId: user.id,
+        packageId: body.package_id,
+        paymentMethod: body.payment_method,
+        paymentProofUrl: body.payment_proof_url,
+        notes: body.notes,
+      });
+      return reply.status(201).send(orderOut(order));
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
       return sendAuthError(reply, err);
     }
   });

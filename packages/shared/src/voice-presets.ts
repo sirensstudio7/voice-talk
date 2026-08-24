@@ -253,7 +253,7 @@ export function isVoiceGender(value: unknown): value is VoiceGender {
 
 export function normalizeVoiceGender(value: unknown): VoiceGender {
   if (isVoiceGender(value)) return value;
-  return "female";
+  return "male";
 }
 
 export function getVoicePresetConfig(preset: VoicePreset | string | null | undefined): VoicePresetConfig {

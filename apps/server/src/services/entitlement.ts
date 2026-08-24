@@ -84,6 +84,12 @@ export async function ensureTrialEntitlement(userId: string): Promise<AccountSub
       workspaceLimit: trialPlan.workspaceLimit,
     })
     .returning();
+  try {
+    const { ensurePeriodGrant } = await import("./voice-minutes.js");
+    await ensurePeriodGrant(userId);
+  } catch {
+    // Minute tables may not be migrated yet.
+  }
   return created!;
 }
 
@@ -115,6 +121,12 @@ export async function ensureEntitlementForExistingUser(
       workspaceLimit: starter.workspaceLimit,
     })
     .returning();
+  try {
+    const { ensurePeriodGrant } = await import("./voice-minutes.js");
+    await ensurePeriodGrant(userId);
+  } catch {
+    // Minute tables may not be migrated yet.
+  }
   return created!;
 }
 
@@ -424,6 +436,13 @@ export async function activateSubscriptionRequest(opts: {
         endDate: endsAt,
       });
     }
+  }
+
+  try {
+    const { ensurePeriodGrant } = await import("./voice-minutes.js");
+    await ensurePeriodGrant(request.userId);
+  } catch {
+    // Minute tables may not be migrated yet.
   }
 
   return getEntitlementSnapshot(request.userId);

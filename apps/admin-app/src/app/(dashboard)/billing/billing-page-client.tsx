@@ -19,6 +19,7 @@ import {
   PricingPricePrefix,
   PricingSeparator,
 } from "@/components/pricing-card";
+import { VoiceMinutesCard } from "@/components/voice-minutes-card";
 import { PageHeader } from "@/components/ui";
 import { Button } from "@/components/ui/button";
 import { api, type AccountSubscription, type SubscriptionPlan } from "@/lib/api";
@@ -57,6 +58,10 @@ type PlanDetails = {
 };
 
 /** Split "Rp2.249.000" / "$149" into currency label + amount for cleaner layout. */
+function formatIdr(amount: number) {
+  return `Rp${amount.toLocaleString("id-ID")}`;
+}
+
 function splitPrice(price: string): { currency: string; amount: string } {
   if (price.startsWith("Rp")) {
     return { currency: "Rp", amount: price.slice(2).trim() };
@@ -75,6 +80,7 @@ const PLAN_DETAILS: Record<string, PlanDetails> = {
     idr: { monthly: "Rp749.000", yearly: "Rp7.490.000" },
     features: (plan) => [
       `${plan.workspace_limit} workspace${plan.workspace_limit === 1 ? "" : "s"}`,
+      `${plan.monthly_voice_minutes ?? 300} Lore Voice Minutes / month`,
       "1 active AI Voice Talk agent",
       "Basic dashboard & analytics",
       "Email support",
@@ -89,6 +95,7 @@ const PLAN_DETAILS: Record<string, PlanDetails> = {
     includedLabel: "Everything in Starter, plus",
     features: (plan) => [
       `${plan.workspace_limit} workspace${plan.workspace_limit === 1 ? "" : "s"}`,
+      `${plan.monthly_voice_minutes ?? 1500} Lore Voice Minutes / month`,
       "Up to 5 voice agents",
       "WhatsApp integration",
       "Advanced analytics",
@@ -105,6 +112,7 @@ const PLAN_DETAILS: Record<string, PlanDetails> = {
     includedLabel: "Sales-led package includes",
     features: (plan) => [
       `${plan.workspace_limit} workspaces included`,
+      `${plan.monthly_voice_minutes ?? 5000} Lore Voice Minutes / month`,
       "Custom onboarding",
       "Dedicated support",
       "SLA",
@@ -117,9 +125,11 @@ const PLAN_DETAILS: Record<string, PlanDetails> = {
 function BillingCycleToggle({
   yearly,
   onChange,
+  savePercent,
 }: {
   yearly: boolean;
   onChange: (yearly: boolean) => void;
+  savePercent: number;
 }) {
   return (
     <div className="flex flex-col items-center gap-2">
@@ -166,7 +176,7 @@ function BillingCycleToggle({
             : "pointer-events-none -translate-y-1 opacity-0",
         )}
       >
-        Save about 20% with yearly billing
+        {savePercent > 0 ? `Save ${savePercent}% with yearly billing` : "Pay once for the year"}
       </p>
     </div>
   );
@@ -240,6 +250,9 @@ export function BillingPageClient() {
 
   return (
     <>
+      <div className="mb-8">
+        <VoiceMinutesCard />
+      </div>
       <PageHeader
         align="center"
         title="Choose a plan"
@@ -272,7 +285,14 @@ export function BillingPageClient() {
           <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
             Prices in {useIdr ? "IDR (Rp)" : "USD ($)"}
           </span>
-          <BillingCycleToggle yearly={yearly} onChange={setYearly} />
+          <BillingCycleToggle
+            yearly={yearly}
+            onChange={setYearly}
+            savePercent={Math.max(
+              0,
+              ...plans.map((plan) => plan.yearly_discount_percent ?? 0),
+            )}
+          />
           <div className="grid w-full gap-4 md:grid-cols-3 md:items-stretch">
             {plans.map((plan) => {
               const isCurrent = sub?.plan_code === plan.code && sub.status === "active";
@@ -282,11 +302,15 @@ export function BillingPageClient() {
                 `Up to ${plan.workspace_limit} workspace${plan.workspace_limit === 1 ? "" : "s"}`,
               ];
               const currency = useIdr ? details?.idr : details?.usd;
-              const price = currency
+              const price = useIdr
                 ? yearly
-                  ? currency.yearly
-                  : currency.monthly
-                : "Custom";
+                  ? formatIdr(plan.yearly_price_idr ?? 0)
+                  : formatIdr(plan.monthly_price_idr ?? 0)
+                : currency
+                  ? yearly
+                    ? currency.yearly
+                    : currency.monthly
+                  : "Custom";
               const period = yearly ? "/yr" : "/mo";
               const isEnterprise = plan.code === "enterprise";
               const { currency: currencyLabel, amount } = splitPrice(price);

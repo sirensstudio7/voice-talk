@@ -365,6 +365,48 @@ export function useKioskOrchestrator(
           const payload = JSON.parse(event.data as string) as Record<string, unknown>;
           const type = payload.type as string;
 
+          if (type === "lucky_spin.config") {
+            useKioskStore.getState().setLuckySpinConfig({
+              active: payload.active === true,
+              enabled: payload.enabled === true,
+              ai_voice_enabled: payload.ai_voice_enabled !== false,
+              campaign: (payload.campaign as { id: string; name: string } | null) ?? null,
+              prizes: Array.isArray(payload.prizes)
+                ? (payload.prizes as Array<{
+                    id: string;
+                    name: string;
+                    image_url: string;
+                    probability: number;
+                  }>)
+                : [],
+            });
+            return;
+          }
+
+          if (type === "campaign_banner.config") {
+            const layout =
+              payload.layout === "right" || payload.layout === "bottom"
+                ? payload.layout
+                : "top";
+            useKioskStore.getState().setCampaignBannerConfig({
+              active: payload.active === true,
+              enabled: payload.enabled === true,
+              layout,
+              items: Array.isArray(payload.items)
+                ? (payload.items as Array<{
+                    id: string;
+                    title: string;
+                    image_url: string;
+                    target_url: string | null;
+                    qr_url: string | null;
+                    duration_sec: number;
+                    display_order: number;
+                  }>)
+                : [],
+            });
+            return;
+          }
+
           if (type === "vision.config") {
             const config = payload.config as VisionConfig | undefined;
             if (config) {

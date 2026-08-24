@@ -16,7 +16,7 @@ const FAQ_ITEMS = [
   {
     question: "Which languages are supported?",
     answer:
-      "English and Indonesian out of the box. Customers can switch language during a session and the AI reconnects with the new locale.",
+      "English and Indonesian out of the box. Language Pack adds Russian, Chinese, Uzbek, Japanese, Korean, Arabic, Thai, Vietnamese, Malay, and Turkish. Customers can switch language during a session and the AI reconnects with the new locale.",
   },
   {
     question: "How does payment work?",

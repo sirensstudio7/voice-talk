@@ -2,7 +2,7 @@ export type ConnectionStatus = "idle" | "connecting" | "connected" | "error" | "
 
 export type ConversationPhase = "active" | "wrapping_up" | "complete";
 
-export type AiLanguage = "id" | "en";
+export type { AiLanguage } from "@voicetalk/shared";
 
 export type CheckoutPhase = "shopping" | "awaiting_payment" | "paid";
 

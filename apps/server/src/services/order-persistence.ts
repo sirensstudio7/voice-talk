@@ -1,5 +1,5 @@
 import { mergeTranscriptChunk } from "@voicetalk/shared";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
 import {
   orderItems,
@@ -67,7 +67,7 @@ export async function endVoiceSession(
       endedAt: new Date(),
       ...(endReason ? { endReason } : {}),
     })
-    .where(eq(voiceSessions.id, sessionId));
+    .where(and(eq(voiceSessions.id, sessionId), isNull(voiceSessions.endedAt)));
 }
 
 export function buildValidatedOrderSnapshot(
@@ -106,19 +106,27 @@ export async function persistConfirmedOrder(
   businessId: string,
   voiceSessionId: string | null,
   orderSnapshot: Record<string, unknown>,
+  extras?: { liveSessionId?: string | null },
 ) {
   const customerName = orderSnapshot.customer_name;
+  const customerPhone = String(orderSnapshot.customer_phone ?? "").trim().slice(0, 50);
+  const customerAddress = String(orderSnapshot.customer_address ?? "").trim().slice(0, 500);
+  const customerNotes = String(orderSnapshot.customer_notes ?? "").trim().slice(0, 500);
   const [order] = await db
     .insert(orders)
     .values({
       businessId,
       voiceSessionId: voiceSessionId ?? undefined,
+      liveSessionId: extras?.liveSessionId ?? undefined,
       status: "confirmed",
       total: Number(orderSnapshot.total ?? 0),
       customerName:
         customerName != null && String(customerName).trim()
           ? String(customerName).trim()
           : undefined,
+      customerPhone,
+      customerAddress,
+      customerNotes,
       confirmedAt: new Date(),
     })
     .returning();

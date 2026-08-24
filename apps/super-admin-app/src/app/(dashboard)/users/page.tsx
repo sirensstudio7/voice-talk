@@ -92,7 +92,7 @@ export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState(() => searchParams.get("status") ?? "");
   const [error, setError] = useState<string | null>(null);
-  const limit = 25;
+  const limit = 10;
 
   const load = useCallback(async () => {
     if (!token) return;

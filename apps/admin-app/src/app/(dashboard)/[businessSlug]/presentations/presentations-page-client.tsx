@@ -15,10 +15,12 @@ import {
 
 import { PageHeader } from "@/components/ui";
 import { Button } from "@/components/ui/button";
-import { api, type AiLanguage, type Presentation } from "@/lib/api";
+import { api, ApiRequestError, type AiLanguage, type Presentation } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
+import { useAddonStatus } from "@/lib/use-addon-status";
 import { cn } from "@/lib/cn";
+import { availableLanguageOptions } from "@voicetalk/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -78,6 +80,8 @@ function durationLabel(seconds: number) {
 export function PresentationsPageClient() {
   const router = useRouter();
   const { token, business } = useAuth();
+  const { isActive: hasLanguagePack } = useAddonStatus("language_pack");
+  const languageOptions = availableLanguageOptions(hasLanguagePack);
   const [items, setItems] = useState<Presentation[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -110,6 +114,10 @@ export function PresentationsPageClient() {
     try {
       setItems(await api.listPresentations(token, business.id));
     } catch (err) {
+      if (err instanceof ApiRequestError && err.status === 403) {
+        router.replace(adminPath(business.slug, "/add-ons/ai-presenter"));
+        return;
+      }
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
       setLoading(false);
@@ -374,16 +382,11 @@ export function PresentationsPageClient() {
               Language the presenter speaks during AI Present.
             </p>
             <div
-              className="mt-2 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1"
+              className="mt-2 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 sm:grid-cols-3"
               role="group"
               aria-label="AI Present language"
             >
-              {(
-                [
-                  { value: "id", label: "Bahasa Indonesia" },
-                  { value: "en", label: "English" },
-                ] as const
-              ).map((option) => (
+              {languageOptions.map((option) => (
                 <button
                   key={option.value}
                   type="button"

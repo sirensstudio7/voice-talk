@@ -3,11 +3,17 @@ import type { VisionSettings } from "../db/schema.js";
 export const GREETING_TRIGGER_MODES = ["presence", "gesture", "raise_hand"] as const;
 export type GreetingTriggerMode = (typeof GREETING_TRIGGER_MODES)[number];
 
-export const VISION_SOURCES = ["auto", "python", "browser"] as const;
+export const VISION_SOURCES = ["auto", "python", "browser", "human"] as const;
 export type VisionSource = (typeof VISION_SOURCES)[number];
+
+/** Sources that run detection in the customer browser tab (not the Python sidecar). */
+export function isBrowserClassVisionSource(source: VisionSource): boolean {
+  return source === "browser" || source === "human";
+}
 
 export const DEFAULT_VISION_SETTINGS = {
   cameraTriggerEnabled: false,
+  startHotkey: "Enter",
   visionSource: "auto" as VisionSource,
   greetingTriggerMode: "presence" as GreetingTriggerMode,
   greetingDelaySeconds: 3,
@@ -31,12 +37,33 @@ export function normalizeVisionSource(value: unknown): VisionSource {
   const source = String(value ?? "").trim().toLowerCase();
   if (source === "python") return "python";
   if (source === "browser") return "browser";
+  if (source === "human") return "human";
   return "auto";
+}
+
+const BLOCKED_HOTKEYS = new Set([
+  "Tab",
+  "Escape",
+  "Meta",
+  "Control",
+  "Alt",
+  "Shift",
+  "Dead",
+]);
+
+export function normalizeStartHotkey(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  const key = raw === " " || raw.toLowerCase() === "space" ? "Space" : raw;
+  if (!key || key.length > 32 || BLOCKED_HOTKEYS.has(key)) {
+    return DEFAULT_VISION_SETTINGS.startHotkey;
+  }
+  return key;
 }
 
 export function visionSettingsOut(settings: VisionSettings) {
   return {
     camera_trigger_enabled: settings.cameraTriggerEnabled,
+    start_hotkey: normalizeStartHotkey(settings.startHotkey),
     vision_source: normalizeVisionSource(settings.visionSource),
     greeting_trigger_mode: normalizeGreetingTriggerMode(settings.greetingTriggerMode),
     greeting_delay_seconds: settings.greetingDelaySeconds,

@@ -8,6 +8,7 @@ import {
 
 import { DailyOrdersChart, TopProductsPanel } from "@/components/stats-charts";
 import { SubscriptionBanner } from "@/components/subscription-banner";
+import { VoiceMinutesCard } from "@/components/voice-minutes-card";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -99,6 +100,9 @@ export function OverviewPageClient() {
       />
 
       <SubscriptionBanner />
+      <div className="mb-6">
+        <VoiceMinutesCard />
+      </div>
 
       {showEmptyState && business ? (
         <Card>

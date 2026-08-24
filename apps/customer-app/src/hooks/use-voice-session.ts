@@ -1196,6 +1196,9 @@ export function useVoiceSession() {
           case "conversation.complete":
             conversationCompletedRef.current = true;
             setConversationPhase("wrapping_up");
+            if (payload.reason === "minutes_exhausted") {
+              setError("You've reached your Lore Voice Minute limit.");
+            }
             deferChatReset();
             break;
           case "error":
@@ -1457,6 +1460,20 @@ export function useVoiceSession() {
     ws.send(JSON.stringify({ type: "session.photo_ready", prompt: prompt ?? "" }));
   }, []);
 
+  const sendLuckySpinWin = useCallback((prizeName: string, voucherCode?: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const name = prizeName.trim();
+    if (!name) return;
+    ws.send(
+      JSON.stringify({
+        type: "session.lucky_spin_win",
+        prize_name: name,
+        voucher_code: voucherCode?.trim() || "",
+      }),
+    );
+  }, []);
+
   const primeAudioOutput = useCallback(async () => {
     await ensureAudioEngine().unlockPlayback();
   }, [ensureAudioEngine]);
@@ -1580,6 +1597,7 @@ export function useVoiceSession() {
     sendText,
     sendPhotoOffer,
     sendPhotoReady,
+    sendLuckySpinWin,
     startContinuousListening,
     stopContinuousListening,
     cancelPrefetch,

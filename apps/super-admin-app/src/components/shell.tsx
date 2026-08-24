@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import {
   ArrowRightOnRectangleIcon,
+  BanknotesIcon,
   BuildingOffice2Icon,
   ChevronDownIcon,
   ClipboardDocumentCheckIcon,
@@ -13,6 +14,8 @@ import {
   Cog6ToothIcon,
   CreditCardIcon,
   CubeTransparentIcon,
+  CurrencyDollarIcon,
+  EyeIcon,
   PresentationChartBarIcon,
   PuzzlePieceIcon,
   Squares2X2Icon,
@@ -96,6 +99,11 @@ const NAV_GROUPS: NavGroup[] = [
         icon: PuzzlePieceIcon,
       },
       {
+        href: "/topup-orders",
+        label: "Minute top-ups",
+        icon: BanknotesIcon,
+      },
+      {
         href: "/demo-requests",
         label: "Demo requests",
         icon: PresentationChartBarIcon,
@@ -106,7 +114,9 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Platform",
     items: [
+      { href: "/pricing", label: "Pricing", icon: CurrencyDollarIcon },
       { href: "/avatar-pose", label: "Avatar pose", icon: CubeTransparentIcon },
+      { href: "/vision", label: "Vision", icon: EyeIcon },
       { href: "/settings", label: "Settings", icon: Cog6ToothIcon },
       { href: "/audit-logs", label: "Audit Logs", icon: ClipboardDocumentListIcon },
     ],
@@ -120,8 +130,11 @@ const ROUTE_LABELS: Record<string, string> = {
   "/subscriptions": "Subscriptions",
   "/subscription-requests": "Plan requests",
   "/addon-requests": "Add-on requests",
+  "/topup-orders": "Minute top-ups",
   "/demo-requests": "Demo requests",
+  "/pricing": "Pricing",
   "/avatar-pose": "Avatar pose",
+  "/vision": "Vision",
   "/settings": "Settings",
   "/audit-logs": "Audit Logs",
 };

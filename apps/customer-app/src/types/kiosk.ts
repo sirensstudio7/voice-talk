@@ -9,10 +9,11 @@ export type KioskPhase =
 
 export type GreetingTriggerMode = "presence" | "gesture" | "raise_hand";
 
-export type VisionSource = "auto" | "python" | "browser";
+export type VisionSource = "auto" | "python" | "browser" | "human";
 
 export type VisionConfig = {
   camera_trigger_enabled: boolean;
+  start_hotkey: string;
   vision_source: VisionSource;
   greeting_trigger_mode: GreetingTriggerMode;
   greeting_delay_seconds: number;
@@ -27,6 +28,7 @@ export type VisionConfig = {
 
 export const DEFAULT_VISION_CONFIG: VisionConfig = {
   camera_trigger_enabled: false,
+  start_hotkey: "Enter",
   vision_source: "auto",
   greeting_trigger_mode: "presence",
   greeting_delay_seconds: 3,

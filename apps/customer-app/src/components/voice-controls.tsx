@@ -16,6 +16,7 @@ import { DEFAULT_ASSISTANT_AVATAR, resolveMediaUrl } from "@/lib/menu-api";
 import { useSessionStore } from "@/store/session-store";
 import { StoreMenuButton } from "@/components/store-menu-panel";
 import { AiLanguage } from "@/types/voice";
+import { languageOption } from "@voicetalk/shared";
 
 const statusLabel = {
   idle: "Ready",
@@ -91,11 +92,6 @@ interface ExperienceHeaderProps {
   compact?: boolean;
 }
 
-const languageOptions = [
-  { value: "id" as const, label: "ID" },
-  { value: "en" as const, label: "EN" },
-] as const;
-
 export function LanguageToggle({
   value,
   onChange,
@@ -103,11 +99,14 @@ export function LanguageToggle({
   value: AiLanguage;
   onChange: (language: AiLanguage) => void;
 }) {
+  const availableLanguages = useSessionStore((s) => s.availableLanguages);
+  const options = availableLanguages.map(languageOption);
   const groupRef = useRef<HTMLDivElement>(null);
   const [indicator, setIndicator] = useState<{ x: number; width: number } | null>(
     null,
   );
   const [canAnimate, setCanAnimate] = useState(false);
+  const compact = options.length > 3;
 
   const syncIndicator = useCallback(() => {
     const group = groupRef.current;
@@ -143,6 +142,25 @@ export function LanguageToggle({
     return () => observer.disconnect();
   }, [syncIndicator]);
 
+  if (compact) {
+    return (
+      <label className="relative inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 shadow-md">
+        <span className="sr-only">AI language</span>
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value as AiLanguage)}
+          className="max-w-[8.5rem] bg-transparent text-[11px] font-semibold text-slate-700 outline-none"
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.short} · {option.nativeLabel}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+
   return (
     <div
       ref={groupRef}
@@ -162,7 +180,7 @@ export function LanguageToggle({
           }}
         />
       ) : null}
-      {languageOptions.map((option) => {
+      {options.map((option) => {
         const selected = value === option.value;
         return (
           <button
@@ -177,7 +195,7 @@ export function LanguageToggle({
                 : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            {option.label}
+            {option.short}
           </button>
         );
       })}

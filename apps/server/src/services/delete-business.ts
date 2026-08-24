@@ -11,6 +11,9 @@ import {
   businessMembers,
   businesses,
   knowledgeEntries,
+  luckySpinCampaigns,
+  luckySpinSettings,
+  luckySpinWinners,
   orders,
   photoSessions,
   photoSettings,
@@ -78,6 +81,10 @@ export async function deleteBusinessAsOwner(userId: string, businessId: string):
   await db.delete(analyticsEvents).where(eq(analyticsEvents.businessId, businessId));
   await db.delete(photoSessions).where(eq(photoSessions.businessId, businessId));
   await db.delete(photoSettings).where(eq(photoSettings.businessId, businessId));
+  // Winners first (RESTRICT on prizes), then campaigns (cascade prizes).
+  await db.delete(luckySpinWinners).where(eq(luckySpinWinners.businessId, businessId));
+  await db.delete(luckySpinCampaigns).where(eq(luckySpinCampaigns.businessId, businessId));
+  await db.delete(luckySpinSettings).where(eq(luckySpinSettings.businessId, businessId));
   await db.delete(addonRequests).where(eq(addonRequests.businessId, businessId));
   await db.delete(addonSubscriptions).where(eq(addonSubscriptions.businessId, businessId));
   await db.delete(subscriptions).where(eq(subscriptions.businessId, businessId));
@@ -91,5 +98,6 @@ export async function deleteBusinessAsOwner(userId: string, businessId: string):
     deleteFromStorage("product-images", businessId),
     deleteFromStorage(PHOTO_BUCKET, businessId),
     deleteFromStorage(PHOTO_BRANDING_BUCKET, businessId),
+    deleteFromStorage("lucky-spin-prizes", businessId),
   ]);
 }

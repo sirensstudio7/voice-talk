@@ -27,7 +27,7 @@ async function request<T>(
       ...rest,
       signal: controller.signal,
       headers: {
-        "Content-Type": "application/json",
+        ...(rest.body ? { "Content-Type": "application/json" } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...headers,
       },
@@ -176,6 +176,17 @@ export type BusinessListItem = {
   created_at: string;
 };
 
+export type VisionWorkspaceItem = {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  camera_trigger_enabled: boolean;
+  vision_source: "auto" | "python" | "browser" | "human";
+  greeting_trigger_mode: "presence" | "gesture" | "raise_hand";
+  updated_at: string | null;
+};
+
 export type SubscriptionItem = {
   id: string;
   business_id: string;
@@ -188,6 +199,23 @@ export type SubscriptionItem = {
   end_date: string | null;
   notes: string;
   updated_at: string;
+  lore_minutes_monthly: number;
+  lore_minutes_used: number;
+};
+
+export type SubscriptionsResponse = Paginated<SubscriptionItem> & {
+  summary: {
+    minutes_used: number;
+    minutes_included: number;
+    price_idr_monthly: number;
+    price_usd_monthly: number;
+    gemini_usd_per_minute: number;
+    gemini_cost_usd: number;
+    gemini_cost_idr: number;
+    usd_idr_rate: number;
+    usd_idr_updated_at: string | null;
+    usd_idr_source: "live" | "manual" | "fallback";
+  };
 };
 
 export type AuditLogItem = {
@@ -303,6 +331,21 @@ export const api = {
   ) {
     return request<Paginated<BusinessListItem>>(`/platform/businesses${qs(params)}`, { token });
   },
+  listVisionWorkspaces(
+    token: string,
+    params: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      vision_source?: string;
+    } = {},
+  ) {
+    return request<
+      Paginated<VisionWorkspaceItem> & {
+        sources: Array<"auto" | "python" | "browser" | "human">;
+      }
+    >(`/platform/vision${qs(params)}`, { token });
+  },
   getBusiness(token: string, id: string) {
     return request<{
       id: string;
@@ -351,7 +394,7 @@ export const api = {
     token: string,
     params: { page?: number; limit?: number; search?: string; status?: string } = {},
   ) {
-    return request<Paginated<SubscriptionItem>>(`/platform/subscriptions${qs(params)}`, {
+    return request<SubscriptionsResponse>(`/platform/subscriptions${qs(params)}`, {
       token,
     });
   },
@@ -465,6 +508,69 @@ export const api = {
       body: JSON.stringify(body),
     });
   },
+  listTopupOrders(
+    token: string,
+    params: { status?: string; search?: string } = {},
+  ) {
+    return request<{
+      items: Array<{
+        id: string;
+        user_id: string;
+        user_email: string;
+        user_name: string;
+        package_name: string;
+        minutes: number;
+        price_idr: number;
+        status: string;
+        payment_method: string;
+        payment_proof_url: string | null;
+        transaction_code: string;
+        notes: string;
+        created_at: string;
+        paid_at: string | null;
+      }>;
+    }>(`/platform/topup-orders${qs(params)}`, { token });
+  },
+  approveTopupOrder(token: string, id: string) {
+    return request<{ id: string; status: string }>(`/platform/topup-orders/${id}/approve`, {
+      method: "POST",
+      token,
+    });
+  },
+  rejectTopupOrder(token: string, id: string, notes?: string) {
+    return request<{ id: string; status: string }>(`/platform/topup-orders/${id}/reject`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ notes: notes ?? "" }),
+    });
+  },
+  getUserVoiceMinutes(token: string, userId: string) {
+    return request<{
+      wallet: {
+        included_seconds: number;
+        included_used_seconds: number;
+        purchased_remaining_seconds: number;
+        available_seconds: number;
+        period_start: string | null;
+        period_end: string | null;
+        warning: string | null;
+      };
+      ledger: Array<{
+        id: string;
+        type: string;
+        delta_seconds: number;
+        balance_after_seconds: number;
+        created_at: string;
+      }>;
+    }>(`/platform/users/${userId}/voice-minutes`, { token });
+  },
+  adjustUserVoiceMinutes(token: string, userId: string, seconds: number, note?: string) {
+    return request<{ available_seconds: number }>(`/platform/users/${userId}/voice-minutes/adjust`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ seconds, note }),
+    });
+  },
   rejectAddonRequest(token: string, id: string, notes?: string) {
     return request<{ id: string; status: string }>(`/platform/addon-requests/${id}/reject`, {
       method: "POST",
@@ -477,6 +583,87 @@ export const api = {
       method: "POST",
       token,
       body: JSON.stringify({ notes: notes ?? "" }),
+    });
+  },
+  getPricing(token: string) {
+    return request<{
+      plans: Array<{
+        id: string;
+        code: string;
+        name: string;
+        is_trial: boolean;
+        workspace_limit: number;
+        monthly_price_idr: number;
+        yearly_price_idr: number;
+        yearly_discount_percent: number;
+        monthly_voice_minutes: number;
+      }>;
+      addons: Array<{
+        id: string;
+        code: string;
+        name: string;
+        description: string;
+        price_display: string;
+        monthly_price_idr: number;
+        discount_3m_percent: number;
+        discount_6m_percent: number;
+        discount_12m_percent: number;
+      }>;
+      topup_packages: Array<{
+        id: string;
+        code: string;
+        name: string;
+        minutes: number;
+        price_idr: number;
+        discount_percent: number;
+        expires_after_days: number;
+        is_popular: boolean;
+        status: string;
+      }>;
+    }>("/platform/pricing", { token });
+  },
+  updatePlanPricing(
+    token: string,
+    code: string,
+    body: {
+      monthly_price_idr?: number;
+      yearly_price_idr?: number;
+      yearly_discount_percent?: number;
+      monthly_voice_minutes?: number;
+      workspace_limit?: number;
+    },
+  ) {
+    return request(`/platform/pricing/plans/${code}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(body),
+    });
+  },
+  updateAddonPricing(
+    token: string,
+    code: string,
+    body: {
+      monthly_price_idr?: number;
+      discount_3m_percent?: number;
+      discount_6m_percent?: number;
+      discount_12m_percent?: number;
+    },
+  ) {
+    return request(`/platform/pricing/addons/${code}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(body),
+    });
+  },
+  updateTopupPackagePricing(
+    token: string,
+    id: string,
+    body: { price_idr?: number; minutes?: number; discount_percent?: number },
+  ) {
+    return request(`/platform/pricing/topup-packages/${id}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(body),
     });
   },
 };

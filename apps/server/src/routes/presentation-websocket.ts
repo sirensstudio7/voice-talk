@@ -14,6 +14,7 @@ import {
   presentationSlides,
   presentations,
 } from "../db/schema.js";
+import { AI_PRESENTER_CODE, hasActiveAddon } from "../services/addon-entitlement.js";
 import {
   PRESENTER_SHUTDOWN,
   createTextQueue,
@@ -155,6 +156,9 @@ async function handlePresenterSession(
   try {
     userId = verifyUserIdFromToken(token);
     await assertBusinessMember(userId, businessId);
+    if (!(await hasActiveAddon(businessId, AI_PRESENTER_CODE))) {
+      throw new Error("AI Presenter add-on is not active");
+    }
   } catch (err) {
     safeSendJson(socket, {
       type: "error",

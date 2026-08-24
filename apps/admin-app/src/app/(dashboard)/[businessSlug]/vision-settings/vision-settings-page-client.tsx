@@ -19,6 +19,7 @@ import { useAuth } from "@/lib/auth";
 
 const DEFAULT_SETTINGS: VisionSettings = {
   camera_trigger_enabled: false,
+  start_hotkey: "Enter",
   vision_source: "auto",
   greeting_trigger_mode: "presence",
   greeting_delay_seconds: 3,
@@ -201,6 +202,12 @@ export function VisionSettingsPageClient() {
             }
           />
         </div>
+        {!settings.camera_trigger_enabled ? (
+          <p className="text-xs leading-relaxed text-slate-500">
+            With camera trigger off, customers start with Order Now — or a hardware button / keyboard.
+            Set that key on AI Rules.
+          </p>
+        ) : null}
       </section>
 
       {settings.camera_trigger_enabled ? (
@@ -273,6 +280,26 @@ export function VisionSettingsPageClient() {
                   <span className="block text-sm font-medium text-slate-900">Browser camera only</span>
                   <span className="mt-0.5 block text-xs text-slate-500">
                     Phone or tablet demo — no Python sidecar required.
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 has-[:checked]:border-orange-300 has-[:checked]:bg-orange-50">
+                <input
+                  type="radio"
+                  name="vision-source"
+                  value="human"
+                  checked={settings.vision_source === "human"}
+                  disabled={loading}
+                  onChange={() =>
+                    setSettings((current) => ({ ...current, vision_source: "human" }))
+                  }
+                  className="mt-1"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-slate-900">Human (browser)</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">
+                    Face &amp; hand-focused browser detection for richer gesture control. Runs in the
+                    display tab — no Python sidecar required.
                   </span>
                 </span>
               </label>

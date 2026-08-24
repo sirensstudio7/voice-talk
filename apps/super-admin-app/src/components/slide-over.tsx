@@ -78,9 +78,9 @@ export function SlideOver({
             <XMarkIcon className="size-5" />
           </Button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
         {footer ? (
-          <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+          <div className="shrink-0 border-t border-border bg-background/95 px-5 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
             {footer}
           </div>
         ) : null}

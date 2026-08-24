@@ -1,0 +1,2 @@
+ALTER TABLE topup_packages
+  ADD COLUMN IF NOT EXISTS discount_percent INTEGER NOT NULL DEFAULT 0;

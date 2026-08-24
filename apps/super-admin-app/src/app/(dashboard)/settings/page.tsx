@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { EyeIcon, EyeSlashIcon, PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 
 import { PageHeader } from "@/components/ui-blocks";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,56 @@ const AI_MODELS = [
   "gemini-2.0-flash-live-001",
 ];
 
+const TTS_MODELS = [
+  "gemini-2.5-flash-preview-tts",
+  "gemini-3.1-flash-tts-preview",
+  "gemini-2.5-pro-preview-tts",
+];
+
 const VOICE_PROVIDERS = ["gemini", "elevenlabs", "custom"];
+
+const KEY_PROVIDERS = [
+  { id: "elevenlabs", label: "ElevenLabs" },
+  { id: "openai", label: "OpenAI" },
+  { id: "deepgram", label: "Deepgram" },
+  { id: "cartesia", label: "Cartesia" },
+  { id: "azure", label: "Azure Speech" },
+  { id: "playht", label: "PlayHT" },
+  { id: "custom", label: "Custom" },
+] as const;
+
+type ProviderKeyRow = {
+  id: string;
+  provider: string;
+  label: string;
+  key: string;
+  set?: boolean;
+};
+
+function parseProviderKeys(raw: string | undefined): ProviderKeyRow[] {
+  try {
+    const parsed = JSON.parse(raw || "[]") as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as Record<string, unknown>;
+      const id = String(row.id ?? "").trim();
+      const provider = String(row.provider ?? "").trim();
+      if (!id || !provider) return [];
+      return [
+        {
+          id,
+          provider,
+          label: String(row.label ?? ""),
+          key: String(row.key ?? ""),
+          set: row.set === true,
+        },
+      ];
+    });
+  } catch {
+    return [];
+  }
+}
 
 const inputClass =
   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60";
@@ -47,6 +97,92 @@ function Field({
         <p className="mt-0.5 min-h-10 text-xs text-muted-foreground">{hint}</p>
       ) : null}
       <div className="mt-1.5">{children}</div>
+    </div>
+  );
+}
+
+function providerLabel(provider: string, customLabel: string) {
+  if (provider === "custom") return customLabel.trim() || "Custom";
+  return KEY_PROVIDERS.find((item) => item.id === provider)?.label ?? provider;
+}
+
+function ProviderKeyRowFields({
+  row,
+  canWrite,
+  onChange,
+  onRemove,
+}: {
+  row: ProviderKeyRow;
+  canWrite: boolean;
+  onChange: (patch: Partial<ProviderKeyRow>) => void;
+  onRemove: () => void;
+}) {
+  const [visible, setVisible] = useState(false);
+  const masked = /^•+/.test(row.key);
+  const configured = row.set === true || masked;
+  return (
+    <div className="grid gap-2 rounded-xl border border-border bg-muted/20 p-3 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_auto]">
+      <div className="flex flex-col gap-2">
+        <select
+          className={selectClass}
+          value={KEY_PROVIDERS.some((item) => item.id === row.provider) ? row.provider : "custom"}
+          disabled={!canWrite}
+          onChange={(e) => onChange({ provider: e.target.value })}
+        >
+          {KEY_PROVIDERS.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        {row.provider === "custom" ? (
+          <input
+            className={inputClass}
+            value={row.label}
+            disabled={!canWrite}
+            placeholder="Provider name"
+            onChange={(e) => onChange({ label: e.target.value })}
+          />
+        ) : null}
+      </div>
+      <div className="relative min-w-0">
+        <input
+          type={visible && !masked ? "text" : "password"}
+          autoComplete="off"
+          spellCheck={false}
+          className={`${inputClass} pr-10 font-mono`}
+          value={row.key}
+          disabled={!canWrite}
+          placeholder={configured ? "Key saved — paste a new one to replace" : "Paste API key"}
+          onChange={(e) => onChange({ key: e.target.value })}
+        />
+        <button
+          type="button"
+          className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40"
+          disabled={!canWrite || !row.key || masked}
+          onClick={() => setVisible((prev) => !prev)}
+          aria-label={visible ? "Hide API key" : "Show API key"}
+        >
+          {visible ? <EyeSlashIcon className="size-4" /> : <EyeIcon className="size-4" />}
+        </button>
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          {configured
+            ? `${providerLabel(row.provider, row.label)} key is saved.`
+            : "Not saved yet."}
+        </p>
+      </div>
+      {canWrite ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="self-start"
+          onClick={onRemove}
+          aria-label={`Remove ${providerLabel(row.provider, row.label)} key`}
+        >
+          <TrashIcon className="size-4" />
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -103,6 +239,46 @@ export default function SettingsPage() {
     setMessage(null);
   }
 
+  const providerKeys = useMemo(
+    () => parseProviderKeys(settings.provider_api_keys),
+    [settings.provider_api_keys],
+  );
+
+  function setProviderKeys(next: ProviderKeyRow[]) {
+    setValue("provider_api_keys", JSON.stringify(next));
+  }
+
+  function addProviderKey() {
+    const used = new Set(providerKeys.map((row) => row.provider));
+    const nextProvider = KEY_PROVIDERS.find((item) => !used.has(item.id))?.id ?? "custom";
+    setProviderKeys([
+      ...providerKeys,
+      {
+        id: crypto.randomUUID(),
+        provider: nextProvider,
+        label: nextProvider === "custom" ? "" : providerLabel(nextProvider, ""),
+        key: "",
+      },
+    ]);
+  }
+
+  function updateProviderKey(id: string, patch: Partial<ProviderKeyRow>) {
+    setProviderKeys(
+      providerKeys.map((row) => {
+        if (row.id !== id) return row;
+        const next = { ...row, ...patch };
+        if (patch.provider && patch.provider !== "custom") {
+          next.label = providerLabel(patch.provider, "");
+        }
+        return next;
+      }),
+    );
+  }
+
+  function removeProviderKey(id: string) {
+    setProviderKeys(providerKeys.filter((row) => row.id !== id));
+  }
+
   function validateFlags(raw: string): boolean {
     const trimmed = raw.trim();
     if (!trimmed) {
@@ -130,14 +306,21 @@ export default function SettingsPage() {
 
     setSaving(true);
     try {
-      const payload = {
+      const payload: Record<string, string> = {
         default_ai_model: settings.default_ai_model ?? "",
+        default_tts_model: settings.default_tts_model ?? "",
         default_voice_provider: settings.default_voice_provider ?? "",
         storage_quota_mb: settings.storage_quota_mb ?? "1024",
         manual_mrr: settings.manual_mrr ?? "0",
+        usd_idr_rate: settings.usd_idr_rate ?? "",
         maintenance_mode: maintenanceOn ? "true" : "false",
         require_registration_approval: approvalRequired ? "true" : "false",
         feature_flags: (settings.feature_flags ?? "{}").trim() || "{}",
+        provider_api_keys: JSON.stringify(
+          parseProviderKeys(settings.provider_api_keys)
+            .filter((row) => row.key.trim() || row.set)
+            .map(({ id, provider, label, key }) => ({ id, provider, label, key })),
+        ),
       };
       const next = await api.updateSettings(token, payload);
       setSettings(next);
@@ -165,6 +348,14 @@ export default function SettingsPage() {
     }
     return AI_MODELS;
   }, [settings.default_ai_model]);
+
+  const ttsOptions = useMemo(() => {
+    const current = settings.default_tts_model;
+    if (current && !TTS_MODELS.includes(current)) {
+      return [current, ...TTS_MODELS];
+    }
+    return TTS_MODELS;
+  }, [settings.default_tts_model]);
 
   const voiceOptions = useMemo(() => {
     const current = settings.default_voice_provider;
@@ -213,10 +404,10 @@ export default function SettingsPage() {
             <CardHeader className="border-b border-border py-5">
               <CardTitle>AI defaults</CardTitle>
               <CardDescription>
-                Default model and voice provider applied to new workspaces.
+                Default live model, TTS, and voice provider applied to new workspaces.
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-5 py-5 sm:grid-cols-2">
+            <CardContent className="grid gap-5 py-5 sm:grid-cols-2 lg:grid-cols-3">
               <Field
                 label="Default AI model"
                 hint="Used when a workspace has not set a custom model."
@@ -228,6 +419,23 @@ export default function SettingsPage() {
                   onChange={(e) => setValue("default_ai_model", e.target.value)}
                 >
                   {modelOptions.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field
+                label="Default TTS model"
+                hint="Gemini speech model for LIVE host, presenter, and previews."
+              >
+                <select
+                  className={selectClass}
+                  value={settings.default_tts_model || TTS_MODELS[0]}
+                  disabled={!canWrite}
+                  onChange={(e) => setValue("default_tts_model", e.target.value)}
+                >
+                  {ttsOptions.map((model) => (
                     <option key={model} value={model}>
                       {model}
                     </option>
@@ -251,6 +459,45 @@ export default function SettingsPage() {
                   ))}
                 </select>
               </Field>
+            </CardContent>
+          </Card>
+
+          <Card className="gap-0 py-0">
+            <CardHeader className="flex flex-row items-start justify-between gap-3 border-b border-border py-5">
+              <div className="space-y-1.5">
+                <CardTitle>Provider API keys</CardTitle>
+                <CardDescription>
+                  Add a key per speech provider. Gemini still uses the server environment key.
+                </CardDescription>
+              </div>
+              {canWrite ? (
+                <Button type="button" variant="outline" size="sm" onClick={addProviderKey}>
+                  <PlusIcon className="size-4" />
+                  Add API key
+                </Button>
+              ) : null}
+            </CardHeader>
+            <CardContent className="py-5">
+              {providerKeys.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center">
+                  <p className="text-sm font-medium">No provider keys yet</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Add ElevenLabs, Deepgram, or any other API key you want to use later.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {providerKeys.map((row) => (
+                    <ProviderKeyRowFields
+                      key={row.id}
+                      row={row}
+                      canWrite={canWrite}
+                      onChange={(patch) => updateProviderKey(row.id, patch)}
+                      onRemove={() => removeProviderKey(row.id)}
+                    />
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -294,6 +541,21 @@ export default function SettingsPage() {
                     onChange={(e) => setValue("manual_mrr", e.target.value)}
                   />
                 </div>
+              </Field>
+              <Field
+                label="USD to IDR rate"
+                hint="Leave empty to use today's live USD/IDR market rate. Fill only to lock a fixed number."
+              >
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  className={inputClass}
+                  value={settings.usd_idr_rate ?? ""}
+                  disabled={!canWrite}
+                  placeholder="Live rate"
+                  onChange={(e) => setValue("usd_idr_rate", e.target.value)}
+                />
               </Field>
             </CardContent>
           </Card>

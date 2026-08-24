@@ -45,6 +45,28 @@ async function migrate() {
     "030_ai_presenter.sql",
     "031_presentation_slide_image.sql",
     "032_ai_rules_voice_gender.sql",
+    "033_presentation_thumbnail.sql",
+    "034_presentation_knowledge.sql",
+    "035_lucky_spin.sql",
+    "036_lucky_spin_odds_mode.sql",
+    "037_lucky_spin_ai_voice.sql",
+    "038_lucky_spin_winner_prize_snapshot.sql",
+    "039_ai_presenter_addon.sql",
+    "040_campaign_banner.sql",
+    "041_campaign_banner_storage.sql",
+    "042_vision_start_hotkey.sql",
+    "043_ai_rules_alex_default.sql",
+    "044_voice_minutes.sql",
+    "045_addon_monthly_price.sql",
+    "046_pricing_discounts.sql",
+    "047_topup_discount.sql",
+    "048_close_orphan_voice_sessions.sql",
+    "049_language_pack_addon.sql",
+    "050_live_addon.sql",
+    "051_live_knowledge.sql",
+    "052_live_only_products.sql",
+    "053_live_session_orders.sql",
+    "054_live_order_customer_details.sql",
   ];
 
   for (const file of migrationFiles) {
@@ -84,6 +106,46 @@ async function migrate() {
         try {
           await sql.unsafe(tablesOnly);
           console.log(`Applied ${file} (schema only; skipped Supabase storage policies).`);
+          continue;
+        } catch (inner) {
+          const innerCode =
+            inner && typeof inner === "object" && "code" in inner
+              ? String((inner as { code?: string }).code)
+              : "";
+          if (innerCode === "42701" || innerCode === "42P07" || innerCode === "23514") {
+            console.log(`Skipped ${file} (${innerCode}; already applied or conflicting).`);
+            continue;
+          }
+          throw inner;
+        }
+      }
+      if (file === "035_lucky_spin.sql") {
+        const tablesOnly = schema.split("-- Lucky spin prize bucket")[0] ?? schema;
+        try {
+          await sql.unsafe(tablesOnly);
+          console.log(`Applied ${file} (schema only; skipped Supabase storage bucket).`);
+          continue;
+        } catch (inner) {
+          const innerCode =
+            inner && typeof inner === "object" && "code" in inner
+              ? String((inner as { code?: string }).code)
+              : "";
+          if (innerCode === "42701" || innerCode === "42P07" || innerCode === "23514") {
+            console.log(`Skipped ${file} (${innerCode}; already applied or conflicting).`);
+            continue;
+          }
+          throw inner;
+        }
+      }
+      if (file === "041_campaign_banner_storage.sql") {
+        console.log(`Skipped ${file} (Supabase storage policies; not needed locally).`);
+        continue;
+      }
+      if (file === "040_campaign_banner.sql") {
+        const tablesOnly = schema.split("-- Campaign banner images bucket")[0] ?? schema;
+        try {
+          await sql.unsafe(tablesOnly);
+          console.log(`Applied ${file} (schema only; skipped Supabase storage bucket).`);
           continue;
         } catch (inner) {
           const innerCode =

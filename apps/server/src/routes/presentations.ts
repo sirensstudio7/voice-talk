@@ -9,6 +9,11 @@ import {
 } from "../auth/jwt.js";
 import { db } from "../db/client.js";
 import {
+  AI_PRESENTER_CODE,
+  assertLanguageAllowed,
+  hasActiveAddon,
+} from "../services/addon-entitlement.js";
+import {
   presentationAudioAssets,
   presentationFiles,
   presentationKnowledgeEntries,
@@ -43,6 +48,20 @@ import {
   PRESENTATION_BUCKET,
   uploadToStorage,
 } from "../storage/index.js";
+
+async function requirePresenterAccess(
+  request: Parameters<typeof requireBusinessAccess>[0],
+  businessId: string,
+): Promise<void> {
+  await requireBusinessAccess(request, businessId);
+  if (!(await hasActiveAddon(businessId, AI_PRESENTER_CODE))) {
+    const err = new Error("AI Presenter add-on is not active") as Error & {
+      statusCode: number;
+    };
+    err.statusCode = 403;
+    throw err;
+  }
+}
 
 function presentationOut(row: typeof presentations.$inferSelect) {
   return {
@@ -171,7 +190,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
   app.get("/admin/businesses/:businessId/presentations", async (request, reply) => {
     try {
       const { businessId } = request.params as { businessId: string };
-      await requireBusinessAccess(request, businessId);
+      await requirePresenterAccess(request, businessId);
       const rows = await db
         .select()
         .from(presentations)
@@ -187,7 +206,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
   app.post("/admin/businesses/:businessId/presentations", async (request, reply) => {
     try {
       const { businessId } = request.params as { businessId: string };
-      await requireBusinessAccess(request, businessId);
+      await requirePresenterAccess(request, businessId);
       const userId = getAuthUserId(request);
       const body = request.body as Record<string, unknown>;
       const title = String(body.title ?? "").trim();
@@ -200,7 +219,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           createdBy: userId,
           title,
           description: String(body.description ?? ""),
-          language: String(body.language ?? "en"),
+          language: await assertLanguageAllowed(businessId, String(body.language ?? "en")),
           category: String(body.category ?? ""),
           status: "draft",
         })
@@ -217,7 +236,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         businessId: string;
         presentationId: string;
       };
-      await requireBusinessAccess(request, businessId);
+      await requirePresenterAccess(request, businessId);
       const row = await loadPresentationForBusiness(businessId, presentationId);
       if (!row) return reply.status(404).send({ detail: "Presentation not found" });
 
@@ -270,7 +289,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           businessId: string;
           presentationId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
         if (!row) return reply.status(404).send({ detail: "Presentation not found" });
         const knowledge = await listPresentationKnowledge(presentationId);
@@ -289,7 +308,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           businessId: string;
           presentationId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
         if (!row) return reply.status(404).send({ detail: "Presentation not found" });
 
@@ -324,7 +343,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           presentationId: string;
           entryId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
         if (!row) return reply.status(404).send({ detail: "Presentation not found" });
 
@@ -367,7 +386,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           presentationId: string;
           entryId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
         if (!row) return reply.status(404).send({ detail: "Presentation not found" });
 
@@ -396,14 +415,16 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         businessId: string;
         presentationId: string;
       };
-      await requireBusinessAccess(request, businessId);
+      await requirePresenterAccess(request, businessId);
       const row = await loadPresentationForBusiness(businessId, presentationId);
       if (!row) return reply.status(404).send({ detail: "Presentation not found" });
       const body = request.body as Record<string, unknown>;
       const updates: Partial<typeof presentations.$inferInsert> = { updatedAt: new Date() };
       if (body.title !== undefined) updates.title = String(body.title);
       if (body.description !== undefined) updates.description = String(body.description);
-      if (body.language !== undefined) updates.language = String(body.language);
+      if (body.language !== undefined) {
+        updates.language = await assertLanguageAllowed(businessId, String(body.language));
+      }
       if (body.category !== undefined) updates.category = String(body.category);
       const [updated] = await db
         .update(presentations)
@@ -422,7 +443,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         businessId: string;
         presentationId: string;
       };
-      await requireBusinessAccess(request, businessId);
+      await requirePresenterAccess(request, businessId);
       const row = await loadPresentationForBusiness(businessId, presentationId);
       if (!row) return reply.status(404).send({ detail: "Presentation not found" });
       await db
@@ -443,7 +464,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           businessId: string;
           presentationId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
         if (!row) return reply.status(404).send({ detail: "Presentation not found" });
 
@@ -517,7 +538,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           businessId: string;
           presentationId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
         if (!row) return reply.status(404).send({ detail: "Presentation not found" });
 
@@ -555,7 +576,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           presentationId: string;
           assetId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
         if (!row) return reply.status(404).send({ detail: "Presentation not found" });
 
@@ -600,7 +621,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           businessId: string;
           presentationId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
         if (!row) return reply.status(404).send({ detail: "Presentation not found" });
 
@@ -639,7 +660,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           businessId: string;
           presentationId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
         if (!row) return reply.status(404).send({ detail: "Presentation not found" });
 
@@ -660,7 +681,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           businessId: string;
           presentationId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
         if (!row) return reply.status(404).send({ detail: "Presentation not found" });
         enqueuePresentationProcessing(presentationId);
@@ -679,7 +700,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           businessId: string;
           presentationId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
         if (!row) return reply.status(404).send({ detail: "Presentation not found" });
         if (row.status !== "ready" && row.status !== "completed") {
@@ -715,7 +736,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
   app.get("/admin/businesses/:businessId/sessions", async (request, reply) => {
     try {
       const { businessId } = request.params as { businessId: string };
-      await requireBusinessAccess(request, businessId);
+      await requirePresenterAccess(request, businessId);
       const rows = await db
         .select()
         .from(presentationSessions)
@@ -733,7 +754,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         businessId: string;
         sessionId: string;
       };
-      await requireBusinessAccess(request, businessId);
+      await requirePresenterAccess(request, businessId);
       const bundle = await getSessionBundle(sessionId);
       if (!bundle || bundle.session.businessId !== businessId) {
         return reply.status(404).send({ detail: "Session not found" });
@@ -781,7 +802,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           businessId: string;
           sessionId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const session = await db.query.presentationSessions.findFirst({
           where: eq(presentationSessions.id, sessionId),
         });
@@ -810,7 +831,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           businessId: string;
           sessionId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const session = await db.query.presentationSessions.findFirst({
           where: eq(presentationSessions.id, sessionId),
         });
@@ -836,7 +857,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           businessId: string;
           sessionId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const bundle = await getSessionBundle(sessionId);
         if (!bundle || bundle.session.businessId !== businessId) {
           return reply.status(404).send({ detail: "Session not found" });
@@ -880,7 +901,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           businessId: string;
           sessionId: string;
         };
-        await requireBusinessAccess(request, businessId);
+        await requirePresenterAccess(request, businessId);
         const body = request.body as { audience_count?: number };
         const [updated] = await db
           .update(presentationSessions)

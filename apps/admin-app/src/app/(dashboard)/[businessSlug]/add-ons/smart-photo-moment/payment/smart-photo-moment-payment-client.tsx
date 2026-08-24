@@ -20,7 +20,7 @@ import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 
-const MONTHLY_IDR = 199_000;
+const FALLBACK_MONTHLY_IDR = 199_000;
 
 const DURATIONS = [
   { months: 1, label: "1 month", discount: 0 },
@@ -110,8 +110,8 @@ function formatIdr(amount: number) {
   return `Rp${amount.toLocaleString("id-ID")}`;
 }
 
-function priceForMonths(months: number, discount: number) {
-  const gross = MONTHLY_IDR * months;
+function priceForMonths(monthlyIdr: number, months: number, discount: number) {
+  const gross = monthlyIdr * months;
   return Math.round(gross * (1 - discount));
 }
 
@@ -178,7 +178,16 @@ export function SmartPhotoMomentPaymentClient() {
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState<"active" | "pending" | null>(null);
   const [checking, setChecking] = useState(true);
+  const [monthlyIdr, setMonthlyIdr] = useState(FALLBACK_MONTHLY_IDR);
+  const [durationOff, setDurationOff] = useState({ 3: 0.05, 6: 0.1, 12: 0.15 });
   const [transactionCode] = useState(() => createTransactionCode());
+
+  const discountFor = (months: number) => {
+    if (months === 3) return durationOff[3];
+    if (months === 6) return durationOff[6];
+    if (months === 12) return durationOff[12];
+    return 0;
+  };
 
   const needsProof = paymentMethod === "bank_transfer" || paymentMethod === "qris";
 
@@ -202,6 +211,12 @@ export function SmartPhotoMomentPaymentClient() {
       try {
         const status = await api.getAddonStatus(token, business.id);
         if (cancelled) return;
+        if (status.addon.monthly_price_idr) setMonthlyIdr(status.addon.monthly_price_idr);
+        setDurationOff({
+          3: (status.addon.discount_3m_percent ?? 5) / 100,
+          6: (status.addon.discount_6m_percent ?? 10) / 100,
+          12: (status.addon.discount_12m_percent ?? 15) / 100,
+        });
         if (status.subscription_status === "active") setBlocked("active");
         else if (status.pending_request) setBlocked("pending");
         else setBlocked(null);
@@ -220,8 +235,8 @@ export function SmartPhotoMomentPaymentClient() {
 
   const selectedDuration = DURATIONS.find((d) => d.months === durationMonths) ?? DURATIONS[3];
   const total = useMemo(
-    () => priceForMonths(selectedDuration.months, selectedDuration.discount),
-    [selectedDuration],
+    () => priceForMonths(monthlyIdr, selectedDuration.months, discountFor(selectedDuration.months)),
+    [monthlyIdr, selectedDuration, durationOff],
   );
   const monthlyEquivalent = Math.round(total / selectedDuration.months);
 
@@ -324,7 +339,7 @@ export function SmartPhotoMomentPaymentClient() {
           <h2 className="text-sm font-semibold text-slate-900">Duration</h2>
           <div className="grid gap-2 sm:grid-cols-2">
             {DURATIONS.map((option) => {
-              const amount = priceForMonths(option.months, option.discount);
+              const amount = priceForMonths(monthlyIdr, option.months, discountFor(option.months));
               const selected = durationMonths === option.months;
               return (
                 <button
@@ -351,8 +366,8 @@ export function SmartPhotoMomentPaymentClient() {
                   </p>
                   <p className="mt-0.5 text-xs text-slate-500">
                     {formatIdr(Math.round(amount / option.months))}/mo
-                    {option.discount > 0
-                      ? ` · save ${Math.round(option.discount * 100)}%`
+                    {discountFor(option.months) > 0
+                      ? ` · save ${Math.round(discountFor(option.months) * 100)}%`
                       : null}
                   </p>
                 </button>

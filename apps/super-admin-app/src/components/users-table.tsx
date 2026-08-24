@@ -101,8 +101,8 @@ export function UsersTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card">
-      <table className="min-w-full text-left text-sm">
+    <div className="max-w-full overflow-x-auto rounded-xl border border-border bg-card">
+      <table className="w-full min-w-[1100px] text-left text-sm">
         <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
             <th className="px-4 py-3 font-medium">Name</th>
@@ -131,8 +131,8 @@ export function UsersTable({
               <td className="px-4 py-3">
                 <StatusBadge status={user.status} />
               </td>
-              <td className="px-4 py-3 text-muted-foreground">{formatDate(user.created_at)}</td>
-              <td className="px-4 py-3 text-muted-foreground">{formatDate(user.last_login_at)}</td>
+              <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(user.created_at)}</td>
+              <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(user.last_login_at)}</td>
               {showActions ? (
                 <td className="px-4 py-3">
                   {user.status === "pending" && token && onUserUpdated ? (

@@ -11,10 +11,12 @@ import { cn } from "@/lib/cn";
 export function StatCard({
   label,
   value,
+  hint,
   className,
 }: {
   label: string;
   value: string;
+  hint?: string;
   className?: string;
 }) {
   return (
@@ -24,6 +26,7 @@ export function StatCard({
         <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
           {value}
         </CardTitle>
+        {hint ? <p className="text-xs text-muted-foreground tabular-nums">{hint}</p> : null}
       </CardHeader>
     </Card>
   );

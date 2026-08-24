@@ -195,8 +195,8 @@ export function SmartPhotoMomentOverlay({
 
     const srcW = video.videoWidth || 1080;
     const srcH = video.videoHeight || 1920;
-    // Crop center to portrait 3:4 for the souvenir photo.
-    const targetRatio = 3 / 4;
+    // Crop center to Instagram Story 9:16 for the souvenir photo + frame.
+    const targetRatio = 9 / 16;
     let cropW = srcW;
     let cropH = srcW / targetRatio;
     if (cropH > srcH) {
@@ -279,7 +279,7 @@ export function SmartPhotoMomentOverlay({
             facingMode: "user",
             width: { ideal: 1080 },
             height: { ideal: 1920 },
-            aspectRatio: { ideal: 3 / 4 },
+            aspectRatio: { ideal: 9 / 16 },
           },
           audio: false,
         });
@@ -420,12 +420,12 @@ export function SmartPhotoMomentOverlay({
       ) : null}
 
       {(phase === "camera" || phase === "countdown") && (
-        <div className="relative mx-auto flex h-[min(82dvh,720px)] w-full max-w-[min(100%,420px)] flex-col overflow-hidden rounded-3xl bg-black shadow-2xl">
+        <div className="relative mx-auto aspect-[9/16] h-[min(82dvh,720px)] w-auto max-w-full overflow-hidden rounded-3xl bg-black shadow-2xl">
           <video
             ref={videoRef}
             playsInline
             muted
-            className="h-full w-full object-cover"
+            className="absolute inset-0 h-full w-full object-cover"
             style={{ transform: "scaleX(-1)" }}
           />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -460,7 +460,7 @@ export function SmartPhotoMomentOverlay({
           <img
             src={previewUrl}
             alt="Preview"
-            className="mx-auto max-h-[min(60dvh,520px)] rounded-2xl object-contain"
+            className="mx-auto aspect-[9/16] max-h-[min(60dvh,520px)] w-auto rounded-2xl object-cover"
           />
           <p className="mt-4 text-xl font-semibold text-slate-900">Foto berhasil diambil!</p>
           <p className="mt-2 text-sm text-slate-500">Menyiapkan link download…</p>

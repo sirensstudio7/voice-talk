@@ -2,19 +2,59 @@ import type { AiRules, Business, KnowledgeEntry, Product } from "../db/schema.js
 import { getBusinessCapabilities, getVoicePresetSpeakingStyle } from "@voicetalk/shared";
 import { effectivePrice } from "./pricing.js";
 
+function languageLock(instruction: string, extra = "") {
+  return extra ? `${instruction} ${extra}` : instruction;
+}
+
 const LANGUAGE_PRESETS_ORDERING: Record<string, string> = {
   id: "Selalu gunakan Bahasa Indonesia saat berbicara dengan pelanggan. Gunakan bahasa yang natural, sopan, dan ramah seperti kasir di Indonesia. Jika pelanggan berbicara dalam bahasa lain, tetap balas dalam Bahasa Indonesia kecuali mereka meminta sebaliknya.",
   en: "Always speak English with customers. Use natural, polite, and friendly language like a real cashier. If the customer speaks another language, still reply in English unless they ask otherwise.",
+  ru: "Всегда говорите с клиентами по-русски. Используйте естественный, вежливый и дружелюбный язык, как кассир. Если клиент говорит на другом языке, всё равно отвечайте по-русски, пока он не попросит иначе.",
+  zh: "与顾客交谈时始终使用简体中文。语气自然、礼貌、友好，像真正的收银员。如果顾客使用其他语言，仍用中文回复，除非对方要求换语言。",
+  uz: "Mijozlar bilan doimo o‘zbek tilida gaplashing. Tabiiy, xushmuomala va do‘stona tilda, kassir kabi. Agar mijoz boshqa tilda gapirsa, ular so‘ramaguncha o‘zbekcha javob bering.",
+  ja: "お客様には常に日本語で話してください。自然で丁寧、親しみやすいレジ係のように。お客様が他の言語を使っても、別の言語を頼まれない限り日本語で答えてください。",
+  ko: "고객과 항상 한국어로 대화하세요. 자연스럽고 공손하며 친근한 캐셔처럼 말하세요. 고객이 다른 언어를 써도 바꾸라고 하기 전에는 한국어로 답하세요.",
+  ar: "تحدث مع العملاء دائمًا بالعربية. استخدم لغة طبيعية ومهذبة وودودة مثل أمين الصندوق. إذا تحدث العميل بلغة أخرى فاستمر بالعربية ما لم يطلب غير ذلك.",
+  th: "พูดกับลูกค้าเป็นภาษาไทยเสมอ ใช้น้ำเสียงเป็นธรรมชาติ สุภาพ และเป็นมิตรเหมือนพนักงานแคชเชียร์ หากลูกค้าพูดภาษาอื่น ให้ตอบเป็นภาษาไทยจนกว่าจะขอให้เปลี่ยน",
+  vi: "Luôn nói tiếng Việt với khách. Dùng lời tự nhiên, lịch sự và thân thiện như thu ngân. Nếu khách nói ngôn ngữ khác, vẫn trả lời tiếng Việt trừ khi họ yêu cầu đổi.",
+  ms: "Sentiasa bercakap dalam Bahasa Melayu dengan pelanggan. Guna bahasa semula jadi, sopan dan mesra seperti juruwang. Jika pelanggan bercakap bahasa lain, tetap jawab dalam Bahasa Melayu kecuali mereka minta sebaliknya.",
+  tr: "Müşterilerle her zaman Türkçe konuş. Doğal, nazik ve samimi bir kasiyer gibi konuş. Müşteri başka dil konuşursa, istemedikçe Türkçe yanıtla.",
 };
+
+const FAQ_NO_MENU =
+  "Do not steer the conversation toward coffee, food, or menu orders unless that is part of this business.";
 
 const LANGUAGE_PRESETS_FAQ: Record<string, string> = {
   id: "Selalu gunakan Bahasa Indonesia saat berbicara dengan pelanggan. Gunakan bahasa yang natural, sopan, dan ramah seperti agen layanan pelanggan. Jika pelanggan berbicara dalam bahasa lain, tetap balas dalam Bahasa Indonesia kecuali mereka meminta sebaliknya. Jangan mengarahkan percakapan ke pesanan kopi, makanan, atau menu kecuali itu memang bagian dari layanan bisnis ini.",
-  en: "Always speak English with customers. Use natural, polite, and friendly language like a customer service agent. If the customer speaks another language, still reply in English unless they ask otherwise. Do not steer the conversation toward coffee, food, or menu orders unless that is part of this business.",
+  en: languageLock(
+    "Always speak English with customers. Use natural, polite, and friendly language like a customer service agent. If the customer speaks another language, still reply in English unless they ask otherwise.",
+    FAQ_NO_MENU,
+  ),
+  ru: languageLock(LANGUAGE_PRESETS_ORDERING.ru!, FAQ_NO_MENU),
+  zh: languageLock(LANGUAGE_PRESETS_ORDERING.zh!, FAQ_NO_MENU),
+  uz: languageLock(LANGUAGE_PRESETS_ORDERING.uz!, FAQ_NO_MENU),
+  ja: languageLock(LANGUAGE_PRESETS_ORDERING.ja!, FAQ_NO_MENU),
+  ko: languageLock(LANGUAGE_PRESETS_ORDERING.ko!, FAQ_NO_MENU),
+  ar: languageLock(LANGUAGE_PRESETS_ORDERING.ar!, FAQ_NO_MENU),
+  th: languageLock(LANGUAGE_PRESETS_ORDERING.th!, FAQ_NO_MENU),
+  vi: languageLock(LANGUAGE_PRESETS_ORDERING.vi!, FAQ_NO_MENU),
+  ms: languageLock(LANGUAGE_PRESETS_ORDERING.ms!, FAQ_NO_MENU),
+  tr: languageLock(LANGUAGE_PRESETS_ORDERING.tr!, FAQ_NO_MENU),
 };
 
 const LANGUAGE_PRESETS_BOOKING: Record<string, string> = {
   id: "Selalu gunakan Bahasa Indonesia saat berbicara dengan pelanggan. Gunakan bahasa yang natural, sopan, dan ramah seperti resepsionis. Jika pelanggan berbicara dalam bahasa lain, tetap balas dalam Bahasa Indonesia kecuali mereka meminta sebaliknya.",
   en: "Always speak English with customers. Use natural, polite, and friendly language like a receptionist. If the customer speaks another language, still reply in English unless they ask otherwise.",
+  ru: "Всегда говорите с клиентами по-русски. Используйте естественный, вежливый и дружелюбный язык, как администратор. Если клиент говорит на другом языке, всё равно отвечайте по-русски, пока он не попросит иначе.",
+  zh: "与顾客交谈时始终使用简体中文。语气自然、礼貌、友好，像真正的前台。如果顾客使用其他语言，仍用中文回复，除非对方要求换语言。",
+  uz: "Mijozlar bilan doimo o‘zbek tilida gaplashing. Tabiiy, xushmuomala va do‘stona tilda, qabulxona xodimi kabi. Agar mijoz boshqa tilda gapirsa, ular so‘ramaguncha o‘zbekcha javob bering.",
+  ja: "お客様には常に日本語で話してください。自然で丁寧、親しみやすい受付係のように。お客様が他の言語を使っても、別の言語を頼まれない限り日本語で答えてください。",
+  ko: "고객과 항상 한국어로 대화하세요. 자연스럽고 공손하며 친근한 리셉셔니스트처럼 말하세요. 고객이 다른 언어를 써도 바꾸라고 하기 전에는 한국어로 답하세요.",
+  ar: "تحدث مع العملاء دائمًا بالعربية. استخدم لغة طبيعية ومهذبة وودودة مثل موظف الاستقبال. إذا تحدث العميل بلغة أخرى فاستمر بالعربية ما لم يطلب غير ذلك.",
+  th: "พูดกับลูกค้าเป็นภาษาไทยเสมอ ใช้น้ำเสียงเป็นธรรมชาติ สุภาพ และเป็นมิตรเหมือนพนักงานต้อนรับ หากลูกค้าพูดภาษาอื่น ให้ตอบเป็นภาษาไทยจนกว่าจะขอให้เปลี่ยน",
+  vi: "Luôn nói tiếng Việt với khách. Dùng lời tự nhiên, lịch sự và thân thiện như lễ tân. Nếu khách nói ngôn ngữ khác, vẫn trả lời tiếng Việt trừ khi họ yêu cầu đổi.",
+  ms: "Sentiasa bercakap dalam Bahasa Melayu dengan pelanggan. Guna bahasa semula jadi, sopan dan mesra seperti resepsionis. Jika pelanggan bercakap bahasa lain, tetap jawab dalam Bahasa Melayu kecuali mereka minta sebaliknya.",
+  tr: "Müşterilerle her zaman Türkçe konuş. Doğal, nazik ve samimi bir resepsiyonist gibi konuş. Müşteri başka dil konuşursa, istemedikçe Türkçe yanıtla.",
 };
 
 const TONE_PRESETS_ORDERING: Record<string, Record<string, string>> = {
@@ -183,7 +223,7 @@ function resolveFoodCheckoutClosing(
   }
   return language === "en" ? FOOD_CHECKOUT_CLOSING_EN : FOOD_CHECKOUT_CLOSING_ID;
 }
-const DEFAULT_ASSISTANT_NAME = "Lorescale";
+const DEFAULT_ASSISTANT_NAME = "Alex";
 
 export type BusinessWithRelations = Business & {
   products: Product[];
@@ -192,6 +232,12 @@ export type BusinessWithRelations = Business & {
 };
 
 export function getActiveProducts(business: BusinessWithRelations): Product[] {
+  return [...business.products]
+    .filter((p) => p.isActive && !p.liveOnly)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+}
+
+export function getSellableProducts(business: BusinessWithRelations): Product[] {
   return [...business.products]
     .filter((p) => p.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
@@ -491,11 +537,12 @@ export function buildSystemInstruction(
     : faqOnly
       ? LANGUAGE_PRESETS_FAQ
       : LANGUAGE_PRESETS_ORDERING;
-  const tonePresets = (bookingEnabled
+  const toneTable = bookingEnabled
     ? TONE_PRESETS_BOOKING
     : faqOnly
       ? TONE_PRESETS_FAQ
-      : TONE_PRESETS_ORDERING)[language]!;
+      : TONE_PRESETS_ORDERING;
+  const tonePresets = toneTable[language] ?? toneTable.en!;
 
   const defaultPersonality =
     language === "en"

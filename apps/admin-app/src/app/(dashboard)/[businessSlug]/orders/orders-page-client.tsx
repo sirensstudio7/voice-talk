@@ -240,6 +240,15 @@ function OrderRow({
                   Name not collected
                 </p>
               )}
+              {order.customer_phone ? (
+                <p className="mt-1 text-xs text-slate-500">{order.customer_phone}</p>
+              ) : null}
+              {order.customer_address ? (
+                <p className="mt-1 text-xs text-slate-500">{order.customer_address}</p>
+              ) : null}
+              {order.customer_notes ? (
+                <p className="mt-1 text-xs text-slate-500">{order.customer_notes}</p>
+              ) : null}
               <p className="mt-1 text-xs text-slate-400">
                 {formatOrderTimestamp(order.created_at)}
                 {relative ? ` · ${relative}` : null}

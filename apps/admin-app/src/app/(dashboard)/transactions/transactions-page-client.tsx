@@ -100,7 +100,7 @@ export function TransactionsPageClient() {
                     ) : null}
                   </td>
                   <td className="px-4 py-3 capitalize text-slate-600">
-                    {item.type === "addon" ? "Add-on" : "Plan"}
+                    {item.type === "addon" ? "Add-on" : item.type === "topup" ? "Minutes" : "Plan"}
                   </td>
                   <td className="px-4 py-3">
                     <span

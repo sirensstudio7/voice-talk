@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { LorescaleHero } from "@/components/lorescale-hero";
@@ -8,6 +8,18 @@ import { ExperienceBackground } from "@/components/experience-background";
 import { AppointmentBookingPanelRoot } from "@/components/appointment-booking-panel";
 import { CheckoutPanel } from "@/components/basket-panel";
 import { FlyToBasketLayer } from "@/components/fly-to-basket";
+import {
+  CampaignSlider,
+  shouldShowCampaignBanner,
+} from "@/components/campaign-banner/campaign-slider";
+import {
+  LuckySpinWidget,
+  LuckySpinWinCard,
+  LUCKY_SPIN_MINI_HERO_FRAME_CLASS,
+  LUCKY_SPIN_WIN_CARD_FRAME_CLASS,
+  shouldShowLuckySpin,
+  type LuckySpinWinResult,
+} from "@/components/lucky-spin/lucky-spin-widget";
 import { SmartPhotoMomentOverlay, shouldOfferPhotoMoment } from "@/components/photo/smart-photo-moment-overlay";
 import { StoreMenuPanelRoot } from "@/components/store-menu-panel";
 import { BottomControls, ExperienceHeader } from "@/components/voice-controls";
@@ -90,6 +102,7 @@ export function VoiceExperience() {
   const greetingTriggerMode = visionConfig.greeting_trigger_mode;
   const expectBrowserVision =
     visionConfig.vision_source === "browser" ||
+    visionConfig.vision_source === "human" ||
     (visionConfig.vision_source === "auto" && !pythonVisionConnected);
 
   const voiceSession = useVoiceSession();
@@ -116,6 +129,7 @@ export function VoiceExperience() {
     stopTalking,
     sendText,
     sendPhotoReady,
+    sendLuckySpinWin,
     startContinuousListening,
     stopContinuousListening,
     cancelPrefetch,
@@ -148,6 +162,17 @@ export function VoiceExperience() {
     useSessionStore();
   const photoConfig = menuCache?.smart_photo_moment;
   const photoEnabled = shouldOfferPhotoMoment(photoConfig);
+  const luckySpinConfig = useKioskStore((s) => s.luckySpinConfig);
+  const setLuckySpinConfig = useKioskStore((s) => s.setLuckySpinConfig);
+  const campaignBannerConfig = useKioskStore((s) => s.campaignBannerConfig);
+  const setCampaignBannerConfig = useKioskStore((s) => s.setCampaignBannerConfig);
+  const luckySpinVisible = shouldShowLuckySpin(luckySpinConfig);
+  const campaignBannerVisible = shouldShowCampaignBanner(campaignBannerConfig);
+  const [luckySpinWin, setLuckySpinWin] = useState<LuckySpinWinResult | null>(null);
+
+  useEffect(() => {
+    if (!luckySpinVisible) setLuckySpinWin(null);
+  }, [luckySpinVisible]);
 
   const handlePhotoReady = useCallback(
     (prompt: string) => {
@@ -160,6 +185,22 @@ export function VoiceExperience() {
     // Order complete UI already showing via checkoutPhase paid
   }, []);
 
+  const handleLuckySpinWin = useCallback(
+    (win: LuckySpinWinResult) => {
+      setLuckySpinWin(win);
+      unlockAudioSync();
+      if (useKioskStore.getState().luckySpinConfig?.ai_voice_enabled !== false) {
+        sendLuckySpinWin(win.prize.name, win.voucher_code);
+      }
+    },
+    [sendLuckySpinWin, unlockAudioSync],
+  );
+
+  const handleLuckySpinStart = useCallback(() => {
+    setLuckySpinWin(null);
+    unlockAudioSync();
+  }, [unlockAudioSync]);
+
   const menuReady = menuCacheSlug === businessSlug;
   const showOrdering = menuReady && orderingEnabled;
   const showBooking = menuReady && bookingEnabled;
@@ -171,6 +212,7 @@ export function VoiceExperience() {
     (status === "connecting" && startingConversation);
   const canTalk = status !== "connecting" && conversationPhase !== "wrapping_up";
   const showStartButton =
+    !luckySpinVisible &&
     !visionEnabled &&
     !inActiveSession &&
     !startingConversation &&
@@ -291,6 +333,25 @@ export function VoiceExperience() {
 
         setMenuLoadError(null);
         setMenuCache(businessSlug, data);
+        if (data.lucky_spin) {
+          setLuckySpinConfig({
+            ...data.lucky_spin,
+            ai_voice_enabled: data.lucky_spin.ai_voice_enabled !== false,
+          });
+        }
+        if (data.campaign_banner) {
+          setCampaignBannerConfig({
+            ...data.campaign_banner,
+            layout:
+              data.campaign_banner.layout === "right" ||
+              data.campaign_banner.layout === "bottom"
+                ? data.campaign_banner.layout
+                : "top",
+            items: Array.isArray(data.campaign_banner.items)
+              ? data.campaign_banner.items
+              : [],
+          });
+        }
 
         if (data.assistant_name) {
           setAssistantName(data.assistant_name);
@@ -320,7 +381,15 @@ export function VoiceExperience() {
       cancelled = true;
       window.removeEventListener("focus", handleFocus);
     };
-  }, [businessSlug, setAssistantName, setAvatarUrl, setAvatarModelPath, setMenuCache]);
+  }, [
+    businessSlug,
+    setAssistantName,
+    setAvatarUrl,
+    setAvatarModelPath,
+    setMenuCache,
+    setLuckySpinConfig,
+    setCampaignBannerConfig,
+  ]);
 
   const ensureBusinessAvatarReady = async () => {
     if (avatarModelPath) return;
@@ -358,6 +427,32 @@ export function VoiceExperience() {
     // Mic opens later via Hold to talk — requesting it here kills greeting audio.
   };
 
+  const startConversationRef = useRef(handleStartConversation);
+  startConversationRef.current = handleStartConversation;
+
+  useEffect(() => {
+    if (!showStartButton) return;
+
+    const hotkey = visionConfig.start_hotkey || "Enter";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable) {
+        return;
+      }
+
+      const pressed = event.key === " " ? "Space" : event.key;
+      if (pressed !== hotkey) return;
+
+      event.preventDefault();
+      startConversationRef.current();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showStartButton, visionConfig.start_hotkey]);
+
   const searchParams = useSearchParams();
   const search = useMemo(() => {
     const query = searchParams.toString();
@@ -372,7 +467,13 @@ export function VoiceExperience() {
   const orientationSettingForLayout =
     heroEmbedFrameOrientation ?? effectiveDisplayOrientationSetting;
   const resolvedDisplayOrientation = useResolvedDisplayOrientation(orientationSettingForLayout);
-  const layout = getExperienceLayout(resolvedDisplayOrientation, { heroEmbed: isHeroEmbed });
+  const layout = useMemo(() => {
+    const base = getExperienceLayout(resolvedDisplayOrientation, { heroEmbed: isHeroEmbed });
+    if (luckySpinVisible && base.isLandscape) {
+      return { ...base, heroFrameClassName: LUCKY_SPIN_MINI_HERO_FRAME_CLASS };
+    }
+    return base;
+  }, [resolvedDisplayOrientation, isHeroEmbed, luckySpinVisible]);
   const statusOverlayClass = layout.statusOverlayClass;
 
   const startCtaLabel = showOrdering
@@ -458,6 +559,54 @@ export function VoiceExperience() {
           bookingEnabled={showBooking}
           compact={layout.compactUi}
         />
+
+        {(() => {
+          if (!campaignBannerVisible || !campaignBannerConfig || checkoutPanelOpen) {
+            return null;
+          }
+          const bannerLayout = campaignBannerConfig.layout;
+          if (bannerLayout === "right" && (luckySpinVisible || !layout.isLandscape)) {
+            return null;
+          }
+          const paused =
+            conversationPhase === "active" ||
+            kioskPhase === "listening" ||
+            kioskPhase === "thinking" ||
+            kioskPhase === "talking";
+          const positionClass =
+            bannerLayout === "right"
+              ? "absolute right-3 top-20 bottom-28 z-[22] flex items-stretch"
+              : bannerLayout === "bottom"
+                ? "absolute inset-x-3 bottom-[6.5rem] z-[22] sm:bottom-[7.5rem]"
+                : "absolute inset-x-3 top-[4.5rem] z-[22]";
+          return (
+            <div className={positionClass}>
+              <CampaignSlider
+                businessSlug={businessSlug}
+                config={campaignBannerConfig}
+                layout={bannerLayout}
+                paused={paused}
+              />
+            </div>
+          );
+        })()}
+
+        {luckySpinVisible && luckySpinConfig && !checkoutPanelOpen ? (
+          <div className="pointer-events-none absolute inset-0 z-[45] flex items-center justify-center px-4">
+            <LuckySpinWidget
+              businessSlug={businessSlug}
+              config={luckySpinConfig}
+              onSpinStart={handleLuckySpinStart}
+              onWin={handleLuckySpinWin}
+            />
+          </div>
+        ) : null}
+
+        {luckySpinVisible && luckySpinWin && !checkoutPanelOpen ? (
+          <div className={LUCKY_SPIN_WIN_CARD_FRAME_CLASS}>
+            <LuckySpinWinCard result={luckySpinWin} />
+          </div>
+        ) : null}
 
         {showMenu ? <StoreMenuPanelRoot /> : null}
         {showBooking ? <AppointmentBookingPanelRoot /> : null}
@@ -563,7 +712,7 @@ export function VoiceExperience() {
           <div className={statusOverlayClass}>{startButton}</div>
         ) : null}
 
-        {!checkoutPanelOpen && !visionEnabled ? (
+        {!luckySpinVisible && !checkoutPanelOpen && !visionEnabled ? (
           <BottomControls
             disabled={!canTalk}
             isTalking={isTalking}

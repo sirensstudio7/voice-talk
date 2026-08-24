@@ -4,6 +4,7 @@ import {
   date,
   doublePrecision,
   integer,
+  numeric,
   pgTable,
   text,
   timestamp,
@@ -74,6 +75,10 @@ export const plans = pgTable("plans", {
   name: varchar("name", { length: 100 }).notNull(),
   workspaceLimit: integer("workspace_limit").notNull(),
   isTrial: boolean("is_trial").notNull().default(false),
+  monthlyPriceIdr: integer("monthly_price_idr").notNull().default(0),
+  yearlyPriceIdr: integer("yearly_price_idr").notNull().default(0),
+  yearlyDiscountPercent: integer("yearly_discount_percent").notNull().default(0),
+  monthlyVoiceSeconds: integer("monthly_voice_seconds").notNull().default(0),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -212,6 +217,7 @@ export const products = pgTable(
     description: text("description").notNull().default(""),
     imageUrl: text("image_url").notNull().default(""),
     isActive: boolean("is_active").notNull().default(true),
+    liveOnly: boolean("live_only").notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
     durationMin: integer("duration_min").notNull().default(30),
   },
@@ -275,6 +281,7 @@ export const visionSettings = pgTable("vision_settings", {
     .unique()
     .references(() => businesses.id),
   cameraTriggerEnabled: boolean("camera_trigger_enabled").notNull().default(false),
+  startHotkey: varchar("start_hotkey", { length: 32 }).notNull().default("Enter"),
   visionSource: varchar("vision_source", { length: 20 }).notNull().default("auto"),
   greetingTriggerMode: varchar("greeting_trigger_mode", { length: 20 })
     .notNull()
@@ -317,7 +324,7 @@ export const aiRules = pgTable("ai_rules", {
     .notNull()
     .unique()
     .references(() => businesses.id),
-  assistantName: varchar("assistant_name", { length: 50 }).notNull().default("Lorescale"),
+  assistantName: varchar("assistant_name", { length: 50 }).notNull().default("Alex"),
   avatarUrl: text("avatar_url").notNull().default(""),
   avatarModelPath: text("avatar_model_path").notNull().default(""),
   personality: text("personality").notNull(),
@@ -327,7 +334,7 @@ export const aiRules = pgTable("ai_rules", {
   toolInstructions: text("tool_instructions").notNull().default(""),
   idleTimeoutSeconds: integer("idle_timeout_seconds").notNull().default(30),
   voicePreset: varchar("voice_preset", { length: 30 }).notNull().default("natural"),
-  voiceGender: varchar("voice_gender", { length: 10 }).notNull().default("female"),
+  voiceGender: varchar("voice_gender", { length: 10 }).notNull().default("male"),
 });
 
 export const voiceSessions = pgTable("voice_sessions", {
@@ -363,9 +370,13 @@ export const orders = pgTable("orders", {
     .notNull()
     .references(() => businesses.id),
   voiceSessionId: varchar("voice_session_id", { length: 36 }).references(() => voiceSessions.id),
+  liveSessionId: varchar("live_session_id", { length: 36 }),
   status: varchar("status", { length: 50 }).notNull().default("open"),
   total: doublePrecision("total").notNull().default(0),
   customerName: varchar("customer_name", { length: 255 }),
+  customerPhone: varchar("customer_phone", { length: 50 }).notNull().default(""),
+  customerAddress: text("customer_address").notNull().default(""),
+  customerNotes: text("customer_notes").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
 });
@@ -413,6 +424,10 @@ export const addons = pgTable("addons", {
   name: varchar("name", { length: 100 }).notNull(),
   description: text("description").notNull().default(""),
   priceDisplay: varchar("price_display", { length: 50 }).notNull().default(""),
+  monthlyPriceIdr: integer("monthly_price_idr").notNull().default(199000),
+  discount3mPercent: integer("discount_3m_percent").notNull().default(5),
+  discount6mPercent: integer("discount_6m_percent").notNull().default(10),
+  discount12mPercent: integer("discount_12m_percent").notNull().default(15),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -460,6 +475,92 @@ export const addonRequests = pgTable("addon_requests", {
   notes: text("notes").notNull().default(""),
   paymentProofUrl: text("payment_proof_url"),
   transactionCode: varchar("transaction_code", { length: 32 }).notNull(),
+});
+
+/** Account-level minute lots. kind: subscription | topup | admin */
+export const minuteGrants = pgTable(
+  "minute_grants",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    userId: varchar("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id),
+    kind: varchar("kind", { length: 20 }).notNull(),
+    grantedSeconds: integer("granted_seconds").notNull(),
+    remainingSeconds: integer("remaining_seconds").notNull(),
+    periodStart: timestamp("period_start", { withTimezone: true }),
+    periodEnd: timestamp("period_end", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    sourceRef: varchar("source_ref", { length: 120 }).notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique("uq_minute_grants_source").on(table.userId, table.kind, table.sourceRef)],
+);
+
+/** Immutable second-level ledger. */
+export const minuteLedger = pgTable("minute_ledger", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  userId: varchar("user_id", { length: 36 })
+    .notNull()
+    .references(() => users.id),
+  workspaceId: varchar("workspace_id", { length: 36 }).references(() => businesses.id),
+  voiceSessionId: varchar("voice_session_id", { length: 36 }).references(() => voiceSessions.id),
+  grantId: varchar("grant_id", { length: 36 }).references(() => minuteGrants.id),
+  type: varchar("type", { length: 30 }).notNull(),
+  deltaSeconds: integer("delta_seconds").notNull(),
+  balanceAfterSeconds: integer("balance_after_seconds").notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull().unique(),
+  sourceRef: varchar("source_ref", { length: 120 }).notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const topupPackages = pgTable("topup_packages", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  name: varchar("name", { length: 100 }).notNull(),
+  minutes: integer("minutes").notNull(),
+  priceIdr: integer("price_idr").notNull(),
+  discountPercent: integer("discount_percent").notNull().default(0),
+  currency: varchar("currency", { length: 8 }).notNull().default("IDR"),
+  expiresAfterDays: integer("expires_after_days").notNull().default(90),
+  isPopular: boolean("is_popular").notNull().default(false),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Top-up checkout. Statuses: pending | paid | rejected */
+export const topupOrders = pgTable("topup_orders", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  userId: varchar("user_id", { length: 36 })
+    .notNull()
+    .references(() => users.id),
+  packageId: varchar("package_id", { length: 36 })
+    .notNull()
+    .references(() => topupPackages.id),
+  packageName: varchar("package_name", { length: 120 }).notNull(),
+  minutes: integer("minutes").notNull(),
+  priceIdr: integer("price_idr").notNull(),
+  currency: varchar("currency", { length: 8 }).notNull().default("IDR"),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  paymentMethod: varchar("payment_method", { length: 40 }).notNull().default(""),
+  paymentProofUrl: text("payment_proof_url"),
+  transactionCode: varchar("transaction_code", { length: 32 }).notNull(),
+  paymentProvider: varchar("payment_provider", { length: 40 }).notNull().default(""),
+  paymentId: varchar("payment_id", { length: 120 }).notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  reviewedBy: varchar("reviewed_by", { length: 36 }).references(() => platformAdmins.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
 });
 
 export const photoSettings = pgTable("photo_settings", {
@@ -518,6 +619,122 @@ export type AddonRequest = typeof addonRequests.$inferSelect;
 export type PhotoSettings = typeof photoSettings.$inferSelect;
 export type PhotoSession = typeof photoSessions.$inferSelect;
 export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
+
+/** Lucky Spin add-on — settings, campaigns, prizes, winners. */
+export const luckySpinSettings = pgTable("lucky_spin_settings", {
+  businessId: varchar("business_id", { length: 36 })
+    .primaryKey()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  /** When false, kiosk skips AI voice congrats (e.g. live MC events). */
+  aiVoiceEnabled: boolean("ai_voice_enabled").notNull().default(true),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const luckySpinCampaigns = pgTable("lucky_spin_campaigns", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  businessId: varchar("business_id", { length: 36 })
+    .notNull()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  startAt: timestamp("start_at", { withTimezone: true }),
+  endAt: timestamp("end_at", { withTimezone: true }),
+  dailyLimit: integer("daily_limit"),
+  totalLimit: integer("total_limit"),
+  onePerUser: boolean("one_per_user").notNull().default(true),
+  /** auto = odds from stock; manual = admin-set percentages totaling 100%. */
+  oddsMode: varchar("odds_mode", { length: 20 }).notNull().default("auto"),
+  status: varchar("status", { length: 20 }).notNull().default("draft"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const luckySpinPrizes = pgTable("lucky_spin_prizes", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  campaignId: varchar("campaign_id", { length: 36 })
+    .notNull()
+    .references(() => luckySpinCampaigns.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description").notNull().default(""),
+  imageUrl: text("image_url"),
+  probability: numeric("probability", { precision: 5, scale: 2 }).notNull().default("0"),
+  stock: integer("stock").notNull().default(0),
+  voucherPrefix: varchar("voucher_prefix", { length: 20 }).notNull().default("SPIN"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  enabled: boolean("enabled").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const luckySpinWinners = pgTable("lucky_spin_winners", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  businessId: varchar("business_id", { length: 36 })
+    .notNull()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  campaignId: varchar("campaign_id", { length: 36 })
+    .notNull()
+    .references(() => luckySpinCampaigns.id, { onDelete: "cascade" }),
+  prizeId: varchar("prize_id", { length: 36 }).references(() => luckySpinPrizes.id, {
+    onDelete: "set null",
+  }),
+  /** Snapshot at win time so prizes can be deleted without losing history. */
+  prizeName: varchar("prize_name", { length: 255 }).notNull().default(""),
+  customerIdentifier: varchar("customer_identifier", { length: 255 }).notNull(),
+  customerName: varchar("customer_name", { length: 255 }),
+  voucherCode: varchar("voucher_code", { length: 100 }).notNull().unique(),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  wonAt: timestamp("won_at", { withTimezone: true }).notNull().defaultNow(),
+  redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
+  redeemedBy: varchar("redeemed_by", { length: 36 }),
+});
+
+export type LuckySpinSettings = typeof luckySpinSettings.$inferSelect;
+export type LuckySpinCampaign = typeof luckySpinCampaigns.$inferSelect;
+export type LuckySpinPrize = typeof luckySpinPrizes.$inferSelect;
+export type LuckySpinWinner = typeof luckySpinWinners.$inferSelect;
+
+/** Campaign Banner add-on — workspace layout + scheduled image banners. */
+export const campaignBannerSettings = pgTable("campaign_banner_settings", {
+  businessId: varchar("business_id", { length: 36 })
+    .primaryKey()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  /** Workspace layout shared by all banners: top | right | bottom. */
+  layout: varchar("layout", { length: 20 }).notNull().default("top"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const campaignBanners = pgTable("campaign_banners", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  businessId: varchar("business_id", { length: 36 })
+    .notNull()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  imageUrl: text("image_url").notNull().default(""),
+  targetUrl: text("target_url"),
+  qrUrl: text("qr_url"),
+  durationSec: integer("duration_sec").notNull().default(5),
+  displayOrder: integer("display_order").notNull().default(0),
+  startAt: timestamp("start_at", { withTimezone: true }).notNull().defaultNow(),
+  endAt: timestamp("end_at", { withTimezone: true }),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: varchar("created_by", { length: 36 }).references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type CampaignBannerSettings = typeof campaignBannerSettings.$inferSelect;
+export type CampaignBanner = typeof campaignBanners.$inferSelect;
 
 /** AI Presenter — presentation projects (tenant = business_id). */
 export const presentations = pgTable("presentations", {
@@ -673,6 +890,84 @@ export type PresentationSession = typeof presentationSessions.$inferSelect;
 export type PresentationQuestion = typeof presentationQuestions.$inferSelect;
 export type PresentationEmbedding = typeof presentationEmbeddings.$inferSelect;
 export type PresentationKnowledgeEntry = typeof presentationKnowledgeEntries.$inferSelect;
+/** LORESCALE LIVE rooms. Status: draft | live | ended */
+export const liveSessions = pgTable(
+  "live_sessions",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    businessId: varchar("business_id", { length: 36 })
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 200 }).notNull(),
+    slug: varchar("slug", { length: 80 }).notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("draft"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique("uq_live_session_slug").on(table.businessId, table.slug)],
+);
+
+export const liveSessionProducts = pgTable(
+  "live_session_products",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    sessionId: varchar("session_id", { length: 36 })
+      .notNull()
+      .references(() => liveSessions.id, { onDelete: "cascade" }),
+    productId: varchar("product_id", { length: 36 })
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique("uq_live_session_product").on(table.sessionId, table.productId)],
+);
+
+/** Session-scoped talking points for the LIVE AI host (not kiosk knowledge). */
+export const liveKnowledgeEntries = pgTable("live_knowledge_entries", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  sessionId: varchar("session_id", { length: 36 })
+    .notNull()
+    .references(() => liveSessions.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 160 }).notNull().default(""),
+  content: text("content").notNull().default(""),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const liveMessages = pgTable("live_messages", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  sessionId: varchar("session_id", { length: 36 })
+    .notNull()
+    .references(() => liveSessions.id, { onDelete: "cascade" }),
+  role: varchar("role", { length: 20 }).notNull(),
+  displayName: varchar("display_name", { length: 80 }).notNull().default(""),
+  body: text("body").notNull(),
+  productId: varchar("product_id", { length: 36 }).references(() => products.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type LiveSession = typeof liveSessions.$inferSelect;
+export type LiveSessionProduct = typeof liveSessionProducts.$inferSelect;
+export type LiveKnowledgeEntry = typeof liveKnowledgeEntries.$inferSelect;
+export type LiveMessage = typeof liveMessages.$inferSelect;
+
+export type MinuteGrant = typeof minuteGrants.$inferSelect;
+export type MinuteLedger = typeof minuteLedger.$inferSelect;
+export type TopupPackage = typeof topupPackages.$inferSelect;
+export type TopupOrder = typeof topupOrders.$inferSelect;
 
 export type BusinessWithRelations = Business & {
   products: Product[];

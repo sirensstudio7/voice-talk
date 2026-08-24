@@ -1,5 +1,7 @@
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
-import type { BusinessCapabilities, PrimaryUseCase } from "@voicetalk/shared";
+import type { AiLanguage, BusinessCapabilities, PrimaryUseCase } from "@voicetalk/shared";
+
+export type { AiLanguage };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -28,6 +30,7 @@ export type Product = {
   description: string;
   image_url: string;
   is_active: boolean;
+  live_only?: boolean;
   sort_order: number;
   duration_min?: number;
 };
@@ -60,7 +63,6 @@ export type KnowledgeEntry = {
 };
 
 export type AiTone = "friendly" | "professional" | "casual";
-export type AiLanguage = "id" | "en";
 export type VoicePreset = "natural" | "dark_beast" | "deep" | "robot" | "bright";
 export type VoiceGender = "female" | "male";
 
@@ -92,6 +94,9 @@ export type Order = {
   status: string;
   total: number;
   customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_address?: string | null;
+  customer_notes?: string | null;
   created_at: string;
   confirmed_at: string | null;
   items: OrderItem[];
@@ -161,10 +166,11 @@ export type AppearanceSettings = {
 
 export type GreetingTriggerMode = "presence" | "gesture" | "raise_hand";
 
-export type VisionSource = "auto" | "python" | "browser";
+export type VisionSource = "auto" | "python" | "browser" | "human";
 
 export type VisionSettings = {
   camera_trigger_enabled: boolean;
+  start_hotkey: string;
   vision_source: VisionSource;
   greeting_trigger_mode: GreetingTriggerMode;
   greeting_delay_seconds: number;
@@ -190,6 +196,49 @@ export type SubscriptionPlan = {
   code: string;
   name: string;
   workspace_limit: number;
+  monthly_price_idr?: number;
+  yearly_price_idr?: number;
+  yearly_discount_percent?: number;
+  monthly_voice_minutes?: number;
+};
+
+export type VoiceMinuteWallet = {
+  included_seconds: number;
+  included_used_seconds: number;
+  purchased_remaining_seconds: number;
+  available_seconds: number;
+  period_start: string | null;
+  period_end: string | null;
+  warning: "low" | "critical" | "empty" | null;
+  next_expiry: { seconds: number; expires_at: string } | null;
+};
+
+export type TopupPackage = {
+  id: string;
+  code: string;
+  name: string;
+  minutes: number;
+  price_idr: number;
+  list_price_idr?: number;
+  discount_percent?: number;
+  currency: string;
+  expires_after_days: number;
+  is_popular: boolean;
+  status: string;
+};
+
+export type TopupOrder = {
+  id: string;
+  package_name: string;
+  minutes: number;
+  price_idr: number;
+  currency: string;
+  status: string;
+  payment_method: string;
+  payment_proof_url: string | null;
+  transaction_code: string;
+  created_at: string;
+  paid_at: string | null;
 };
 
 export type AccountSubscription = {
@@ -237,7 +286,7 @@ export type PhotoSettingsPatch = {
 
 export type BillingTransaction = {
   id: string;
-  type: "subscription" | "addon";
+  type: "subscription" | "addon" | "topup";
   title: string;
   subtitle: string;
   status: string;
@@ -256,6 +305,10 @@ export type AddonStatus = {
     name: string;
     description: string;
     price_display: string;
+    monthly_price_idr?: number;
+    discount_3m_percent?: number;
+    discount_6m_percent?: number;
+    discount_12m_percent?: number;
   };
   subscription_status: string;
   starts_at: string | null;
@@ -264,11 +317,163 @@ export type AddonStatus = {
   settings: PhotoSettings;
 };
 
+export type CampaignBannerLayout = "top" | "right" | "bottom";
+
+export type CampaignBannerSettings = {
+  enabled: boolean;
+  layout: CampaignBannerLayout;
+  updated_at: string;
+};
+
+export type CampaignBannerItem = {
+  id: string;
+  business_id: string;
+  title: string;
+  image_url: string;
+  target_url: string | null;
+  qr_url: string | null;
+  duration_sec: number;
+  display_order: number;
+  start_at: string;
+  end_at: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CampaignBannerAnalytics = {
+  total_impressions: number;
+  total_clicks: number;
+  ctr: number;
+  by_banner: Array<{
+    banner_id: string;
+    title: string;
+    impressions: number;
+    clicks: number;
+    ctr: number;
+    last_shown_at: string | null;
+  }>;
+};
+
+export type LuckySpinOddsMode = "auto" | "manual";
+
+export type LuckySpinCampaign = {
+  id: string;
+  business_id: string;
+  name: string;
+  start_at: string | null;
+  end_at: string | null;
+  daily_limit: number | null;
+  total_limit: number | null;
+  one_per_user: boolean;
+  odds_mode: LuckySpinOddsMode;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LuckySpinPrize = {
+  id: string;
+  campaign_id: string;
+  name: string;
+  description: string;
+  image_url: string;
+  probability: number;
+  stock: number;
+  voucher_prefix: string;
+  expires_at: string | null;
+  enabled: boolean;
+  sort_order: number;
+  created_at: string;
+};
+
+export type LuckySpinWinner = {
+  id: string;
+  business_id: string;
+  campaign_id: string;
+  prize_id: string | null;
+  prize_name: string | null;
+  prize_image_url: string;
+  customer_identifier: string;
+  customer_name: string;
+  voucher_code: string;
+  status: string;
+  won_at: string;
+  redeemed_at: string | null;
+};
+
+export type LuckySpinAnalytics = {
+  total_spins: number;
+  spins_today: number;
+  unique_users: number;
+  redemption_rate: number;
+  redeemed_count: number;
+  remaining_stock: number;
+  top_prize: string | null;
+  stock_by_prize: Array<{ name: string; stock: number }>;
+};
+
 export type PhotoAnalytics = {
   photos_today: number;
   acceptance_rate: number;
   downloads_today: number;
   downloads_this_month: number;
+};
+
+export type LiveProduct = {
+  id: string;
+  product_id?: string;
+  name: string;
+  price: number;
+  image_url: string;
+  description: string;
+  live_only?: boolean;
+};
+
+export type LiveCatalogProduct = {
+  id: string;
+  product_id?: string;
+  name: string;
+  price: number;
+  list_price?: number;
+  discount_percent?: number;
+  category?: string;
+  image_url: string;
+  description: string;
+  is_active: boolean;
+  live_only: boolean;
+};
+
+export type LiveKnowledge = {
+  id: string;
+  title: string;
+  content: string;
+  sort_order: number;
+  created_at: string;
+};
+
+export type LiveMessage = {
+  id: string;
+  role: string;
+  display_name: string;
+  body: string;
+  product_id: string | null;
+  created_at: string;
+};
+
+export type LiveSession = {
+  id: string;
+  business_id: string;
+  business_slug: string;
+  business_name: string;
+  title: string;
+  slug: string;
+  status: string;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+  products: LiveProduct[];
+  viewer_count: number;
 };
 
 export type PhotoGalleryItem = {
@@ -625,6 +830,27 @@ export const api = {
     request<{ items: BillingTransaction[] }>(`/admin/transactions`, token),
   listSubscriptionPlans: (token: string) =>
     request<SubscriptionPlan[]>(`/admin/subscription/plans`, token),
+  getVoiceMinuteWallet: (token: string) =>
+    request<VoiceMinuteWallet>(`/admin/voice-minutes/wallet`, token),
+  listTopupPackages: (token: string) =>
+    request<{ items: TopupPackage[] }>(`/admin/voice-minutes/packages`, token),
+  listTopupOrders: (token: string) =>
+    request<{ items: TopupOrder[] }>(`/admin/voice-minutes/orders`, token),
+  uploadTopupPaymentProof: (token: string, file: File) =>
+    uploadRequest<{ url: string }>(`/admin/voice-minutes/payment-proof`, token, file),
+  createTopupOrder: (
+    token: string,
+    body: {
+      package_id: string;
+      payment_method?: string;
+      payment_proof_url?: string;
+      notes?: string;
+    },
+  ) =>
+    request<TopupOrder>(`/admin/voice-minutes/orders`, token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   requestSubscriptionPlan: (token: string, plan_code: string) =>
     request<{
       id: string;
@@ -664,6 +890,236 @@ export const api = {
       `/admin/businesses/${businessId}/addons/${code}/request`,
       token,
       { method: "POST", body: JSON.stringify(body ?? {}) },
+    ),
+  getLuckySpinSettings: (token: string, businessId: string) =>
+    request<{ enabled: boolean; ai_voice_enabled: boolean; updated_at: string }>(
+      `/admin/businesses/${businessId}/lucky-spin/settings`,
+      token,
+    ),
+  updateLuckySpinSettings: (
+    token: string,
+    businessId: string,
+    body: { enabled?: boolean; ai_voice_enabled?: boolean },
+  ) =>
+    request<{ enabled: boolean; ai_voice_enabled: boolean; updated_at: string }>(
+      `/admin/businesses/${businessId}/lucky-spin/settings`,
+      token,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  listLuckySpinCampaigns: (token: string, businessId: string) =>
+    request<{ items: LuckySpinCampaign[] }>(
+      `/admin/businesses/${businessId}/lucky-spin/campaigns`,
+      token,
+    ),
+  createLuckySpinCampaign: (
+    token: string,
+    businessId: string,
+    body: {
+      name: string;
+      start_at?: string | null;
+      end_at?: string | null;
+      daily_limit?: number | null;
+      total_limit?: number | null;
+      one_per_user?: boolean;
+      odds_mode?: LuckySpinOddsMode;
+      status?: string;
+    },
+  ) =>
+    request<LuckySpinCampaign>(`/admin/businesses/${businessId}/lucky-spin/campaigns`, token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateLuckySpinCampaign: (
+    token: string,
+    businessId: string,
+    campaignId: string,
+    body: Partial<{
+      name: string;
+      start_at: string | null;
+      end_at: string | null;
+      daily_limit: number | null;
+      total_limit: number | null;
+      one_per_user: boolean;
+      odds_mode: LuckySpinOddsMode;
+      status: string;
+    }>,
+  ) =>
+    request<LuckySpinCampaign>(
+      `/admin/businesses/${businessId}/lucky-spin/campaigns/${campaignId}`,
+      token,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  deleteLuckySpinCampaign: (token: string, businessId: string, campaignId: string) =>
+    request<void>(`/admin/businesses/${businessId}/lucky-spin/campaigns/${campaignId}`, token, {
+      method: "DELETE",
+    }),
+  listLuckySpinPrizes: (token: string, businessId: string, campaignId: string) =>
+    request<{ items: LuckySpinPrize[]; probability_total: number }>(
+      `/admin/businesses/${businessId}/lucky-spin/campaigns/${campaignId}/prizes`,
+      token,
+    ),
+  createLuckySpinPrize: (
+    token: string,
+    businessId: string,
+    campaignId: string,
+    body: {
+      name: string;
+      description?: string;
+      /** Optional — server auto-balances from stock when omitted. */
+      probability?: number;
+      stock?: number;
+      voucher_prefix?: string;
+      expires_at?: string | null;
+      enabled?: boolean;
+    },
+  ) =>
+    request<LuckySpinPrize>(
+      `/admin/businesses/${businessId}/lucky-spin/campaigns/${campaignId}/prizes`,
+      token,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  updateLuckySpinPrize: (
+    token: string,
+    businessId: string,
+    campaignId: string,
+    prizeId: string,
+    body: Partial<{
+      name: string;
+      description: string;
+      probability: number;
+      stock: number;
+      voucher_prefix: string;
+      expires_at: string | null;
+      enabled: boolean;
+      image_url: string | null;
+    }>,
+  ) =>
+    request<LuckySpinPrize>(
+      `/admin/businesses/${businessId}/lucky-spin/campaigns/${campaignId}/prizes/${prizeId}`,
+      token,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  deleteLuckySpinPrize: (
+    token: string,
+    businessId: string,
+    campaignId: string,
+    prizeId: string,
+  ) =>
+    request<void>(
+      `/admin/businesses/${businessId}/lucky-spin/campaigns/${campaignId}/prizes/${prizeId}`,
+      token,
+      { method: "DELETE" },
+    ),
+  uploadLuckySpinPrizeImage: (
+    token: string,
+    businessId: string,
+    campaignId: string,
+    prizeId: string,
+    file: File,
+  ) =>
+    uploadRequest<LuckySpinPrize>(
+      `/admin/businesses/${businessId}/lucky-spin/campaigns/${campaignId}/prizes/${prizeId}/image`,
+      token,
+      file,
+    ),
+  listLuckySpinWinners: (token: string, businessId: string, search?: string) =>
+    request<{ items: LuckySpinWinner[]; total: number }>(
+      `/admin/businesses/${businessId}/lucky-spin/winners${
+        search ? `?search=${encodeURIComponent(search)}` : ""
+      }`,
+      token,
+    ),
+  redeemLuckySpinVoucher: (token: string, businessId: string, voucher_code: string) =>
+    request<LuckySpinWinner>(`/admin/businesses/${businessId}/lucky-spin/redeem`, token, {
+      method: "POST",
+      body: JSON.stringify({ voucher_code }),
+    }),
+  getLuckySpinAnalytics: (token: string, businessId: string) =>
+    request<LuckySpinAnalytics>(`/admin/businesses/${businessId}/lucky-spin/analytics`, token),
+  getCampaignBannerSettings: (token: string, businessId: string) =>
+    request<CampaignBannerSettings>(
+      `/admin/businesses/${businessId}/campaign-banner/settings`,
+      token,
+    ),
+  updateCampaignBannerSettings: (
+    token: string,
+    businessId: string,
+    body: { enabled?: boolean; layout?: CampaignBannerLayout },
+  ) =>
+    request<CampaignBannerSettings>(
+      `/admin/businesses/${businessId}/campaign-banner/settings`,
+      token,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  listCampaignBanners: (token: string, businessId: string) =>
+    request<{ items: CampaignBannerItem[] }>(
+      `/admin/businesses/${businessId}/campaign-banner/banners`,
+      token,
+    ),
+  createCampaignBanner: (
+    token: string,
+    businessId: string,
+    body: {
+      title: string;
+      target_url?: string | null;
+      qr_url?: string | null;
+      duration_sec?: number;
+      start_at?: string;
+      end_at?: string | null;
+      is_active?: boolean;
+    },
+  ) =>
+    request<CampaignBannerItem>(`/admin/businesses/${businessId}/campaign-banner/banners`, token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateCampaignBanner: (
+    token: string,
+    businessId: string,
+    bannerId: string,
+    body: Partial<{
+      title: string;
+      target_url: string | null;
+      qr_url: string | null;
+      duration_sec: number;
+      start_at: string;
+      end_at: string | null;
+      is_active: boolean;
+      display_order: number;
+    }>,
+  ) =>
+    request<CampaignBannerItem>(
+      `/admin/businesses/${businessId}/campaign-banner/banners/${bannerId}`,
+      token,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  deleteCampaignBanner: (token: string, businessId: string, bannerId: string) =>
+    request<{ ok: boolean }>(
+      `/admin/businesses/${businessId}/campaign-banner/banners/${bannerId}`,
+      token,
+      { method: "DELETE" },
+    ),
+  reorderCampaignBanners: (token: string, businessId: string, ordered_ids: string[]) =>
+    request<{ items: CampaignBannerItem[] }>(
+      `/admin/businesses/${businessId}/campaign-banner/banners/reorder`,
+      token,
+      { method: "POST", body: JSON.stringify({ ordered_ids }) },
+    ),
+  uploadCampaignBannerImage: (
+    token: string,
+    businessId: string,
+    bannerId: string,
+    file: File,
+  ) =>
+    uploadRequest<CampaignBannerItem>(
+      `/admin/businesses/${businessId}/campaign-banner/banners/${bannerId}/image`,
+      token,
+      file,
+    ),
+  getCampaignBannerAnalytics: (token: string, businessId: string) =>
+    request<CampaignBannerAnalytics>(
+      `/admin/businesses/${businessId}/campaign-banner/analytics`,
+      token,
     ),
   uploadAddonPaymentProof: (token: string, businessId: string, file: File) =>
     uploadRequest<{ url: string }>(
@@ -867,6 +1323,124 @@ export const api = {
   getPresentationSessionAnalytics: (token: string, businessId: string, sessionId: string) =>
     request<PresentationSessionAnalytics>(
       `/admin/businesses/${businessId}/sessions/${sessionId}/analytics`,
+      token,
+    ),
+  listLiveSessions: (token: string, businessId: string) =>
+    request<{ items: LiveSession[] }>(`/admin/businesses/${businessId}/live/sessions`, token),
+  createLiveSession: (
+    token: string,
+    businessId: string,
+    body: { title: string; product_ids?: string[] },
+  ) =>
+    request<LiveSession>(`/admin/businesses/${businessId}/live/sessions`, token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getLiveSession: (token: string, businessId: string, sessionId: string) =>
+    request<LiveSession>(`/admin/businesses/${businessId}/live/sessions/${sessionId}`, token),
+  listLiveCatalog: (token: string, businessId: string) =>
+    request<{ items: LiveCatalogProduct[] }>(`/admin/businesses/${businessId}/live/catalog`, token),
+  createLiveDedicatedProduct: (
+    token: string,
+    businessId: string,
+    sessionId: string,
+    body: {
+      name: string;
+      price: number;
+      product_id?: string;
+      discount_percent?: number;
+      category?: string;
+      description?: string;
+      image_url?: string;
+    },
+  ) =>
+    request<LiveSession>(
+      `/admin/businesses/${businessId}/live/sessions/${sessionId}/dedicated-products`,
+      token,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  updateLiveDedicatedProduct: (
+    token: string,
+    businessId: string,
+    productRowId: string,
+    body: {
+      name: string;
+      price: number;
+      product_id?: string;
+      discount_percent?: number;
+      category?: string;
+      description?: string;
+      image_url?: string;
+    },
+  ) =>
+    request<LiveCatalogProduct>(
+      `/admin/businesses/${businessId}/live/catalog/${productRowId}`,
+      token,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  deleteLiveDedicatedProduct: (token: string, businessId: string, productRowId: string) =>
+    request<{ ok: boolean }>(`/admin/businesses/${businessId}/live/catalog/${productRowId}`, token, {
+      method: "DELETE",
+    }),
+  setLiveSessionProducts: (
+    token: string,
+    businessId: string,
+    sessionId: string,
+    product_ids: string[],
+  ) =>
+    request<LiveSession>(`/admin/businesses/${businessId}/live/sessions/${sessionId}/products`, token, {
+      method: "PUT",
+      body: JSON.stringify({ product_ids }),
+    }),
+  startLiveSession: (token: string, businessId: string, sessionId: string) =>
+    request<LiveSession>(`/admin/businesses/${businessId}/live/sessions/${sessionId}/start`, token, {
+      method: "POST",
+    }),
+  endLiveSession: (token: string, businessId: string, sessionId: string) =>
+    request<LiveSession>(`/admin/businesses/${businessId}/live/sessions/${sessionId}/end`, token, {
+      method: "POST",
+    }),
+  listLiveMessages: (token: string, businessId: string, sessionId: string) =>
+    request<{ items: LiveMessage[] }>(
+      `/admin/businesses/${businessId}/live/sessions/${sessionId}/messages`,
+      token,
+    ),
+  listLiveKnowledge: (token: string, businessId: string, sessionId: string) =>
+    request<{ items: LiveKnowledge[] }>(
+      `/admin/businesses/${businessId}/live/sessions/${sessionId}/knowledge`,
+      token,
+    ),
+  createLiveKnowledge: (
+    token: string,
+    businessId: string,
+    sessionId: string,
+    body: { title?: string; content: string },
+  ) =>
+    request<LiveKnowledge>(`/admin/businesses/${businessId}/live/sessions/${sessionId}/knowledge`, token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateLiveKnowledge: (
+    token: string,
+    businessId: string,
+    sessionId: string,
+    entryId: string,
+    body: { title?: string; content?: string },
+  ) =>
+    request<LiveKnowledge>(
+      `/admin/businesses/${businessId}/live/sessions/${sessionId}/knowledge/${entryId}`,
+      token,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  deleteLiveKnowledge: (token: string, businessId: string, sessionId: string, entryId: string) =>
+    request<void>(
+      `/admin/businesses/${businessId}/live/sessions/${sessionId}/knowledge/${entryId}`,
+      token,
+      { method: "DELETE" },
+    ),
+  listLiveSessionOrders: (token: string, businessId: string, sessionId: string) =>
+    request<{ items: Order[] }>(
+      `/admin/businesses/${businessId}/live/sessions/${sessionId}/orders`,
       token,
     ),
 };

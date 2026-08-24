@@ -138,6 +138,8 @@ export default function UserDetailPage({
         </div>
       </div>
 
+      <UserVoiceMinutes userId={id} />
+
       <section className="space-y-3">
         <h3 className="text-lg font-semibold">Workspaces</h3>
         <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -176,6 +178,113 @@ export default function UserDetailPage({
         </div>
       </section>
     </div>
+  );
+}
+
+function UserVoiceMinutes({ userId }: { userId: string }) {
+  const { token } = useAuth();
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.getUserVoiceMinutes>> | null>(null);
+  const [seconds, setSeconds] = useState("1800");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    try {
+      setData(await api.getUserVoiceMinutes(token, userId));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load minutes");
+    }
+  }, [token, userId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function adjust(delta: number) {
+    if (!token) return;
+    setBusy(true);
+    try {
+      await api.adjustUserVoiceMinutes(token, userId, delta, note || undefined);
+      setNote("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Adjustment failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const wallet = data?.wallet;
+  return (
+    <section className="space-y-3">
+      <h3 className="text-lg font-semibold">Lore Voice Minutes</h3>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {wallet ? (
+        <p className="text-sm text-muted-foreground">
+          Available {Math.round(wallet.available_seconds / 60)} min · included used{" "}
+          {Math.round(wallet.included_used_seconds / 60)}/{Math.round(wallet.included_seconds / 60)} ·
+          purchased {Math.round(wallet.purchased_remaining_seconds / 60)} min
+        </p>
+      ) : (
+        <p className="text-sm text-muted-foreground">Loading wallet…</p>
+      )}
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-sm">
+          Seconds
+          <input
+            value={seconds}
+            onChange={(event) => setSeconds(event.target.value)}
+            className="mt-1 block w-28 rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
+          />
+        </label>
+        <label className="text-sm">
+          Note
+          <input
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            className="mt-1 block w-56 rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
+          />
+        </label>
+        <Button size="sm" disabled={busy} onClick={() => void adjust(Number(seconds) || 0)}>
+          Credit
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void adjust(-(Number(seconds) || 0))}
+        >
+          Debit
+        </Button>
+      </div>
+      {data?.ledger?.length ? (
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">When</th>
+                <th className="px-3 py-2">Type</th>
+                <th className="px-3 py-2">Delta</th>
+                <th className="px-3 py-2">Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.ledger.slice(0, 12).map((row) => (
+                <tr key={row.id} className="border-t border-border">
+                  <td className="px-3 py-2 text-xs">{new Date(row.created_at).toLocaleString()}</td>
+                  <td className="px-3 py-2">{row.type}</td>
+                  <td className="px-3 py-2">{row.delta_seconds}s</td>
+                  <td className="px-3 py-2">{Math.round(row.balance_after_seconds / 60)} min</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

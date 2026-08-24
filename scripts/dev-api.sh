@@ -78,6 +78,10 @@ start_api() {
 }
 
 ensure_vision_sidecar() {
+  if [ "${SKIP_VISION:-0}" = "1" ]; then
+    echo "Skipping vision sidecar (SKIP_VISION=1)."
+    return 0
+  fi
   local vision_script="$ROOT/scripts/dev-vision.sh"
   if [ ! -f "$vision_script" ]; then
     return 0

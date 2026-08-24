@@ -7,6 +7,8 @@ import {
   addonSubscriptions,
   businesses,
   businessMembers,
+  campaignBannerSettings,
+  luckySpinSettings,
   photoSettings,
   users,
   type Addon,
@@ -14,9 +16,20 @@ import {
   type AddonSubscription,
   type PhotoSettings,
 } from "../db/schema.js";
+import {
+  availableAiLanguages,
+  isAiLanguage,
+  isPackLanguage,
+  type AiLanguage,
+} from "@voicetalk/shared";
 import { hasServiceAccessForBusiness } from "./entitlement.js";
 
 export const SMART_PHOTO_MOMENT_CODE = "smart_photo_moment";
+export const LUCKY_SPIN_CODE = "lucky_spin";
+export const AI_PRESENTER_CODE = "ai_presenter";
+export const CAMPAIGN_BANNER_CODE = "campaign_banner";
+export const LANGUAGE_PACK_CODE = "language_pack";
+export const LIVE_CODE = "live";
 
 export const DEFAULT_PHOTO_VOICE_PROMPT =
   "Mau foto untuk kenang-kenangan setelah bayar nanti? Jawab ya atau tidak.";
@@ -105,12 +118,49 @@ export async function isPhotoMomentAvailable(businessId: string): Promise<boolea
   return cfg.active && cfg.enabled;
 }
 
+export type LanguagePackPublicConfig = {
+  active: boolean;
+  available: AiLanguage[];
+};
+
+export async function assertLanguageAllowed(
+  businessId: string,
+  language: string,
+): Promise<AiLanguage> {
+  const pack = await hasActiveAddon(businessId, LANGUAGE_PACK_CODE);
+  if (!isAiLanguage(language)) {
+    throw httpError("Unsupported language", 400);
+  }
+  if (isPackLanguage(language) && !pack) {
+    throw httpError("Language Pack add-on is required for this language", 403);
+  }
+  return language;
+}
+
+export async function getLanguagePackPublicConfig(
+  businessId: string,
+): Promise<LanguagePackPublicConfig> {
+  const [active, serviceOk] = await Promise.all([
+    hasActiveAddon(businessId, LANGUAGE_PACK_CODE),
+    hasServiceAccessForBusiness(businessId),
+  ]);
+  const packOn = active && serviceOk;
+  return {
+    active: packOn,
+    available: availableAiLanguages(packOn),
+  };
+}
+
 export type AddonStatusForBusiness = {
   addon: {
     code: string;
     name: string;
     description: string;
     price_display: string;
+    monthly_price_idr: number;
+    discount_3m_percent: number;
+    discount_6m_percent: number;
+    discount_12m_percent: number;
   };
   subscription_status: string;
   starts_at: string | null;
@@ -169,7 +219,24 @@ export async function getAddonStatusForBusiness(
     )
     .limit(1);
 
-  const settings = await getOrCreatePhotoSettings(businessId);
+  // Only SPM status includes photo settings. Other add-ons get a stub so the
+  // response shape stays stable without creating photo_settings rows.
+  let settings: ReturnType<typeof photoSettingsOut>;
+  if (addonCode === SMART_PHOTO_MOMENT_CODE) {
+    settings = photoSettingsOut(await getOrCreatePhotoSettings(businessId));
+  } else {
+    settings = {
+      enabled: false,
+      voice_prompt: "",
+      countdown_seconds: 3,
+      qr_expiry_hours: 24,
+      logo_url: "",
+      frame_url: "",
+      campaign_text: "",
+      auto_delete_days: 7,
+      updated_at: new Date(0).toISOString(),
+    };
+  }
 
   return {
     addon: {
@@ -177,6 +244,10 @@ export async function getAddonStatusForBusiness(
       name: addon.name,
       description: addon.description,
       price_display: addon.priceDisplay,
+      monthly_price_idr: addon.monthlyPriceIdr,
+      discount_3m_percent: addon.discount3mPercent,
+      discount_6m_percent: addon.discount6mPercent,
+      discount_12m_percent: addon.discount12mPercent,
     },
     subscription_status: sub?.status ?? "inactive",
     starts_at: sub?.startsAt?.toISOString() ?? null,
@@ -188,7 +259,7 @@ export async function getAddonStatusForBusiness(
           created_at: pending.createdAt.toISOString(),
         }
       : null,
-    settings: photoSettingsOut(settings),
+    settings,
   };
 }
 
@@ -336,12 +407,50 @@ export async function approveAddonRequest(params: {
       ),
     );
 
-  // Enable photo settings by default on activation
-  await getOrCreatePhotoSettings(req.businessId);
-  await db
-    .update(photoSettings)
-    .set({ enabled: true, updatedAt: now })
-    .where(eq(photoSettings.businessId, req.businessId));
+  // Enable feature settings only for the approved add-on (never cross-wire).
+  if (req.addonCode === SMART_PHOTO_MOMENT_CODE) {
+    await getOrCreatePhotoSettings(req.businessId);
+    await db
+      .update(photoSettings)
+      .set({ enabled: true, updatedAt: now })
+      .where(eq(photoSettings.businessId, req.businessId));
+  } else if (req.addonCode === LUCKY_SPIN_CODE) {
+    const [existing] = await db
+      .select()
+      .from(luckySpinSettings)
+      .where(eq(luckySpinSettings.businessId, req.businessId))
+      .limit(1);
+    if (existing) {
+      await db
+        .update(luckySpinSettings)
+        .set({ enabled: true, updatedAt: now })
+        .where(eq(luckySpinSettings.businessId, req.businessId));
+    } else {
+      await db.insert(luckySpinSettings).values({
+        businessId: req.businessId,
+        enabled: true,
+        updatedAt: now,
+      });
+    }
+  } else if (req.addonCode === CAMPAIGN_BANNER_CODE) {
+    const [existing] = await db
+      .select()
+      .from(campaignBannerSettings)
+      .where(eq(campaignBannerSettings.businessId, req.businessId))
+      .limit(1);
+    if (existing) {
+      await db
+        .update(campaignBannerSettings)
+        .set({ enabled: true, updatedAt: now })
+        .where(eq(campaignBannerSettings.businessId, req.businessId));
+    } else {
+      await db.insert(campaignBannerSettings).values({
+        businessId: req.businessId,
+        enabled: true,
+        updatedAt: now,
+      });
+    }
+  }
 
   return sub;
 }
@@ -390,10 +499,23 @@ export async function suspendAddon(params: {
     .where(eq(addonSubscriptions.id, existing.id))
     .returning();
 
-  await db
-    .update(photoSettings)
-    .set({ enabled: false, updatedAt: new Date() })
-    .where(eq(photoSettings.businessId, params.businessId));
+  // Only disable the suspended add-on's own feature flag.
+  if (params.addonCode === SMART_PHOTO_MOMENT_CODE) {
+    await db
+      .update(photoSettings)
+      .set({ enabled: false, updatedAt: new Date() })
+      .where(eq(photoSettings.businessId, params.businessId));
+  } else if (params.addonCode === LUCKY_SPIN_CODE) {
+    await db
+      .update(luckySpinSettings)
+      .set({ enabled: false, updatedAt: new Date() })
+      .where(eq(luckySpinSettings.businessId, params.businessId));
+  } else if (params.addonCode === CAMPAIGN_BANNER_CODE) {
+    await db
+      .update(campaignBannerSettings)
+      .set({ enabled: false, updatedAt: new Date() })
+      .where(eq(campaignBannerSettings.businessId, params.businessId));
+  }
 
   return updated!;
 }

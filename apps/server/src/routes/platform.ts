@@ -18,6 +18,7 @@ import { requirePermission } from "../auth/platform-rbac.js";
 import { db } from "../db/client.js";
 import { withLoginDb } from "../db/login-db.js";
 import {
+  addons,
   aiRules,
   auditLogs,
   businessMembers,
@@ -27,12 +28,18 @@ import {
   platformSettings,
   plans,
   products,
+  topupPackages,
   accountSubscriptions,
   subscriptionRequests,
   subscriptions,
   users,
+  visionSettings,
   voiceSessions,
 } from "../db/schema.js";
+import {
+  normalizeGreetingTriggerMode,
+  normalizeVisionSource,
+} from "../services/vision-settings.js";
 import { env } from "../env.js";
 import {
   activateSubscriptionRequest,
@@ -47,6 +54,15 @@ import {
   rejectAddonRequest,
   suspendAddon,
 } from "../services/addon-entitlement.js";
+import {
+  applyAdminAdjustment,
+  approveTopupOrder,
+  getVoiceMinuteWallet,
+  listMinuteLedger,
+  listPlatformTopupOrders,
+  orderOut,
+  rejectTopupOrder,
+} from "../services/voice-minutes.js";
 
 function clientKey(request: FastifyRequest): string {
   return (
@@ -63,9 +79,194 @@ function parsePagination(query: Record<string, unknown>) {
   return { page, limit, offset };
 }
 
+const SECRET_SETTING_KEYS = new Set([
+  "elevenlabs_api_key",
+  "custom_voice_api_key",
+  "provider_api_keys",
+]);
+
+type ProviderApiKey = {
+  id: string;
+  provider: string;
+  label: string;
+  key: string;
+};
+
+function maskSecret(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return `••••••••${trimmed.slice(-4)}`;
+}
+
+function looksLikeMaskedSecret(value: string): boolean {
+  return /^•+/.test(value.trim());
+}
+
+function parseProviderApiKeys(raw: string): ProviderApiKey[] {
+  try {
+    const parsed = JSON.parse(raw || "[]") as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as Record<string, unknown>;
+      const id = String(row.id ?? "").trim();
+      const provider = String(row.provider ?? "").trim().toLowerCase();
+      if (!id || !provider) return [];
+      return [
+        {
+          id,
+          provider,
+          label: String(row.label ?? "").trim(),
+          key: String(row.key ?? ""),
+        },
+      ];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function withLegacyProviderKeys(map: Record<string, string>): ProviderApiKey[] {
+  const items = parseProviderApiKeys(map.provider_api_keys ?? "[]");
+  const has = (provider: string) => items.some((item) => item.provider === provider && item.key.trim());
+  if ((map.elevenlabs_api_key ?? "").trim() && !has("elevenlabs")) {
+    items.push({
+      id: "legacy-elevenlabs",
+      provider: "elevenlabs",
+      label: "ElevenLabs",
+      key: map.elevenlabs_api_key,
+    });
+  }
+  if ((map.custom_voice_api_key ?? "").trim() && !has("custom")) {
+    items.push({
+      id: "legacy-custom",
+      provider: "custom",
+      label: "Custom",
+      key: map.custom_voice_api_key,
+    });
+  }
+  return items;
+}
+
+function mergeProviderApiKeys(incomingRaw: string, existing: ProviderApiKey[]): ProviderApiKey[] {
+  const existingById = new Map(existing.map((item) => [item.id, item]));
+  return parseProviderApiKeys(incomingRaw)
+    .map((row) => {
+      const previous = existingById.get(row.id);
+      const nextKey = looksLikeMaskedSecret(row.key) ? (previous?.key ?? "") : row.key.trim();
+      return {
+        id: row.id,
+        provider: row.provider,
+        label: row.label,
+        key: nextKey,
+      };
+    })
+    .filter((row) => row.provider && (row.key || row.label));
+}
+
+function redactSettings(map: Record<string, string>): Record<string, string> {
+  const out = { ...map };
+  const items = withLegacyProviderKeys(out);
+  out.provider_api_keys = JSON.stringify(
+    items.map((item) => ({
+      id: item.id,
+      provider: item.provider,
+      label: item.label,
+      key: maskSecret(item.key),
+      set: Boolean(item.key.trim()),
+    })),
+  );
+  for (const key of ["elevenlabs_api_key", "custom_voice_api_key"] as const) {
+    const raw = out[key] ?? "";
+    out[`${key}_set`] = raw.trim() ? "true" : "false";
+    out[key] = maskSecret(raw);
+  }
+  return out;
+}
+
 async function getSettingsMap(): Promise<Record<string, string>> {
   const rows = await db.select().from(platformSettings);
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+}
+
+async function getPublicSettingsMap(): Promise<Record<string, string>> {
+  return redactSettings(await getSettingsMap());
+}
+
+const DEFAULT_USD_IDR_RATE = 16500;
+const FX_CACHE_MS = 15 * 60 * 1000;
+let cachedUsdIdr: { rate: number; fetchedAt: number; marketAt: string | null; source: string } | null =
+  null;
+
+type UsdIdrQuote = {
+  rate: number;
+  market_at: string | null;
+  source: "live" | "manual" | "fallback";
+};
+
+async function fetchJson(url: string): Promise<unknown | null> {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(2500) });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchLiveUsdIdr(): Promise<{ rate: number; marketAt: string; source: string } | null> {
+  const open = (await fetchJson("https://open.er-api.com/v6/latest/USD")) as {
+    result?: string;
+    time_last_update_utc?: string;
+    rates?: { IDR?: number };
+  } | null;
+  const openRate = Number(open?.rates?.IDR);
+  if (open?.result === "success" && Number.isFinite(openRate) && openRate > 0) {
+    return {
+      rate: openRate,
+      marketAt: open.time_last_update_utc ?? new Date().toISOString(),
+      source: "open.er-api.com",
+    };
+  }
+
+  const frankfurter = (await fetchJson("https://api.frankfurter.app/latest?from=USD&to=IDR")) as {
+    date?: string;
+    rates?: { IDR?: number };
+  } | null;
+  const frankRate = Number(frankfurter?.rates?.IDR);
+  if (Number.isFinite(frankRate) && frankRate > 0) {
+    return {
+      rate: frankRate,
+      marketAt: frankfurter?.date ? `${frankfurter.date}T00:00:00.000Z` : new Date().toISOString(),
+      source: "frankfurter.app",
+    };
+  }
+  return null;
+}
+
+async function resolveUsdIdrQuote(): Promise<UsdIdrQuote> {
+  const settings = await getSettingsMap();
+  const override = Number(settings.usd_idr_rate);
+  if (Number.isFinite(override) && override > 0) {
+    return { rate: override, market_at: null, source: "manual" };
+  }
+  if (cachedUsdIdr && Date.now() - cachedUsdIdr.fetchedAt < FX_CACHE_MS) {
+    return { rate: cachedUsdIdr.rate, market_at: cachedUsdIdr.marketAt, source: "live" };
+  }
+  const live = await fetchLiveUsdIdr();
+  if (live) {
+    cachedUsdIdr = {
+      rate: live.rate,
+      fetchedAt: Date.now(),
+      marketAt: live.marketAt,
+      source: live.source,
+    };
+    return { rate: live.rate, market_at: live.marketAt, source: "live" };
+  }
+  if (cachedUsdIdr) {
+    return { rate: cachedUsdIdr.rate, market_at: cachedUsdIdr.marketAt, source: "live" };
+  }
+  return { rate: DEFAULT_USD_IDR_RATE, market_at: null, source: "fallback" };
 }
 
 async function ensureSubscriptionForBusiness(businessId: string) {
@@ -317,7 +518,12 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         .where(eq(subscriptionRequests.status, "pending"));
       const [voiceRow] = await db
         .select({
-          minutes: sql<number>`coalesce(sum(extract(epoch from (coalesce(ended_at, now()) - started_at)) / 60.0), 0)::float`,
+          minutes: sql<number>`coalesce(sum(extract(epoch from (
+            case
+              when ended_at is not null then ended_at
+              else least(now(), started_at + interval '15 minutes')
+            end - started_at
+          )) / 60.0), 0)::float`,
         })
         .from(voiceSessions)
         .where(gte(voiceSessions.startedAt, monthStart));
@@ -829,6 +1035,81 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
     }
   });
 
+  app.get("/platform/vision", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "businesses:read");
+
+      const query = request.query as Record<string, unknown>;
+      const { page, limit, offset } = parsePagination(query);
+      const search = typeof query.search === "string" ? query.search.trim() : "";
+      const sourceFilter =
+        typeof query.vision_source === "string" ? query.vision_source.trim().toLowerCase() : "";
+
+      const conditions = [];
+      if (search) {
+        conditions.push(
+          or(ilike(businesses.name, `%${search}%`), ilike(businesses.slug, `%${search}%`))!,
+        );
+      }
+      if (sourceFilter === "auto") {
+        conditions.push(
+          or(isNull(visionSettings.visionSource), eq(visionSettings.visionSource, "auto"))!,
+        );
+      } else if (
+        sourceFilter === "python" ||
+        sourceFilter === "browser" ||
+        sourceFilter === "human"
+      ) {
+        conditions.push(eq(visionSettings.visionSource, sourceFilter));
+      }
+      const whereClause = conditions.length ? and(...conditions) : undefined;
+
+      const [totalRow] = await db
+        .select({ value: count() })
+        .from(businesses)
+        .leftJoin(visionSettings, eq(visionSettings.businessId, businesses.id))
+        .where(whereClause);
+
+      const rows = await db
+        .select({
+          id: businesses.id,
+          name: businesses.name,
+          slug: businesses.slug,
+          isActive: businesses.isActive,
+          cameraTriggerEnabled: visionSettings.cameraTriggerEnabled,
+          visionSource: visionSettings.visionSource,
+          greetingTriggerMode: visionSettings.greetingTriggerMode,
+          updatedAt: visionSettings.updatedAt,
+        })
+        .from(businesses)
+        .leftJoin(visionSettings, eq(visionSettings.businessId, businesses.id))
+        .where(whereClause)
+        .orderBy(desc(businesses.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      return {
+        items: rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          slug: r.slug,
+          status: r.isActive ? "active" : "disabled",
+          camera_trigger_enabled: r.cameraTriggerEnabled ?? false,
+          vision_source: normalizeVisionSource(r.visionSource ?? "auto"),
+          greeting_trigger_mode: normalizeGreetingTriggerMode(r.greetingTriggerMode ?? "presence"),
+          updated_at: r.updatedAt ? r.updatedAt.toISOString() : null,
+        })),
+        total: totalRow?.value ?? 0,
+        page,
+        limit,
+        sources: ["auto", "python", "browser", "human"] as const,
+      };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
   app.get("/platform/subscriptions", async (request, reply) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
@@ -883,6 +1164,92 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         .limit(limit)
         .offset(offset);
 
+      const planRows = await db
+        .select({
+          code: plans.code,
+          monthlyVoiceSeconds: plans.monthlyVoiceSeconds,
+          monthlyPriceIdr: plans.monthlyPriceIdr,
+          yearlyPriceIdr: plans.yearlyPriceIdr,
+          yearlyDiscountPercent: plans.yearlyDiscountPercent,
+        })
+        .from(plans);
+      const planByCode = new Map(planRows.map((plan) => [plan.code, plan]));
+      const monthlyByPlan = new Map(
+        planRows.map((plan) => [plan.code, Math.round(plan.monthlyVoiceSeconds / 60)]),
+      );
+
+      const allMatching = await db
+        .select({
+          businessId: subscriptions.businessId,
+          planName: subscriptions.planName,
+          billingCycle: subscriptions.billingCycle,
+          status: subscriptions.status,
+        })
+        .from(subscriptions)
+        .innerJoin(businesses, eq(businesses.id, subscriptions.businessId))
+        .where(whereClause);
+
+      const monthStart = new Date();
+      monthStart.setUTCDate(1);
+      monthStart.setUTCHours(0, 0, 0, 0);
+      const matchingBusinessIds = allMatching.map((row) => row.businessId);
+      const usedByBusiness = new Map<string, number>();
+      if (matchingBusinessIds.length) {
+        const usedRows = await db
+          .select({
+            businessId: voiceSessions.businessId,
+            minutes: sql<number>`coalesce(sum(extract(epoch from (
+              case
+                when ended_at is not null then ended_at
+                else least(now(), started_at + interval '15 minutes')
+              end - started_at
+            )) / 60.0), 0)::float`,
+          })
+          .from(voiceSessions)
+          .where(
+            and(
+              inArray(voiceSessions.businessId, matchingBusinessIds),
+              gte(voiceSessions.startedAt, monthStart),
+            ),
+          )
+          .groupBy(voiceSessions.businessId);
+        for (const row of usedRows) {
+          usedByBusiness.set(row.businessId, Math.round(Number(row.minutes ?? 0) * 10) / 10);
+        }
+      }
+
+      let minutesUsed = 0;
+      let minutesIncluded = 0;
+      let priceIdrMonthly = 0;
+      for (const row of allMatching) {
+        minutesUsed += usedByBusiness.get(row.businessId) ?? 0;
+        const plan = planByCode.get(row.planName);
+        const included = monthlyByPlan.get(row.planName) ?? 0;
+        const countsForPlan = status
+          ? true
+          : row.status === "active" || row.status === "trialing";
+        if (countsForPlan) {
+          minutesIncluded += included;
+          if (plan) {
+            if (row.billingCycle === "yearly") {
+              const yearly =
+                plan.yearlyPriceIdr > 0
+                  ? plan.yearlyPriceIdr
+                  : Math.round(
+                      plan.monthlyPriceIdr * 12 * (1 - Math.min(100, Math.max(0, plan.yearlyDiscountPercent)) / 100),
+                    );
+              priceIdrMonthly += Math.round(yearly / 12);
+            } else {
+              priceIdrMonthly += plan.monthlyPriceIdr;
+            }
+          }
+        }
+      }
+      minutesUsed = Math.round(minutesUsed * 10) / 10;
+      const fx = await resolveUsdIdrQuote();
+      const usdIdrRate = fx.rate;
+      const geminiCostUsd = Math.round(minutesUsed * 0.023 * 100) / 100;
+
       return {
         items: rows.map((r) => ({
           id: r.id,
@@ -896,10 +1263,24 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
           end_date: r.endDate?.toISOString() ?? null,
           notes: r.notes,
           updated_at: r.updatedAt.toISOString(),
+          lore_minutes_monthly: monthlyByPlan.get(r.planName) ?? 0,
+          lore_minutes_used: usedByBusiness.get(r.businessId) ?? 0,
         })),
         total: totalRow?.value ?? 0,
         page,
         limit,
+        summary: {
+          minutes_used: minutesUsed,
+          minutes_included: minutesIncluded,
+          price_idr_monthly: priceIdrMonthly,
+          price_usd_monthly: Math.round((priceIdrMonthly / usdIdrRate) * 100) / 100,
+          gemini_usd_per_minute: 0.023,
+          gemini_cost_usd: geminiCostUsd,
+          gemini_cost_idr: Math.round(geminiCostUsd * usdIdrRate),
+          usd_idr_rate: Math.round(usdIdrRate),
+          usd_idr_updated_at: fx.market_at,
+          usd_idr_source: fx.source,
+        },
       };
     } catch (err) {
       return sendAuthError(reply, err);
@@ -977,7 +1358,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "dashboard");
-      return await getSettingsMap();
+      return await getPublicSettingsMap();
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -992,8 +1373,31 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         return reply.status(400).send({ detail: "Expected settings object" });
       }
 
-      for (const [key, value] of Object.entries(body)) {
-        if (typeof value !== "string") continue;
+      const current = await getSettingsMap();
+      const auditMeta: Record<string, string> = {};
+      for (const [key, rawValue] of Object.entries(body)) {
+        if (typeof rawValue !== "string") continue;
+        if (key.endsWith("_set")) continue;
+        let value = rawValue;
+        if (key === "provider_api_keys") {
+          const merged = mergeProviderApiKeys(value, withLegacyProviderKeys(current));
+          value = JSON.stringify(merged);
+          const eleven = merged.find((item) => item.provider === "elevenlabs");
+          const custom = merged.find((item) => item.provider === "custom");
+          current.elevenlabs_api_key = eleven?.key ?? "";
+          current.custom_voice_api_key = custom?.key ?? "";
+          for (const alias of ["elevenlabs_api_key", "custom_voice_api_key"] as const) {
+            await db
+              .insert(platformSettings)
+              .values({ key: alias, value: current[alias] ?? "", updatedAt: new Date() })
+              .onConflictDoUpdate({
+                target: platformSettings.key,
+                set: { value: current[alias] ?? "", updatedAt: new Date() },
+              });
+          }
+        } else if (SECRET_SETTING_KEYS.has(key) && looksLikeMaskedSecret(value)) {
+          continue;
+        }
         await db
           .insert(platformSettings)
           .values({ key, value, updatedAt: new Date() })
@@ -1001,6 +1405,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
             target: platformSettings.key,
             set: { value, updatedAt: new Date() },
           });
+        auditMeta[key] = SECRET_SETTING_KEYS.has(key)
+          ? value.trim()
+            ? "[updated]"
+            : "[cleared]"
+          : value;
       }
 
       await writeAuditLog({
@@ -1008,11 +1417,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         action: "settings.update",
         entityType: "platform_settings",
         entityId: "global",
-        metadata: body,
+        metadata: auditMeta,
         request,
       });
 
-      return await getSettingsMap();
+      return await getPublicSettingsMap();
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -1607,6 +2016,412 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       return sendAuthError(reply, err);
     }
   });
+
+  app.get("/platform/topup-orders", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:read");
+      const query = request.query as { status?: string; search?: string };
+      const rows = await listPlatformTopupOrders({
+        status: query.status,
+        search: query.search,
+      });
+      return {
+        items: rows.map((row) => ({
+          ...orderOut(row),
+          user_email: row.user_email,
+          user_name: row.user_name,
+        })),
+      };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/platform/topup-orders/:id/approve", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:write");
+      const { id } = request.params as { id: string };
+      const order = await approveTopupOrder(id, admin.id);
+      await writeAuditLog({
+        adminId: admin.id,
+        action: "topup_order.approve",
+        entityType: "topup_order",
+        entityId: id,
+        metadata: { minutes: order.minutes, user_id: order.userId },
+        request,
+      });
+      return orderOut(order);
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/platform/topup-orders/:id/reject", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:write");
+      const { id } = request.params as { id: string };
+      const body = request.body as { notes?: string };
+      await rejectTopupOrder(id, admin.id, body.notes);
+      await writeAuditLog({
+        adminId: admin.id,
+        action: "topup_order.reject",
+        entityType: "topup_order",
+        entityId: id,
+        metadata: { notes: body.notes ?? "" },
+        request,
+      });
+      return { id, status: "rejected" };
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/platform/users/:id/voice-minutes", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:read");
+      const { id } = request.params as { id: string };
+      const [wallet, ledger] = await Promise.all([
+        getVoiceMinuteWallet(id),
+        listMinuteLedger(id, 80),
+      ]);
+      return { wallet, ledger };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/platform/users/:id/voice-minutes/adjust", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:write");
+      const { id } = request.params as { id: string };
+      const body = request.body as { seconds?: number; note?: string };
+      const wallet = await applyAdminAdjustment({
+        userId: id,
+        seconds: Number(body.seconds),
+        adminId: admin.id,
+        note: body.note,
+      });
+      await writeAuditLog({
+        adminId: admin.id,
+        action: "voice_minutes.adjust",
+        entityType: "user",
+        entityId: id,
+        metadata: { seconds: body.seconds, note: body.note ?? "" },
+        request,
+      });
+      return wallet;
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/platform/pricing", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:read");
+      const [planRows, addonRows, packageRows] = await Promise.all([
+        db.select().from(plans),
+        db.select().from(addons),
+        db.select().from(topupPackages),
+      ]);
+      return {
+        plans: planRows
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((plan) => ({
+            id: plan.id,
+            code: plan.code,
+            name: plan.name,
+            is_trial: plan.isTrial,
+            workspace_limit: plan.workspaceLimit,
+            monthly_price_idr: plan.monthlyPriceIdr,
+            yearly_price_idr: plan.yearlyPriceIdr,
+            yearly_discount_percent: plan.yearlyDiscountPercent,
+            monthly_voice_minutes: Math.round(plan.monthlyVoiceSeconds / 60),
+          })),
+        addons: addonRows
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((addon) => ({
+            id: addon.id,
+            code: addon.code,
+            name: addon.name,
+            description: addon.description,
+            price_display: addon.priceDisplay,
+            monthly_price_idr: addon.monthlyPriceIdr,
+            discount_3m_percent: addon.discount3mPercent,
+            discount_6m_percent: addon.discount6mPercent,
+            discount_12m_percent: addon.discount12mPercent,
+          })),
+        topup_packages: packageRows
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((pkg) => ({
+            id: pkg.id,
+            code: pkg.code,
+            name: pkg.name,
+            minutes: pkg.minutes,
+            price_idr: pkg.priceIdr,
+            discount_percent: pkg.discountPercent,
+            expires_after_days: pkg.expiresAfterDays,
+            is_popular: pkg.isPopular,
+            status: pkg.status,
+          })),
+      };
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.patch("/platform/pricing/plans/:code", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:write");
+      const { code } = request.params as { code: string };
+      const body = (request.body ?? {}) as {
+        monthly_price_idr?: number;
+        yearly_price_idr?: number;
+        yearly_discount_percent?: number;
+        monthly_voice_minutes?: number;
+        workspace_limit?: number;
+      };
+      const plan = await db.query.plans.findFirst({ where: eq(plans.code, code) });
+      if (!plan) {
+        return reply.status(404).send({ detail: "Plan not found." });
+      }
+      const updates: Partial<typeof plans.$inferInsert> = {};
+      if (body.monthly_price_idr !== undefined) {
+        updates.monthlyPriceIdr = parsePositiveInt(body.monthly_price_idr, "Monthly price");
+      }
+      if (body.yearly_discount_percent !== undefined) {
+        updates.yearlyDiscountPercent = parsePercent(body.yearly_discount_percent, "Yearly discount");
+      }
+      const nextMonthly = updates.monthlyPriceIdr ?? plan.monthlyPriceIdr;
+      const nextDiscount = updates.yearlyDiscountPercent ?? plan.yearlyDiscountPercent;
+      if (body.monthly_price_idr !== undefined || body.yearly_discount_percent !== undefined) {
+        updates.yearlyPriceIdr = yearlyFromMonthly(nextMonthly, nextDiscount);
+      } else if (body.yearly_price_idr !== undefined) {
+        updates.yearlyPriceIdr = parsePositiveInt(body.yearly_price_idr, "Yearly price");
+      }
+      if (body.monthly_voice_minutes !== undefined) {
+        updates.monthlyVoiceSeconds = parsePositiveInt(body.monthly_voice_minutes, "Monthly minutes") * 60;
+      }
+      if (body.workspace_limit !== undefined) {
+        const limit = parsePositiveInt(body.workspace_limit, "Workspace limit");
+        if (limit < 1) {
+          return reply.status(400).send({ detail: "Workspace limit must be at least 1." });
+        }
+        updates.workspaceLimit = limit;
+      }
+      if (Object.keys(updates).length === 0) {
+        return reply.status(400).send({ detail: "No pricing fields to update." });
+      }
+      const [updated] = await db.update(plans).set(updates).where(eq(plans.id, plan.id)).returning();
+      await writeAuditLog({
+        adminId: admin.id,
+        action: "pricing.plan.update",
+        entityType: "plan",
+        entityId: plan.id,
+        metadata: body,
+        request,
+      });
+      return {
+        id: updated!.id,
+        code: updated!.code,
+        name: updated!.name,
+        is_trial: updated!.isTrial,
+        workspace_limit: updated!.workspaceLimit,
+        monthly_price_idr: updated!.monthlyPriceIdr,
+        yearly_price_idr: updated!.yearlyPriceIdr,
+        yearly_discount_percent: updated!.yearlyDiscountPercent,
+        monthly_voice_minutes: Math.round(updated!.monthlyVoiceSeconds / 60),
+      };
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.patch("/platform/pricing/addons/:code", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:write");
+      const { code } = request.params as { code: string };
+      const body = (request.body ?? {}) as {
+        monthly_price_idr?: number;
+        discount_3m_percent?: number;
+        discount_6m_percent?: number;
+        discount_12m_percent?: number;
+      };
+      const addon = await db.query.addons.findFirst({ where: eq(addons.code, code) });
+      if (!addon) {
+        return reply.status(404).send({ detail: "Add-on not found." });
+      }
+      const updates: Partial<typeof addons.$inferInsert> = {};
+      if (body.monthly_price_idr !== undefined) {
+        const monthly = parsePositiveInt(body.monthly_price_idr, "Monthly price");
+        updates.monthlyPriceIdr = monthly;
+        updates.priceDisplay = formatAddonPriceDisplay(monthly);
+      }
+      if (body.discount_3m_percent !== undefined) {
+        updates.discount3mPercent = parsePercent(body.discount_3m_percent, "3-month discount");
+      }
+      if (body.discount_6m_percent !== undefined) {
+        updates.discount6mPercent = parsePercent(body.discount_6m_percent, "6-month discount");
+      }
+      if (body.discount_12m_percent !== undefined) {
+        updates.discount12mPercent = parsePercent(body.discount_12m_percent, "12-month discount");
+      }
+      if (Object.keys(updates).length === 0) {
+        return reply.status(400).send({ detail: "No pricing fields to update." });
+      }
+      const [updated] = await db.update(addons).set(updates).where(eq(addons.id, addon.id)).returning();
+      await writeAuditLog({
+        adminId: admin.id,
+        action: "pricing.addon.update",
+        entityType: "addon",
+        entityId: addon.id,
+        metadata: body,
+        request,
+      });
+      return {
+        id: updated!.id,
+        code: updated!.code,
+        name: updated!.name,
+        description: updated!.description,
+        price_display: updated!.priceDisplay,
+        monthly_price_idr: updated!.monthlyPriceIdr,
+        discount_3m_percent: updated!.discount3mPercent,
+        discount_6m_percent: updated!.discount6mPercent,
+        discount_12m_percent: updated!.discount12mPercent,
+      };
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.patch("/platform/pricing/topup-packages/:id", async (request, reply) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "subscriptions:write");
+      const { id } = request.params as { id: string };
+      const body = (request.body ?? {}) as {
+        price_idr?: number;
+        minutes?: number;
+        discount_percent?: number;
+      };
+      const pkg = await db.query.topupPackages.findFirst({ where: eq(topupPackages.id, id) });
+      if (!pkg) {
+        return reply.status(404).send({ detail: "Top-up package not found." });
+      }
+      const updates: Partial<typeof topupPackages.$inferInsert> = { updatedAt: new Date() };
+      if (body.price_idr !== undefined) {
+        updates.priceIdr = parsePositiveInt(body.price_idr, "Price");
+      }
+      if (body.minutes !== undefined) {
+        const minutes = parsePositiveInt(body.minutes, "Minutes");
+        if (minutes < 1) {
+          return reply.status(400).send({ detail: "Minutes must be at least 1." });
+        }
+        updates.minutes = minutes;
+      }
+      if (body.discount_percent !== undefined) {
+        updates.discountPercent = parsePercent(body.discount_percent, "Discount");
+      }
+      if (
+        body.price_idr === undefined &&
+        body.minutes === undefined &&
+        body.discount_percent === undefined
+      ) {
+        return reply.status(400).send({ detail: "No pricing fields to update." });
+      }
+      const [updated] = await db
+        .update(topupPackages)
+        .set(updates)
+        .where(eq(topupPackages.id, id))
+        .returning();
+      await writeAuditLog({
+        adminId: admin.id,
+        action: "pricing.topup.update",
+        entityType: "topup_package",
+        entityId: id,
+        metadata: body,
+        request,
+      });
+      return {
+        id: updated!.id,
+        code: updated!.code,
+        name: updated!.name,
+        minutes: updated!.minutes,
+        price_idr: updated!.priceIdr,
+        discount_percent: updated!.discountPercent,
+        expires_after_days: updated!.expiresAfterDays,
+        is_popular: updated!.isPopular,
+        status: updated!.status,
+      };
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+}
+
+function formatAddonPriceDisplay(amountIdr: number) {
+  return `Rp${amountIdr.toLocaleString("id-ID")}/month`;
+}
+
+function parsePositiveInt(value: unknown, label: string) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+    const err = new Error(`${label} must be a whole number.`) as Error & { statusCode: number };
+    err.statusCode = 400;
+    throw err;
+  }
+  return n;
+}
+
+function parsePercent(value: unknown, label: string) {
+  const n = parsePositiveInt(value, label);
+  if (n > 100) {
+    const err = new Error(`${label} must be between 0 and 100.`) as Error & { statusCode: number };
+    err.statusCode = 400;
+    throw err;
+  }
+  return n;
+}
+
+function yearlyFromMonthly(monthlyIdr: number, discountPercent: number) {
+  return Math.round(monthlyIdr * 12 * (1 - discountPercent / 100));
 }
 
 function safeJson(raw: string): unknown {

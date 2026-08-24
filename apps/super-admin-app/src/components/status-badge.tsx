@@ -1,6 +1,6 @@
 import { cn } from "@/lib/cn";
 
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status, className }: { status: string; className?: string }) {
   const tone =
     status === "active" || status === "contacted" || status === "approved"
       ? "border-green-100 bg-green-50 text-green-700"
@@ -20,6 +20,7 @@ export function StatusBadge({ status }: { status: string }) {
       className={cn(
         "inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize",
         tone,
+        className,
       )}
     >
       {status}

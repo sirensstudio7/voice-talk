@@ -42,7 +42,8 @@ function shouldRunBrowserVision(
     return false;
   }
   if (visionSource === "python") return false;
-  if (visionSource === "browser") return true;
+  // browser + human both run in the display tab (no Python sidecar).
+  if (visionSource === "browser" || visionSource === "human") return true;
   // auto
   return autoGraceElapsed && !pythonVisionConnected;
 }
@@ -114,7 +115,10 @@ export function useBrowserVision({
       return;
     }
 
-    if (visionConfig.vision_source === "browser") {
+    if (
+      visionConfig.vision_source === "browser" ||
+      visionConfig.vision_source === "human"
+    ) {
       setAutoGraceReady(true);
       return;
     }

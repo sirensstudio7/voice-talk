@@ -61,6 +61,33 @@ function formatDuration(seconds: number | null) {
   return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
 }
 
+/** Gemini 3.1 Flash Live paid audio in+out (~$0.005 + $0.018 / min). */
+const GEMINI_LIVE_USD_PER_MINUTE = 0.023;
+const STALE_ACTIVE_MS = 15 * 60 * 1000;
+
+function isStaleActive(session: VoiceSession) {
+  if (session.status !== "active" || session.ended_at) return false;
+  return Date.now() - parseApiDate(session.started_at).getTime() > STALE_ACTIVE_MS;
+}
+
+function sessionDurationSeconds(session: VoiceSession): number | null {
+  if (session.duration_seconds != null) return Math.max(0, session.duration_seconds);
+  if (session.status === "active" && !isStaleActive(session)) {
+    return Math.max(
+      0,
+      Math.floor((Date.now() - parseApiDate(session.started_at).getTime()) / 1000),
+    );
+  }
+  return null;
+}
+
+function formatEstimatedAiCost(seconds: number | null): string {
+  if (seconds == null) return "—";
+  const usd = (seconds / 60) * GEMINI_LIVE_USD_PER_MINUTE;
+  if (usd < 0.01) return "< $0.01";
+  return `~$${usd.toFixed(2)}`;
+}
+
 function formatSelectedDateLabel(dateStr: string) {
   const [year, month, day] = dateStr.split("-").map(Number);
   const date = new Date(year, month - 1, day);
@@ -120,19 +147,30 @@ function orderFilterLabel(filter: OrderFilter) {
   return "";
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({
+  status,
+  title,
+}: {
+  status: string;
+  title?: string;
+}) {
   const styles: Record<string, string> = {
     ended: "bg-slate-100 text-slate-600 ring-slate-500/10",
     active: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+    interrupted: "bg-amber-50 text-amber-800 ring-amber-600/20",
+  };
+  const labels: Record<string, string> = {
+    interrupted: "Interrupted",
   };
 
   return (
     <span
+      title={title}
       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${
         styles[status.toLowerCase()] ?? "bg-slate-100 text-slate-600 ring-slate-500/10"
       }`}
     >
-      {status}
+      {labels[status] ?? status}
     </span>
   );
 }
@@ -211,6 +249,9 @@ function ConversationRow({
     () => (detail ? mergeTranscriptMessages(detail.messages) : []),
     [detail],
   );
+  const stale = isStaleActive(session);
+  const durationSeconds = sessionDurationSeconds(session);
+  const estimatedAiCost = formatEstimatedAiCost(durationSeconds);
 
   return (
     <article
@@ -232,12 +273,19 @@ function ConversationRow({
               <span className="inline-flex rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-800">
                 {formatTimestamp(session.started_at)}
               </span>
-              <StatusBadge status={session.status} />
+              <StatusBadge
+                status={stale ? "interrupted" : session.status}
+                title={
+                  stale
+                    ? "This session never closed (tab closed or server restart). Nobody is talking now."
+                    : undefined
+                }
+              />
               {session.status === "ended" ? (
                 <EndReasonBadge reason={session.end_reason} />
               ) : null}
               <span className="text-xs text-slate-500">
-                {formatDuration(session.duration_seconds)}
+                {stale ? "Never closed" : formatDuration(session.duration_seconds)}
               </span>
             </div>
 
@@ -254,6 +302,12 @@ function ConversationRow({
                   No order
                 </span>
               )}
+              <span
+                title="Estimated Gemini Live cost from session length. Not the billed amount."
+                className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800"
+              >
+                Est. AI {estimatedAiCost}
+              </span>
             </div>
           </div>
 
@@ -374,7 +428,16 @@ export function ConversationsPageClient() {
         ? ended.reduce((sum, s) => sum + (s.duration_seconds ?? 0), 0) / ended.length
         : null;
     const withOrder = filteredSessions.filter((s) => s.order_id).length;
-    return { count: filteredSessions.length, avgDuration, withOrder };
+    const usageSeconds = filteredSessions.reduce(
+      (sum, session) => sum + (sessionDurationSeconds(session) ?? 0),
+      0,
+    );
+    return {
+      count: filteredSessions.length,
+      avgDuration,
+      withOrder,
+      usageCost: formatEstimatedAiCost(usageSeconds > 0 ? usageSeconds : null),
+    };
   }, [filteredSessions]);
 
   const subtitle = useMemo(() => {
@@ -483,20 +546,21 @@ export function ConversationsPageClient() {
 
       {initialLoading && sessions.length === 0 ? (
         <div className="space-y-3">
-          {[0, 1, 2].map((index) => (
+          {[0, 1, 2, 3].map((index) => (
             <div key={index} className="h-24 animate-pulse rounded-xl bg-slate-100" />
           ))}
         </div>
       ) : null}
 
       {!initialLoading && filteredSessions.length > 0 ? (
-        <div className="mb-6 grid gap-[16px] sm:grid-cols-3">
+        <div className="mb-6 grid gap-[16px] sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Total conversations" value={String(stats.count)} />
           <StatCard
             label="Avg call duration"
             value={stats.avgDuration !== null ? formatDuration(Math.round(stats.avgDuration)) : "—"}
           />
           <StatCard label="With order" value={String(stats.withOrder)} />
+          <StatCard label="Est. AI usage" value={stats.usageCost} />
         </div>
       ) : null}
 

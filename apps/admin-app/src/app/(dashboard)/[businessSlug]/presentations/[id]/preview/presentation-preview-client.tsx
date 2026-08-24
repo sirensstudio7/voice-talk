@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowsPointingInIcon,
@@ -15,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   api,
+  ApiRequestError,
   type PresentationDetail,
   type PresentationSessionDetail,
 } from "@/lib/api";
@@ -46,6 +48,7 @@ const PptxDeckViewer = dynamic(
 );
 
 export function PresentationPreviewClient({ presentationId }: { presentationId: string }) {
+  const router = useRouter();
   const { token, business } = useAuth();
   const stageRef = useRef<HTMLDivElement>(null);
   const [detail, setDetail] = useState<PresentationDetail | null>(null);
@@ -61,8 +64,15 @@ export function PresentationPreviewClient({ presentationId }: { presentationId: 
 
   useEffect(() => {
     if (!token || !business) return;
-    void api.getPresentation(token, business.id, presentationId).then(setDetail);
-  }, [token, business, presentationId]);
+    void api
+      .getPresentation(token, business.id, presentationId)
+      .then(setDetail)
+      .catch((err: unknown) => {
+        if (err instanceof ApiRequestError && err.status === 403) {
+          router.replace(adminPath(business.slug, "/add-ons/ai-presenter"));
+        }
+      });
+  }, [token, business, presentationId, router]);
 
   // Restore director controls if a live session was already started for this deck.
   useEffect(() => {
