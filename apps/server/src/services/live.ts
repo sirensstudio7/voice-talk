@@ -775,10 +775,10 @@ const LIVE_TEXT_MODELS = [
   "gemini-3.6-flash",
   "gemini-3.1-flash",
   "gemini-2.5-flash",
-].filter(
-  (model, index, all): model is string =>
-    Boolean(model) && !/live-preview/i.test(model) && all.indexOf(model) === index,
-);
+].filter((model, index, all): model is string => {
+    if (!model) return false;
+    return !/live-preview/i.test(model) && all.indexOf(model) === index;
+  });
 
 let textQuotaUntil = 0;
 let ttsQuotaUntil = 0;
