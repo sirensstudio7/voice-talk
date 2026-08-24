@@ -2144,11 +2144,15 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:read");
-      const [planRows, addonRows, packageRows] = await Promise.all([
-        db.select().from(plans),
-        db.select().from(addons),
-        db.select().from(topupPackages),
-      ]);
+      const [planRows, addonRows, packageRows] = await withDbTimeout(
+        (database) =>
+          Promise.all([
+            database.select().from(plans),
+            database.select().from(addons),
+            database.select().from(topupPackages),
+          ]),
+        20_000,
+      );
       return {
         plans: planRows
           .sort((a, b) => a.sortOrder - b.sortOrder)

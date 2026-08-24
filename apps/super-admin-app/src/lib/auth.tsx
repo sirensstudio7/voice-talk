@@ -41,20 +41,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const admin = await api.me(savedToken);
+        const parsed = JSON.parse(savedAdmin) as PlatformAdmin;
+        if (!cancelled) {
+          setToken(savedToken);
+          setAdmin(parsed);
+          setAuthReady(true);
+        }
+        const fresh = await api.me(savedToken);
         if (cancelled) return;
-        localStorage.setItem(ADMIN_KEY, JSON.stringify(admin));
-        setToken(savedToken);
-        setAdmin(admin);
+        localStorage.setItem(ADMIN_KEY, JSON.stringify(fresh));
+        setAdmin(fresh);
       } catch {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(ADMIN_KEY);
         if (!cancelled) {
           setToken(null);
           setAdmin(null);
+          setAuthReady(true);
         }
-      } finally {
-        if (!cancelled) setAuthReady(true);
       }
     }
 
