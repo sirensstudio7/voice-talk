@@ -8,7 +8,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = 20_000;
+const DEFAULT_TIMEOUT_MS = 45_000;
 
 async function request<T>(
   path: string,
@@ -42,7 +42,10 @@ async function request<T>(
     return data as T;
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      throw new ApiRequestError("Request timed out. Is the API running?", 408);
+      throw new ApiRequestError(
+        "Request timed out. The API may still be starting after a deploy — wait a few seconds and retry.",
+        408,
+      );
     }
     throw err;
   } finally {
