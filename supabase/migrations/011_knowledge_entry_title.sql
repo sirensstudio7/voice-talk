@@ -1,2 +1,0 @@
-ALTER TABLE knowledge_entries
-  ADD COLUMN IF NOT EXISTS title VARCHAR(200);

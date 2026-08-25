@@ -1,2 +1,0 @@
-ALTER TABLE ai_rules
-  ADD COLUMN IF NOT EXISTS avatar_model_path TEXT NOT NULL DEFAULT '';

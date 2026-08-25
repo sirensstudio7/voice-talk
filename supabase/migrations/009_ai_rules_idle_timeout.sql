@@ -1,2 +1,0 @@
-ALTER TABLE ai_rules
-  ADD COLUMN IF NOT EXISTS idle_timeout_seconds INTEGER NOT NULL DEFAULT 30;

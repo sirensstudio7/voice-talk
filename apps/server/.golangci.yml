@@ -1,0 +1,20 @@
+version: "2"
+
+linters:
+  enable:
+    - depguard
+  settings:
+    depguard:
+      rules:
+        modules:
+          files:
+            - "internal/modules/**/*.go"
+          deny:
+            # pgx/pgxpool and go-redis are NOT denied here: every module's
+            # Deps struct already carries *pgxpool.Pool/*redis.Client
+            # directly by design — see the documented exception in
+            # internal/modules/doc.go. aws-sdk-go-v2 has no such
+            # exception; it belongs exclusively in
+            # internal/platform/storage.
+            - pkg: "github.com/aws/aws-sdk-go-v2"
+              desc: "vendor SDKs belong in internal/platform, not internal/modules — see internal/modules/doc.go"

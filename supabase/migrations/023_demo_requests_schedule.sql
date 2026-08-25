@@ -1,3 +1,0 @@
-ALTER TABLE demo_requests
-  ADD COLUMN IF NOT EXISTS preferred_date DATE,
-  ADD COLUMN IF NOT EXISTS preferred_time VARCHAR(10) NOT NULL DEFAULT '';

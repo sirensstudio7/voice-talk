@@ -1,2 +1,0 @@
-ALTER TABLE businesses
-  ADD COLUMN IF NOT EXISTS primary_use_case VARCHAR(20) NOT NULL DEFAULT 'both';

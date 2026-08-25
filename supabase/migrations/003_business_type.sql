@@ -1,2 +1,0 @@
-ALTER TABLE businesses
-  ADD COLUMN IF NOT EXISTS business_type VARCHAR(50) NOT NULL DEFAULT '';
