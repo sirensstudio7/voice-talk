@@ -72,7 +72,7 @@ func New(deps Deps) http.Handler {
 	r.Get("/health", healthCheck(deps))
 
 	modules := []Module{
-		auth.New(auth.Deps{DB: deps.DB, Redis: deps.Redis, Events: deps.Events, Log: deps.Log, JWTSecret: deps.Config.JWTSecret, JWTExpireHours: deps.Config.JWTExpireHours}),
+		auth.New(auth.Deps{DB: deps.DB, Redis: deps.Redis, Events: deps.Events, Storage: deps.Storage, Log: deps.Log, JWTSecret: deps.Config.JWTSecret, JWTExpireHours: deps.Config.JWTExpireHours}),
 		commerce.New(commerce.Deps{DB: deps.DB, Events: deps.Events, Log: deps.Log, JWTSecret: deps.Config.JWTSecret}),
 		booking.New(booking.Deps{DB: deps.DB, Events: deps.Events, Log: deps.Log, JWTSecret: deps.Config.JWTSecret}),
 		knowledge.New(knowledge.Deps{DB: deps.DB, Redis: deps.Redis, Log: deps.Log, JWTSecret: deps.Config.JWTSecret}),

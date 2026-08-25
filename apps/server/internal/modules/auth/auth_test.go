@@ -155,3 +155,73 @@ func TestSignupLoginBusinessFlow(t *testing.T) {
 		t.Fatalf("get business by slug: got status %d, body %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestDeleteBusiness_OwnerOnlyWithConfirmSlug(t *testing.T) {
+	handler, cleanup := newTestServer(t)
+	defer cleanup()
+
+	ownerEmail := "owner-" + uuid.NewString()[:8] + "@example.com"
+	rec := doJSON(t, handler, http.MethodPost, "/auth/signup", "", signupRequest{
+		Email: ownerEmail, Password: "hunter2222", Name: "Owner",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("owner signup: got status %d, body %s", rec.Code, rec.Body.String())
+	}
+	var ownerResp authResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &ownerResp); err != nil {
+		t.Fatalf("decode owner signup response: %v", err)
+	}
+	ownerToken := ownerResp.AccessToken
+
+	staffEmail := "staff-" + uuid.NewString()[:8] + "@example.com"
+	rec = doJSON(t, handler, http.MethodPost, "/auth/signup", "", signupRequest{
+		Email: staffEmail, Password: "hunter2222", Name: "Staff",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("staff signup: got status %d, body %s", rec.Code, rec.Body.String())
+	}
+	var staffResp authResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &staffResp); err != nil {
+		t.Fatalf("decode staff signup response: %v", err)
+	}
+	staffToken := staffResp.AccessToken
+
+	slug := "test-del-biz-" + uuid.NewString()[:8]
+	rec = doJSON(t, handler, http.MethodPost, "/businesses", ownerToken, createBusinessRequest{
+		Slug: slug, Name: "Deletable Business",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create business: got status %d, body %s", rec.Code, rec.Body.String())
+	}
+
+	// A non-owner (staff has no membership at all here, standing in for
+	// "not the owner") is rejected.
+	rec = doJSON(t, handler, http.MethodDelete, "/businesses/"+slug, staffToken, deleteBusinessRequest{
+		ConfirmSlug: slug,
+	})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("non-member delete: got status %d, want 403, body %s", rec.Code, rec.Body.String())
+	}
+
+	// Owner with the wrong confirm_slug is rejected.
+	rec = doJSON(t, handler, http.MethodDelete, "/businesses/"+slug, ownerToken, deleteBusinessRequest{
+		ConfirmSlug: "not-the-right-slug",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("wrong confirm_slug: got status %d, want 400, body %s", rec.Code, rec.Body.String())
+	}
+
+	// Owner with the correct confirm_slug succeeds.
+	rec = doJSON(t, handler, http.MethodDelete, "/businesses/"+slug, ownerToken, deleteBusinessRequest{
+		ConfirmSlug: slug,
+	})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("owner delete: got status %d, want 204, body %s", rec.Code, rec.Body.String())
+	}
+
+	// The business is really gone.
+	rec = doJSON(t, handler, http.MethodGet, "/businesses/"+slug, "", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("business after delete: got status %d, want 404", rec.Code)
+	}
+}

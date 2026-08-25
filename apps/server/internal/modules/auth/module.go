@@ -15,7 +15,9 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/authtoken"
+	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/authz"
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/events"
+	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/storage"
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/store"
 )
 
@@ -23,6 +25,7 @@ type Deps struct {
 	DB             *pgxpool.Pool
 	Redis          *redis.Client
 	Events         *events.Bus
+	Storage        *storage.Client // nil when R2 credentials aren't configured
 	Log            zerolog.Logger
 	JWTSecret      string
 	JWTExpireHours int
@@ -56,5 +59,10 @@ func (m *Module) RegisterRoutes(r chi.Router) {
 		r.Get("/auth/me", m.getMe)
 		r.Get("/businesses", m.listMyBusinesses)
 		r.Post("/businesses", m.createBusiness)
+
+		r.Group(func(r chi.Router) {
+			r.Use(authz.RequireBusinessMember(m.store))
+			r.Delete("/businesses/{slug}", m.deleteBusiness)
+		})
 	})
 }
