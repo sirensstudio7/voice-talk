@@ -7,6 +7,8 @@ package store
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createBusiness = `-- name: CreateBusiness :one
@@ -77,6 +79,197 @@ SELECT id, slug, name, tagline, voice_name, gemini_model, payment_qr_url, backgr
 
 func (q *Queries) GetBusinessBySlug(ctx context.Context, slug string) (Business, error) {
 	row := q.db.QueryRow(ctx, getBusinessBySlug, slug)
+	var i Business
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Tagline,
+		&i.VoiceName,
+		&i.GeminiModel,
+		&i.PaymentQrUrl,
+		&i.BackgroundUrl,
+		&i.GradientColor,
+		&i.DisplayOrientation,
+		&i.BusinessType,
+		&i.PrimaryUseCase,
+		&i.OnboardingCompleted,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateBusinessAppearance = `-- name: UpdateBusinessAppearance :one
+UPDATE businesses SET
+  gradient_color = COALESCE($1, gradient_color),
+  display_orientation = COALESCE($2, display_orientation)
+WHERE id = $3
+RETURNING id, slug, name, tagline, voice_name, gemini_model, payment_qr_url, background_url, gradient_color, display_orientation, business_type, primary_use_case, onboarding_completed, is_active, created_at
+`
+
+type UpdateBusinessAppearanceParams struct {
+	GradientColor      pgtype.Text `json:"gradient_color"`
+	DisplayOrientation pgtype.Text `json:"display_orientation"`
+	ID                 string      `json:"id"`
+}
+
+func (q *Queries) UpdateBusinessAppearance(ctx context.Context, arg UpdateBusinessAppearanceParams) (Business, error) {
+	row := q.db.QueryRow(ctx, updateBusinessAppearance, arg.GradientColor, arg.DisplayOrientation, arg.ID)
+	var i Business
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Tagline,
+		&i.VoiceName,
+		&i.GeminiModel,
+		&i.PaymentQrUrl,
+		&i.BackgroundUrl,
+		&i.GradientColor,
+		&i.DisplayOrientation,
+		&i.BusinessType,
+		&i.PrimaryUseCase,
+		&i.OnboardingCompleted,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateBusinessBackgroundURL = `-- name: UpdateBusinessBackgroundURL :one
+UPDATE businesses SET background_url = $2 WHERE id = $1
+RETURNING id, slug, name, tagline, voice_name, gemini_model, payment_qr_url, background_url, gradient_color, display_orientation, business_type, primary_use_case, onboarding_completed, is_active, created_at
+`
+
+type UpdateBusinessBackgroundURLParams struct {
+	ID            string `json:"id"`
+	BackgroundUrl string `json:"background_url"`
+}
+
+func (q *Queries) UpdateBusinessBackgroundURL(ctx context.Context, arg UpdateBusinessBackgroundURLParams) (Business, error) {
+	row := q.db.QueryRow(ctx, updateBusinessBackgroundURL, arg.ID, arg.BackgroundUrl)
+	var i Business
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Tagline,
+		&i.VoiceName,
+		&i.GeminiModel,
+		&i.PaymentQrUrl,
+		&i.BackgroundUrl,
+		&i.GradientColor,
+		&i.DisplayOrientation,
+		&i.BusinessType,
+		&i.PrimaryUseCase,
+		&i.OnboardingCompleted,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateBusinessGeneral = `-- name: UpdateBusinessGeneral :one
+UPDATE businesses SET
+  name = COALESCE($1, name),
+  tagline = COALESCE($2, tagline),
+  voice_name = COALESCE($3, voice_name),
+  gemini_model = COALESCE($4, gemini_model),
+  is_active = COALESCE($5, is_active)
+WHERE id = $6
+RETURNING id, slug, name, tagline, voice_name, gemini_model, payment_qr_url, background_url, gradient_color, display_orientation, business_type, primary_use_case, onboarding_completed, is_active, created_at
+`
+
+type UpdateBusinessGeneralParams struct {
+	Name        pgtype.Text `json:"name"`
+	Tagline     pgtype.Text `json:"tagline"`
+	VoiceName   pgtype.Text `json:"voice_name"`
+	GeminiModel pgtype.Text `json:"gemini_model"`
+	IsActive    pgtype.Bool `json:"is_active"`
+	ID          string      `json:"id"`
+}
+
+func (q *Queries) UpdateBusinessGeneral(ctx context.Context, arg UpdateBusinessGeneralParams) (Business, error) {
+	row := q.db.QueryRow(ctx, updateBusinessGeneral,
+		arg.Name,
+		arg.Tagline,
+		arg.VoiceName,
+		arg.GeminiModel,
+		arg.IsActive,
+		arg.ID,
+	)
+	var i Business
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Tagline,
+		&i.VoiceName,
+		&i.GeminiModel,
+		&i.PaymentQrUrl,
+		&i.BackgroundUrl,
+		&i.GradientColor,
+		&i.DisplayOrientation,
+		&i.BusinessType,
+		&i.PrimaryUseCase,
+		&i.OnboardingCompleted,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateBusinessOnboarding = `-- name: UpdateBusinessOnboarding :one
+UPDATE businesses SET
+  business_type = $2,
+  primary_use_case = $3,
+  onboarding_completed = TRUE
+WHERE id = $1
+RETURNING id, slug, name, tagline, voice_name, gemini_model, payment_qr_url, background_url, gradient_color, display_orientation, business_type, primary_use_case, onboarding_completed, is_active, created_at
+`
+
+type UpdateBusinessOnboardingParams struct {
+	ID             string `json:"id"`
+	BusinessType   string `json:"business_type"`
+	PrimaryUseCase string `json:"primary_use_case"`
+}
+
+func (q *Queries) UpdateBusinessOnboarding(ctx context.Context, arg UpdateBusinessOnboardingParams) (Business, error) {
+	row := q.db.QueryRow(ctx, updateBusinessOnboarding, arg.ID, arg.BusinessType, arg.PrimaryUseCase)
+	var i Business
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Tagline,
+		&i.VoiceName,
+		&i.GeminiModel,
+		&i.PaymentQrUrl,
+		&i.BackgroundUrl,
+		&i.GradientColor,
+		&i.DisplayOrientation,
+		&i.BusinessType,
+		&i.PrimaryUseCase,
+		&i.OnboardingCompleted,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateBusinessPaymentQRURL = `-- name: UpdateBusinessPaymentQRURL :one
+UPDATE businesses SET payment_qr_url = $2 WHERE id = $1
+RETURNING id, slug, name, tagline, voice_name, gemini_model, payment_qr_url, background_url, gradient_color, display_orientation, business_type, primary_use_case, onboarding_completed, is_active, created_at
+`
+
+type UpdateBusinessPaymentQRURLParams struct {
+	ID           string `json:"id"`
+	PaymentQrUrl string `json:"payment_qr_url"`
+}
+
+func (q *Queries) UpdateBusinessPaymentQRURL(ctx context.Context, arg UpdateBusinessPaymentQRURLParams) (Business, error) {
+	row := q.db.QueryRow(ctx, updateBusinessPaymentQRURL, arg.ID, arg.PaymentQrUrl)
 	var i Business
 	err := row.Scan(
 		&i.ID,

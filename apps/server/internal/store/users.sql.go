@@ -86,6 +86,33 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
 	return i, err
 }
 
+const updateUserCountry = `-- name: UpdateUserCountry :one
+UPDATE users SET country = $2 WHERE id = $1
+RETURNING id, email, password_hash, name, status, phone, country, last_login_at, created_at
+`
+
+type UpdateUserCountryParams struct {
+	ID      string `json:"id"`
+	Country string `json:"country"`
+}
+
+func (q *Queries) UpdateUserCountry(ctx context.Context, arg UpdateUserCountryParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserCountry, arg.ID, arg.Country)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Name,
+		&i.Status,
+		&i.Phone,
+		&i.Country,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const updateUserLastLogin = `-- name: UpdateUserLastLogin :exec
 UPDATE users SET last_login_at = NOW() WHERE id = $1
 `

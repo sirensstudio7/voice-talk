@@ -3,6 +3,7 @@ package auth
 import (
 	"time"
 
+	"github.com/sirensstudio7/voice-talk/apps/server/internal/capabilities"
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/store"
 )
 
@@ -20,19 +21,23 @@ func toUserOut(u store.User) userOut {
 }
 
 type businessOut struct {
-	ID                  string `json:"id"`
-	Slug                string `json:"slug"`
-	Name                string `json:"name"`
-	Tagline             string `json:"tagline"`
-	VoiceName           string `json:"voice_name"`
-	GeminiModel         string `json:"gemini_model"`
-	BackgroundURL       string `json:"background_url"`
-	IsActive            bool   `json:"is_active"`
-	OnboardingCompleted bool   `json:"onboarding_completed"`
-	CreatedAt           string `json:"created_at"`
+	ID                  string                      `json:"id"`
+	Slug                string                      `json:"slug"`
+	Name                string                      `json:"name"`
+	Tagline             string                      `json:"tagline"`
+	VoiceName           string                      `json:"voice_name"`
+	GeminiModel         string                      `json:"gemini_model"`
+	BackgroundURL       string                      `json:"background_url"`
+	IsActive            bool                        `json:"is_active"`
+	BusinessType        string                      `json:"business_type"`
+	PrimaryUseCase      capabilities.PrimaryUseCase `json:"primary_use_case"`
+	Capabilities        capabilities.Capabilities   `json:"capabilities"`
+	OnboardingCompleted bool                        `json:"onboarding_completed"`
+	CreatedAt           string                      `json:"created_at"`
 }
 
 func toBusinessOut(b store.Business) businessOut {
+	caps := capabilities.Get(b.PrimaryUseCase, b.BusinessType)
 	return businessOut{
 		ID:                  b.ID,
 		Slug:                b.Slug,
@@ -42,6 +47,9 @@ func toBusinessOut(b store.Business) businessOut {
 		GeminiModel:         b.GeminiModel,
 		BackgroundURL:       b.BackgroundUrl,
 		IsActive:            b.IsActive,
+		BusinessType:        b.BusinessType,
+		PrimaryUseCase:      caps.PrimaryUseCase,
+		Capabilities:        caps,
 		OnboardingCompleted: b.OnboardingCompleted,
 		CreatedAt:           b.CreatedAt.Time.Format(time.RFC3339),
 	}
@@ -55,6 +63,7 @@ type myBusinessOut struct {
 }
 
 func toMyBusinessOut(row store.ListBusinessesForUserRow) myBusinessOut {
+	caps := capabilities.Get(row.PrimaryUseCase, row.BusinessType)
 	return myBusinessOut{
 		businessOut: businessOut{
 			ID:                  row.ID,
@@ -65,9 +74,34 @@ func toMyBusinessOut(row store.ListBusinessesForUserRow) myBusinessOut {
 			GeminiModel:         row.GeminiModel,
 			BackgroundURL:       row.BackgroundUrl,
 			IsActive:            row.IsActive,
+			BusinessType:        row.BusinessType,
+			PrimaryUseCase:      caps.PrimaryUseCase,
+			Capabilities:        caps,
 			OnboardingCompleted: row.OnboardingCompleted,
 			CreatedAt:           row.CreatedAt.Time.Format(time.RFC3339),
 		},
 		Role: row.Role,
 	}
+}
+
+type appearanceOut struct {
+	BackgroundURL      string `json:"background_url"`
+	GradientColor      string `json:"gradient_color"`
+	DisplayOrientation string `json:"display_orientation"`
+}
+
+func toAppearanceOut(b store.Business) appearanceOut {
+	orientation := b.DisplayOrientation
+	if orientation == "" {
+		orientation = "landscape"
+	}
+	return appearanceOut{
+		BackgroundURL:      b.BackgroundUrl,
+		GradientColor:      b.GradientColor,
+		DisplayOrientation: orientation,
+	}
+}
+
+type paymentOut struct {
+	PaymentQRURL string `json:"payment_qr_url"`
 }

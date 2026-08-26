@@ -146,6 +146,11 @@ type Querier interface {
 	SetSessionStatus(ctx context.Context, arg SetSessionStatusParams) error
 	SoftDeletePresentation(ctx context.Context, arg SoftDeletePresentationParams) (int64, error)
 	UpdateAIRules(ctx context.Context, arg UpdateAIRulesParams) (AiRule, error)
+	UpdateBusinessAppearance(ctx context.Context, arg UpdateBusinessAppearanceParams) (Business, error)
+	UpdateBusinessBackgroundURL(ctx context.Context, arg UpdateBusinessBackgroundURLParams) (Business, error)
+	UpdateBusinessGeneral(ctx context.Context, arg UpdateBusinessGeneralParams) (Business, error)
+	UpdateBusinessOnboarding(ctx context.Context, arg UpdateBusinessOnboardingParams) (Business, error)
+	UpdateBusinessPaymentQRURL(ctx context.Context, arg UpdateBusinessPaymentQRURLParams) (Business, error)
 	UpdateBusinessStatus(ctx context.Context, arg UpdateBusinessStatusParams) (Business, error)
 	UpdateKnowledgeEntry(ctx context.Context, arg UpdateKnowledgeEntryParams) (KnowledgeEntry, error)
 	UpdateOrderCustomerName(ctx context.Context, arg UpdateOrderCustomerNameParams) (Order, error)
@@ -157,6 +162,7 @@ type Querier interface {
 	UpdateProduct(ctx context.Context, arg UpdateProductParams) (Product, error)
 	UpdateSessionAudienceCount(ctx context.Context, arg UpdateSessionAudienceCountParams) (PresentationSession, error)
 	UpdateSessionState(ctx context.Context, arg UpdateSessionStateParams) (PresentationSession, error)
+	UpdateUserCountry(ctx context.Context, arg UpdateUserCountryParams) (User, error)
 	UpdateUserLastLogin(ctx context.Context, id string) error
 	UpdateUserPasswordHash(ctx context.Context, arg UpdateUserPasswordHashParams) error
 	UpdateUserStatus(ctx context.Context, arg UpdateUserStatusParams) (User, error)

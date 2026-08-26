@@ -50,6 +50,7 @@ func (m *Module) tokenTTL() time.Duration {
 
 func (m *Module) RegisterRoutes(r chi.Router) {
 	r.Get("/businesses/{slug}", m.getBusinessBySlug)
+	r.Get("/businesses/{slug}/payment", m.getPayment)
 
 	r.Post("/auth/signup", m.signup)
 	r.Post("/auth/login", m.login)
@@ -57,12 +58,22 @@ func (m *Module) RegisterRoutes(r chi.Router) {
 	r.Group(func(r chi.Router) {
 		r.Use(authtoken.RequireAuth(m.deps.JWTSecret))
 		r.Get("/auth/me", m.getMe)
+		r.Patch("/auth/me", m.updateMe)
 		r.Get("/businesses", m.listMyBusinesses)
+		r.Get("/businesses/check-slug", m.checkSlug)
 		r.Post("/businesses", m.createBusiness)
 
 		r.Group(func(r chi.Router) {
 			r.Use(authz.RequireBusinessMember(m.store))
 			r.Delete("/businesses/{slug}", m.deleteBusiness)
+			r.Patch("/businesses/{slug}", m.updateBusiness)
+			r.Patch("/businesses/{slug}/onboarding", m.updateOnboarding)
+			r.Post("/businesses/{slug}/payment/qr", m.uploadPaymentQR)
+			r.Delete("/businesses/{slug}/payment/qr", m.deletePaymentQR)
+			r.Get("/businesses/{slug}/appearance", m.getAppearance)
+			r.Patch("/businesses/{slug}/appearance", m.updateAppearance)
+			r.Post("/businesses/{slug}/appearance/background", m.uploadBackground)
+			r.Delete("/businesses/{slug}/appearance/background", m.deleteBackground)
 		})
 	})
 }

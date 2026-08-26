@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -30,6 +31,7 @@ const (
 	PrefixPayments      = "payments/"
 	PrefixPresentations = "presentations/"
 	PrefixPhotos        = "photos/"
+	PrefixBackgrounds   = "backgrounds/"
 )
 
 // Size limits ported from apps-legacy/server/src/storage/index.ts.
@@ -122,6 +124,20 @@ func (c *Client) SignedURL(ctx context.Context, key string, expiresIn time.Durat
 		return "", fmt.Errorf("storage: sign %q: %w", key, err)
 	}
 	return req.URL, nil
+}
+
+// PublicURL returns a permanent, unsigned URL for key under the
+// configured R2 public base URL (e.g. assets.lorescale.com) — for assets
+// meant to be directly embedded in a public page (payment QR codes,
+// kiosk backgrounds), as opposed to SignedURL's time-limited access for
+// private objects. Falls back to a 7-day SignedURL if no public base URL
+// is configured, so local/staging environments without a custom domain
+// still get a working (if expiring) link rather than an empty string.
+func (c *Client) PublicURL(ctx context.Context, key string) (string, error) {
+	if c.pubURL == "" {
+		return c.SignedURL(ctx, key, 7*24*time.Hour)
+	}
+	return strings.TrimRight(c.pubURL, "/") + "/" + key, nil
 }
 
 // Delete removes the object at key.
