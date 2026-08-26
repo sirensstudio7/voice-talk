@@ -201,6 +201,11 @@ func resolveAssistantName(rules store.AiRule) string {
 	return name
 }
 
+// ResolveAssistantName is the exported form of resolveAssistantName, for
+// callers outside this package that need the same fallback (e.g. the
+// /menu bootstrap endpoint) without duplicating the "Lorescale" default.
+func ResolveAssistantName(rules store.AiRule) string { return resolveAssistantName(rules) }
+
 func looksLikeOrderingOrCoffeePersonality(text string) bool {
 	p := strings.ToLower(text)
 	for _, needle := range []string{"kasir ai", "ai cashier", "toko kopi", "barista", "warung kopi", "coffee shop", "sunrise coffee"} {

@@ -51,6 +51,7 @@ func (m *Module) tokenTTL() time.Duration {
 func (m *Module) RegisterRoutes(r chi.Router) {
 	r.Get("/businesses/{slug}", m.getBusinessBySlug)
 	r.Get("/businesses/{slug}/payment", m.getPayment)
+	r.Get("/menu", m.getMenu)
 
 	r.Post("/auth/signup", m.signup)
 	r.Post("/auth/login", m.login)
