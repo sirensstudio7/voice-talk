@@ -11,6 +11,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countConfirmedOrdersSince = `-- name: CountConfirmedOrdersSince :one
+SELECT COUNT(*) AS orders_count, COALESCE(SUM(total), 0)::float8 AS revenue
+FROM orders
+WHERE business_id = $1 AND status = 'confirmed' AND confirmed_at >= $2
+`
+
+type CountConfirmedOrdersSinceParams struct {
+	BusinessID  string             `json:"business_id"`
+	ConfirmedAt pgtype.Timestamptz `json:"confirmed_at"`
+}
+
+type CountConfirmedOrdersSinceRow struct {
+	OrdersCount int64   `json:"orders_count"`
+	Revenue     float64 `json:"revenue"`
+}
+
+func (q *Queries) CountConfirmedOrdersSince(ctx context.Context, arg CountConfirmedOrdersSinceParams) (CountConfirmedOrdersSinceRow, error) {
+	row := q.db.QueryRow(ctx, countConfirmedOrdersSince, arg.BusinessID, arg.ConfirmedAt)
+	var i CountConfirmedOrdersSinceRow
+	err := row.Scan(&i.OrdersCount, &i.Revenue)
+	return i, err
+}
+
 const createOrder = `-- name: CreateOrder :one
 INSERT INTO orders (id, business_id, voice_session_id, status, total, confirmed_at)
 VALUES ($1, $2, $3, 'confirmed', $4, NOW())
@@ -79,6 +102,44 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 		&i.Quantity,
 	)
 	return i, err
+}
+
+const dailyConfirmedOrderStats = `-- name: DailyConfirmedOrderStats :many
+SELECT to_char(confirmed_at, 'YYYY-MM-DD') AS day, COUNT(*)::int AS orders, COALESCE(SUM(total), 0)::float8 AS revenue
+FROM orders
+WHERE business_id = $1 AND status = 'confirmed' AND confirmed_at >= $2
+GROUP BY day
+`
+
+type DailyConfirmedOrderStatsParams struct {
+	BusinessID  string             `json:"business_id"`
+	ConfirmedAt pgtype.Timestamptz `json:"confirmed_at"`
+}
+
+type DailyConfirmedOrderStatsRow struct {
+	Day     string  `json:"day"`
+	Orders  int32   `json:"orders"`
+	Revenue float64 `json:"revenue"`
+}
+
+func (q *Queries) DailyConfirmedOrderStats(ctx context.Context, arg DailyConfirmedOrderStatsParams) ([]DailyConfirmedOrderStatsRow, error) {
+	rows, err := q.db.Query(ctx, dailyConfirmedOrderStats, arg.BusinessID, arg.ConfirmedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DailyConfirmedOrderStatsRow{}
+	for rows.Next() {
+		var i DailyConfirmedOrderStatsRow
+		if err := rows.Scan(&i.Day, &i.Orders, &i.Revenue); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getMostRecentOrderForVoiceSession = `-- name: GetMostRecentOrderForVoiceSession :one
@@ -157,6 +218,83 @@ func (q *Queries) ListOrdersForBusiness(ctx context.Context, businessID string) 
 			&i.CustomerName,
 			&i.CreatedAt,
 			&i.ConfirmedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrdersForVoiceSessions = `-- name: ListOrdersForVoiceSessions :many
+SELECT id, business_id, voice_session_id, status, total, customer_name, created_at, confirmed_at FROM orders WHERE voice_session_id = ANY($1::varchar[])
+`
+
+func (q *Queries) ListOrdersForVoiceSessions(ctx context.Context, sessionIds []string) ([]Order, error) {
+	rows, err := q.db.Query(ctx, listOrdersForVoiceSessions, sessionIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Order{}
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.BusinessID,
+			&i.VoiceSessionID,
+			&i.Status,
+			&i.Total,
+			&i.CustomerName,
+			&i.CreatedAt,
+			&i.ConfirmedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const topProductsForBusiness = `-- name: TopProductsForBusiness :many
+SELECT order_items.product_id, order_items.name,
+  SUM(order_items.quantity)::int AS quantity,
+  SUM(order_items.price * order_items.quantity)::float8 AS revenue
+FROM order_items
+JOIN orders ON orders.id = order_items.order_id
+WHERE orders.business_id = $1 AND orders.status = 'confirmed'
+GROUP BY order_items.product_id, order_items.name
+ORDER BY SUM(order_items.quantity) DESC
+LIMIT 10
+`
+
+type TopProductsForBusinessRow struct {
+	ProductID string  `json:"product_id"`
+	Name      string  `json:"name"`
+	Quantity  int32   `json:"quantity"`
+	Revenue   float64 `json:"revenue"`
+}
+
+func (q *Queries) TopProductsForBusiness(ctx context.Context, businessID string) ([]TopProductsForBusinessRow, error) {
+	rows, err := q.db.Query(ctx, topProductsForBusiness, businessID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TopProductsForBusinessRow{}
+	for rows.Next() {
+		var i TopProductsForBusinessRow
+		if err := rows.Scan(
+			&i.ProductID,
+			&i.Name,
+			&i.Quantity,
+			&i.Revenue,
 		); err != nil {
 			return nil, err
 		}

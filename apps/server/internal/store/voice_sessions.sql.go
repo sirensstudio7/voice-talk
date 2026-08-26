@@ -11,6 +11,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const avgSessionDurationSeconds = `-- name: AvgSessionDurationSeconds :one
+SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (ended_at - started_at))), -1)::float8 AS avg_seconds
+FROM voice_sessions
+WHERE business_id = $1 AND status = 'ended' AND ended_at IS NOT NULL
+`
+
+// Returns -1 (a sentinel; duration can never be negative) when there
+// are no matching rows, since sqlc can't infer AVG()'s nullability here
+// and pgx errors scanning SQL NULL into a non-pointer float64.
+func (q *Queries) AvgSessionDurationSeconds(ctx context.Context, businessID string) (float64, error) {
+	row := q.db.QueryRow(ctx, avgSessionDurationSeconds, businessID)
+	var avg_seconds float64
+	err := row.Scan(&avg_seconds)
+	return avg_seconds, err
+}
+
+const countActiveSessions = `-- name: CountActiveSessions :one
+SELECT COUNT(*) FROM voice_sessions WHERE business_id = $1 AND status = 'active'
+`
+
+func (q *Queries) CountActiveSessions(ctx context.Context, businessID string) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveSessions, businessID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countSessionsSince = `-- name: CountSessionsSince :one
+SELECT COUNT(*) FROM voice_sessions WHERE business_id = $1 AND started_at >= $2
+`
+
+type CountSessionsSinceParams struct {
+	BusinessID string             `json:"business_id"`
+	StartedAt  pgtype.Timestamptz `json:"started_at"`
+}
+
+func (q *Queries) CountSessionsSince(ctx context.Context, arg CountSessionsSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSessionsSince, arg.BusinessID, arg.StartedAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createVoiceSession = `-- name: CreateVoiceSession :one
 INSERT INTO voice_sessions (id, business_id)
 VALUES ($1, $2)
@@ -49,4 +92,58 @@ type EndVoiceSessionParams struct {
 func (q *Queries) EndVoiceSession(ctx context.Context, arg EndVoiceSessionParams) error {
 	_, err := q.db.Exec(ctx, endVoiceSession, arg.ID, arg.EndReason)
 	return err
+}
+
+const getVoiceSession = `-- name: GetVoiceSession :one
+SELECT id, business_id, status, end_reason, started_at, ended_at FROM voice_sessions WHERE id = $1 AND business_id = $2
+`
+
+type GetVoiceSessionParams struct {
+	ID         string `json:"id"`
+	BusinessID string `json:"business_id"`
+}
+
+func (q *Queries) GetVoiceSession(ctx context.Context, arg GetVoiceSessionParams) (VoiceSession, error) {
+	row := q.db.QueryRow(ctx, getVoiceSession, arg.ID, arg.BusinessID)
+	var i VoiceSession
+	err := row.Scan(
+		&i.ID,
+		&i.BusinessID,
+		&i.Status,
+		&i.EndReason,
+		&i.StartedAt,
+		&i.EndedAt,
+	)
+	return i, err
+}
+
+const listVoiceSessionsForBusiness = `-- name: ListVoiceSessionsForBusiness :many
+SELECT id, business_id, status, end_reason, started_at, ended_at FROM voice_sessions WHERE business_id = $1 ORDER BY started_at DESC LIMIT 200
+`
+
+func (q *Queries) ListVoiceSessionsForBusiness(ctx context.Context, businessID string) ([]VoiceSession, error) {
+	rows, err := q.db.Query(ctx, listVoiceSessionsForBusiness, businessID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []VoiceSession{}
+	for rows.Next() {
+		var i VoiceSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.BusinessID,
+			&i.Status,
+			&i.EndReason,
+			&i.StartedAt,
+			&i.EndedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

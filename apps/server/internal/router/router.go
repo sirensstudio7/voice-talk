@@ -76,7 +76,7 @@ func New(deps Deps) http.Handler {
 		commerce.New(commerce.Deps{DB: deps.DB, Events: deps.Events, Storage: deps.Storage, Log: deps.Log, JWTSecret: deps.Config.JWTSecret}),
 		booking.New(booking.Deps{DB: deps.DB, Events: deps.Events, Log: deps.Log, JWTSecret: deps.Config.JWTSecret}),
 		knowledge.New(knowledge.Deps{DB: deps.DB, Redis: deps.Redis, Storage: deps.Storage, Log: deps.Log, JWTSecret: deps.Config.JWTSecret}),
-		streaming.New(streaming.Deps{DB: deps.DB, Redis: deps.Redis, Events: deps.Events, Log: deps.Log, GeminiAPIKey: deps.Config.GeminiAPIKey, GeminiModel: deps.Config.GeminiModel, AllowedOrigins: deps.Config.AllowedOrigins}),
+		streaming.New(streaming.Deps{DB: deps.DB, Redis: deps.Redis, Events: deps.Events, Log: deps.Log, GeminiAPIKey: deps.Config.GeminiAPIKey, GeminiModel: deps.Config.GeminiModel, AllowedOrigins: deps.Config.AllowedOrigins, JWTSecret: deps.Config.JWTSecret}),
 		presenter.New(presenter.Deps{DB: deps.DB, Events: deps.Events, Storage: deps.Storage, GeminiAPIKey: deps.Config.GeminiAPIKey, GeminiModel: deps.Config.GeminiModel, AllowedOrigins: deps.Config.AllowedOrigins, Log: deps.Log, JWTSecret: deps.Config.JWTSecret}),
 		photomoment.New(photomoment.Deps{DB: deps.DB, Events: deps.Events, Storage: deps.Storage, Meter: deps.Meter, Log: deps.Log, JWTSecret: deps.Config.JWTSecret}),
 		platformadmin.New(platformadmin.Deps{

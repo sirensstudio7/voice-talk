@@ -9,6 +9,38 @@ import (
 	"context"
 )
 
+const countTranscriptMessagesForSessions = `-- name: CountTranscriptMessagesForSessions :many
+SELECT voice_session_id, COUNT(*)::int AS message_count
+FROM transcript_messages
+WHERE voice_session_id = ANY($1::varchar[])
+GROUP BY voice_session_id
+`
+
+type CountTranscriptMessagesForSessionsRow struct {
+	VoiceSessionID string `json:"voice_session_id"`
+	MessageCount   int32  `json:"message_count"`
+}
+
+func (q *Queries) CountTranscriptMessagesForSessions(ctx context.Context, sessionIds []string) ([]CountTranscriptMessagesForSessionsRow, error) {
+	rows, err := q.db.Query(ctx, countTranscriptMessagesForSessions, sessionIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountTranscriptMessagesForSessionsRow{}
+	for rows.Next() {
+		var i CountTranscriptMessagesForSessionsRow
+		if err := rows.Scan(&i.VoiceSessionID, &i.MessageCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createTranscriptMessage = `-- name: CreateTranscriptMessage :one
 INSERT INTO transcript_messages (id, voice_session_id, role, text)
 VALUES ($1, $2, $3, $4)
@@ -38,4 +70,66 @@ func (q *Queries) CreateTranscriptMessage(ctx context.Context, arg CreateTranscr
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listTranscriptMessagesForSession = `-- name: ListTranscriptMessagesForSession :many
+SELECT id, voice_session_id, role, text, created_at FROM transcript_messages WHERE voice_session_id = $1 ORDER BY created_at
+`
+
+func (q *Queries) ListTranscriptMessagesForSession(ctx context.Context, voiceSessionID string) ([]TranscriptMessage, error) {
+	rows, err := q.db.Query(ctx, listTranscriptMessagesForSession, voiceSessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TranscriptMessage{}
+	for rows.Next() {
+		var i TranscriptMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.VoiceSessionID,
+			&i.Role,
+			&i.Text,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTranscriptMessagesForSessions = `-- name: ListTranscriptMessagesForSessions :many
+SELECT id, voice_session_id, role, text, created_at FROM transcript_messages
+WHERE voice_session_id = ANY($1::varchar[])
+ORDER BY created_at
+`
+
+func (q *Queries) ListTranscriptMessagesForSessions(ctx context.Context, sessionIds []string) ([]TranscriptMessage, error) {
+	rows, err := q.db.Query(ctx, listTranscriptMessagesForSessions, sessionIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TranscriptMessage{}
+	for rows.Next() {
+		var i TranscriptMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.VoiceSessionID,
+			&i.Role,
+			&i.Text,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

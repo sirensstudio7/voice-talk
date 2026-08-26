@@ -19,6 +19,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
+	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/authtoken"
+	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/authz"
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/events"
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/store"
 )
@@ -31,6 +33,7 @@ type Deps struct {
 	GeminiAPIKey   string
 	GeminiModel    string
 	AllowedOrigins []string
+	JWTSecret      string
 }
 
 type Module struct {
@@ -81,4 +84,18 @@ func originPatternsFrom(origins []string) []string {
 
 func (m *Module) RegisterRoutes(r chi.Router) {
 	r.Get("/businesses/{slug}/voice-session", m.handleVoiceSession)
+
+	r.Group(func(r chi.Router) {
+		r.Use(authtoken.RequireAuth(m.deps.JWTSecret))
+		r.Use(authz.RequireBusinessMember(m.store))
+
+		r.Get("/businesses/{slug}/conversations", m.listConversations)
+		r.Get("/businesses/{slug}/conversations/export", m.exportConversations)
+		r.Get("/businesses/{slug}/conversations/{sessionId}", m.getConversation)
+
+		r.Get("/businesses/{slug}/stats/summary", m.getStatsSummary)
+		r.Get("/businesses/{slug}/stats/overview", m.getStatsOverview)
+		r.Get("/businesses/{slug}/stats/daily", m.getStatsDaily)
+		r.Get("/businesses/{slug}/stats/top-products", m.getStatsTopProducts)
+	})
 }

@@ -12,16 +12,24 @@ import (
 
 type Querier interface {
 	AnswerPresentationQuestion(ctx context.Context, arg AnswerPresentationQuestionParams) (PresentationQuestion, error)
+	// Returns -1 (a sentinel; duration can never be negative) when there
+	// are no matching rows, since sqlc can't infer AVG()'s nullability here
+	// and pgx errors scanning SQL NULL into a non-pointer float64.
+	AvgSessionDurationSeconds(ctx context.Context, businessID string) (float64, error)
 	CancelAppointment(ctx context.Context, arg CancelAppointmentParams) (Appointment, error)
 	CheckBusinessMembership(ctx context.Context, arg CheckBusinessMembershipParams) (string, error)
 	CompletePhotoSession(ctx context.Context, arg CompletePhotoSessionParams) (PhotoSession, error)
 	CompletePresentation(ctx context.Context, arg CompletePresentationParams) error
 	CompletePresentationProcessing(ctx context.Context, arg CompletePresentationProcessingParams) error
 	CountActiveBusinesses(ctx context.Context) (int64, error)
+	CountActiveSessions(ctx context.Context, businessID string) (int64, error)
 	CountAuditLogs(ctx context.Context) (int64, error)
 	CountAuditLogsForTarget(ctx context.Context, arg CountAuditLogsForTargetParams) (int64, error)
 	CountBusinessesForPlatform(ctx context.Context, search pgtype.Text) (int64, error)
+	CountConfirmedOrdersSince(ctx context.Context, arg CountConfirmedOrdersSinceParams) (CountConfirmedOrdersSinceRow, error)
 	CountPlatformAdmins(ctx context.Context) (int64, error)
+	CountSessionsSince(ctx context.Context, arg CountSessionsSinceParams) (int64, error)
+	CountTranscriptMessagesForSessions(ctx context.Context, sessionIds []string) ([]CountTranscriptMessagesForSessionsRow, error)
 	CountUsageEventsSince(ctx context.Context, arg CountUsageEventsSinceParams) (int64, error)
 	CountUsersByStatus(ctx context.Context, status string) (int64, error)
 	CountUsersForPlatform(ctx context.Context, search pgtype.Text) (int64, error)
@@ -48,6 +56,7 @@ type Querier interface {
 	CreateTranscriptMessage(ctx context.Context, arg CreateTranscriptMessageParams) (TranscriptMessage, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateVoiceSession(ctx context.Context, arg CreateVoiceSessionParams) (VoiceSession, error)
+	DailyConfirmedOrderStats(ctx context.Context, arg DailyConfirmedOrderStatsParams) ([]DailyConfirmedOrderStatsRow, error)
 	DeleteAllKnowledgeEntries(ctx context.Context, businessID string) (int64, error)
 	DeleteBusinessAiRules(ctx context.Context, businessID string) error
 	DeleteBusinessAppointments(ctx context.Context, businessID string) error
@@ -99,6 +108,7 @@ type Querier interface {
 	GetProduct(ctx context.Context, arg GetProductParams) (Product, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id string) (User, error)
+	GetVoiceSession(ctx context.Context, arg GetVoiceSessionParams) (VoiceSession, error)
 	HasAIRulesConfigured(ctx context.Context, businessID string) (bool, error)
 	IncrementSessionQuestionCount(ctx context.Context, arg IncrementSessionQuestionCountParams) error
 	ListActiveAppointmentsInRange(ctx context.Context, arg ListActiveAppointmentsInRangeParams) ([]Appointment, error)
@@ -118,6 +128,7 @@ type Querier interface {
 	ListKnowledgeEntries(ctx context.Context, businessID string) ([]KnowledgeEntry, error)
 	ListOrderItemsForOrders(ctx context.Context, orderIds []string) ([]OrderItem, error)
 	ListOrdersForBusiness(ctx context.Context, businessID string) ([]Order, error)
+	ListOrdersForVoiceSessions(ctx context.Context, sessionIds []string) ([]Order, error)
 	ListPhotoGalleryForBusiness(ctx context.Context, arg ListPhotoGalleryForBusinessParams) ([]PhotoSession, error)
 	ListPhotoSettingsForCleanup(ctx context.Context) ([]PhotoSetting, error)
 	ListPhotoStoragePathsForBusiness(ctx context.Context, businessID string) ([]ListPhotoStoragePathsForBusinessRow, error)
@@ -134,7 +145,10 @@ type Querier interface {
 	ListPresentationsForBusiness(ctx context.Context, businessID string) ([]Presentation, error)
 	ListProductsForBusiness(ctx context.Context, businessID string) ([]Product, error)
 	ListRecentUserSignups(ctx context.Context, limit int32) ([]User, error)
+	ListTranscriptMessagesForSession(ctx context.Context, voiceSessionID string) ([]TranscriptMessage, error)
+	ListTranscriptMessagesForSessions(ctx context.Context, sessionIds []string) ([]TranscriptMessage, error)
 	ListUsersForPlatform(ctx context.Context, arg ListUsersForPlatformParams) ([]User, error)
+	ListVoiceSessionsForBusiness(ctx context.Context, businessID string) ([]VoiceSession, error)
 	MarkPhotoSessionDownloaded(ctx context.Context, id string) (PhotoSession, error)
 	RecordUsageEvent(ctx context.Context, arg RecordUsageEventParams) (UsageEvent, error)
 	ResetPresentationToDraft(ctx context.Context, arg ResetPresentationToDraftParams) error
@@ -148,6 +162,7 @@ type Querier interface {
 	SetPresentationStatus(ctx context.Context, arg SetPresentationStatusParams) error
 	SetSessionStatus(ctx context.Context, arg SetSessionStatusParams) error
 	SoftDeletePresentation(ctx context.Context, arg SoftDeletePresentationParams) (int64, error)
+	TopProductsForBusiness(ctx context.Context, businessID string) ([]TopProductsForBusinessRow, error)
 	UpdateAIRules(ctx context.Context, arg UpdateAIRulesParams) (AiRule, error)
 	UpdateBusinessAppearance(ctx context.Context, arg UpdateBusinessAppearanceParams) (Business, error)
 	UpdateBusinessBackgroundURL(ctx context.Context, arg UpdateBusinessBackgroundURLParams) (Business, error)
