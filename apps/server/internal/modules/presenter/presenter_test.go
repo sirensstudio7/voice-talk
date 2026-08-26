@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -495,6 +497,138 @@ func TestPresenterPipeline_UploadToReady(t *testing.T) {
 	}
 	if final.TotalSlides != 2 {
 		t.Fatalf("expected 2 parsed slides, got %d", final.TotalSlides)
+	}
+}
+
+// TestPresenterLive_FakeProviderNarratesSlide exercises the live
+// narration WebSocket end to end against fakePresenterProvider (no
+// GEMINI_API_KEY in this environment, same posture as every other
+// module's Gemini-gated tests): connect with a ?token= query param
+// (the only auth mechanism available to a browser WebSocket), push one
+// slide's talking points via "speak", and confirm a narration
+// transcript plus turn_complete come back.
+func TestPresenterLive_FakeProviderNarratesSlide(t *testing.T) {
+	f := newTestFixture(t)
+	defer f.close()
+
+	businessID := businessIDForSlug(t, f)
+	presentation := seedReadyPresentation(t, f, businessID)
+
+	sessionsBase := "/businesses/" + f.slug + "/presentations/" + presentation.ID + "/sessions"
+	rec := doJSON(t, f, http.MethodPost, sessionsBase, createSessionRequest{Name: "Live demo"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create session: got status %d, body %s", rec.Code, rec.Body.String())
+	}
+	session := mustDecode[sessionOut](t, rec)
+
+	server := httptest.NewServer(f.handler)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") +
+		"/businesses/" + f.slug + "/presentations/" + presentation.ID + "/sessions/" + session.ID + "/live?token=" + f.token
+	dialCtx, dialCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer dialCancel()
+	conn, _, err := websocket.Dial(dialCtx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial presenter live: %v", err)
+	}
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
+
+	readLiveUntil(t, conn, nil, "session.status")
+
+	writeLiveMsg(t, conn, clientLiveMessage{Type: "speak", Text: "Welcome to the tour"})
+
+	var transcript liveTranscriptPayload
+	readLiveUntil(t, conn, &transcript, "transcript.assistant")
+	if transcript.Text == "" {
+		t.Fatalf("expected non-empty fake narration transcript")
+	}
+	readLiveUntil(t, conn, nil, "turn_complete")
+
+	writeLiveMsg(t, conn, clientLiveMessage{Type: "close"})
+}
+
+// TestPresenterLive_WrongTokenRejected confirms a token that doesn't
+// belong to a member of the business is rejected before any WS upgrade
+// happens — the manual auth handlePresenterLive does in place of the
+// authtoken.RequireAuth/authz.RequireBusinessMember middleware chain
+// every other route in this module uses.
+func TestPresenterLive_WrongTokenRejected(t *testing.T) {
+	f := newTestFixture(t)
+	defer f.close()
+
+	businessID := businessIDForSlug(t, f)
+	presentation := seedReadyPresentation(t, f, businessID)
+
+	sessionsBase := "/businesses/" + f.slug + "/presentations/" + presentation.ID + "/sessions"
+	rec := doJSON(t, f, http.MethodPost, sessionsBase, createSessionRequest{Name: "Live demo"})
+	session := mustDecode[sessionOut](t, rec)
+
+	server := httptest.NewServer(f.handler)
+	defer server.Close()
+
+	outsiderToken, err := authtoken.Issue(testJWTSecret, uuid.NewString(), time.Hour)
+	if err != nil {
+		t.Fatalf("issue outsider token: %v", err)
+	}
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") +
+		"/businesses/" + f.slug + "/presentations/" + presentation.ID + "/sessions/" + session.ID + "/live?token=" + outsiderToken
+	dialCtx, dialCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer dialCancel()
+	_, resp, err := websocket.Dial(dialCtx, wsURL, nil)
+	if err == nil {
+		t.Fatalf("expected dial to fail for a non-member token")
+	}
+	if resp != nil && resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", resp.StatusCode)
+	}
+}
+
+func writeLiveMsg(t *testing.T, conn *websocket.Conn, msg clientLiveMessage) {
+	t.Helper()
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal live message: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := conn.Write(ctx, websocket.MessageText, payload); err != nil {
+		t.Fatalf("write live message: %v", err)
+	}
+}
+
+// readLiveUntil reads server frames until one of the given types
+// arrives, decoding its Data into dest — a presenter-local duplicate of
+// streaming_test.go's recvUntil (modules don't share test helpers any
+// more than they share production code).
+func readLiveUntil(t *testing.T, conn *websocket.Conn, dest any, wantTypes ...string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read (waiting for %v): %v", wantTypes, err)
+		}
+		var envelope struct {
+			Type string          `json:"type"`
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(data, &envelope); err != nil {
+			t.Fatalf("unmarshal server message: %v", err)
+		}
+		for _, want := range wantTypes {
+			if envelope.Type == want {
+				if dest != nil {
+					if err := json.Unmarshal(envelope.Data, dest); err != nil {
+						t.Fatalf("unmarshal %s payload: %v", envelope.Type, err)
+					}
+				}
+				return envelope.Type
+			}
+		}
 	}
 }
 

@@ -1,19 +1,26 @@
-// Package presenter owns the Slide Presenter Engine's deck-authoring
-// surface: PPTX upload/parsing, the background parse-and-script pipeline,
-// deck knowledge, and session state/Q&A. It implements
-// docs/ARCHITECTURE-MIGRATION-SPEC.md §5's "Slide Presenter Engine" minus
-// the live interactive keynote WebSocket and batch TTS audio synthesis —
-// see the presenter Phase 1 plan for why that split, and
-// internal/modules/streaming/gemini_provider.go for the Live-API patterns
-// a later phase would reuse to add them. Ported from
-// apps-legacy/server/src/routes/presentations.ts and
-// apps-legacy/server/src/services/{pptx-parser,presentation-knowledge,
-// presentation-moderation,presentation-pipeline,presentation-session,
-// presentation-ai}.ts.
+// Package presenter owns the Slide Presenter Engine: deck-authoring
+// (PPTX upload/parsing, the background parse-and-script pipeline, deck
+// knowledge, session state/Q&A) plus the live interactive keynote
+// WebSocket (live.go/handler_live.go), which narrates each slide's
+// script through Gemini Live as the presenter advances — reusing the
+// Live-API patterns from internal/modules/streaming/gemini_provider.go,
+// simplified for a no-mic, no-tools, text-in/audio-out session. Batch
+// TTS pre-synthesis (a WAV per slide, cached for offline playback) is
+// deliberately not ported: presentation_audio_assets exists
+// schema-only, and its legacy service functions
+// (ensureSlideAudio/ensurePresentationStageAudio) are never actually
+// called from any legacy route — dead code with no real behavior to
+// port faithfully. Ported from
+// apps-legacy/server/src/routes/{presentations,presentation-websocket}.ts
+// and apps-legacy/server/src/services/{pptx-parser,
+// presentation-knowledge,presentation-moderation,presentation-pipeline,
+// presentation-session,presentation-ai,presenter-live}.ts.
 package presenter
 
 import (
 	"context"
+	"net/url"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,20 +35,23 @@ import (
 )
 
 type Deps struct {
-	DB           *pgxpool.Pool
-	Events       *events.Bus
-	Storage      *storage.Client
-	GeminiAPIKey string
-	GeminiModel  string
-	Log          zerolog.Logger
-	JWTSecret    string
+	DB             *pgxpool.Pool
+	Events         *events.Bus
+	Storage        *storage.Client
+	GeminiAPIKey   string
+	GeminiModel    string
+	AllowedOrigins []string
+	Log            zerolog.Logger
+	JWTSecret      string
 }
 
 type Module struct {
-	deps   Deps
-	store  *store.Queries
-	genai  *genai.Client
-	runner *pipelineRunner
+	deps           Deps
+	store          *store.Queries
+	genai          *genai.Client
+	runner         *pipelineRunner
+	live           presenterProvider
+	originPatterns []string
 }
 
 func New(deps Deps) *Module {
@@ -57,15 +67,43 @@ func New(deps Deps) *Module {
 		}
 	}
 
+	var live presenterProvider = fakePresenterProvider{}
+	if client != nil {
+		live = &geminiPresenterProvider{client: client}
+	}
+
 	return &Module{
-		deps:   deps,
-		store:  q,
-		genai:  client,
-		runner: newPipelineRunner(),
+		deps:           deps,
+		store:          q,
+		genai:          client,
+		runner:         newPipelineRunner(),
+		live:           live,
+		originPatterns: originPatternsFrom(deps.AllowedOrigins),
 	}
 }
 
+// originPatternsFrom converts config.AllowedOrigins into
+// coder/websocket's OriginPatterns (host-only globs, no scheme) —
+// duplicated from streaming.originPatternsFrom since modules never
+// import each other's internals.
+func originPatternsFrom(origins []string) []string {
+	patterns := make([]string, 0, len(origins))
+	for _, o := range origins {
+		if u, err := url.Parse(o); err == nil && u.Host != "" {
+			patterns = append(patterns, u.Host)
+		} else {
+			patterns = append(patterns, strings.TrimPrefix(strings.TrimPrefix(o, "https://"), "http://"))
+		}
+	}
+	return patterns
+}
+
 func (m *Module) RegisterRoutes(r chi.Router) {
+	// Not behind authtoken.RequireAuth: a browser WebSocket can't set an
+	// Authorization header, so handlePresenterLive verifies a ?token=
+	// query param itself — see its doc comment.
+	r.Get("/businesses/{slug}/presentations/{id}/sessions/{sessionId}/live", m.handlePresenterLive)
+
 	r.Group(func(r chi.Router) {
 		r.Use(authtoken.RequireAuth(m.deps.JWTSecret))
 		r.Use(authz.RequireBusinessMember(m.store))
