@@ -39,5 +39,14 @@ type Session struct {
 	mode           Mode
 	voiceSessionID string
 	orderStore     *OrderStore // nil unless mode == ModeOrdering
-	log            zerolog.Logger
+
+	// Smart Photo Moment coupling — only ever populated when
+	// mode == ModeOrdering, mirroring websocket.ts's
+	// "orderingEnabled && photoMomentEnabled" gate. photoConsent is nil
+	// until set_photo_souvenir_consent records "yes"/"no"; see tools.go.
+	photoMomentEnabled bool
+	photoVoicePrompt   string
+	photoConsent       *string
+
+	log zerolog.Logger
 }

@@ -15,11 +15,12 @@ import (
 // buildSystemInstruction — the ~700-line hand-tuned bilingual
 // (id/en) prompt compiler that is, per the streaming Phase 2 plan, the
 // single most tacit-knowledge-heavy piece of the legacy app. Section
-// text below is copied verbatim, not paraphrased. One deliberate
-// omission: legacy's Smart Photo Moment addon (photoMomentEnabled /
-// set_photo_souvenir_consent branch) is left out — that add-on has no
-// Go module yet (internal/modules/photomoment is a stub), so only the
-// plain (non-photo) FOOD_CHECKOUT_CLOSING text is ported.
+// text below is copied verbatim, not paraphrased. Smart Photo Moment's
+// checkout-closing variant (photoMomentEnabled / photoVoicePrompt,
+// ported as buildFoodCheckoutClosingWithPhoto below) is included now
+// that internal/modules/photomoment and the
+// set_photo_souvenir_consent tool both exist — see
+// internal/modules/streaming/tools.go.
 
 const (
 	defaultTone            = "friendly"
@@ -110,6 +111,72 @@ const foodCheckoutClosingID = "Urutan penutupan checkout (wajib — mengoverride
 	"Jangan ulangi pertanyaan checkout yang sudah dijawab pelanggan.\n" +
 	"SALAH (jangan ucapkan): \"Punya kartu loyalitas? Boleh tahu nama?\" atau \"Mau tambah? Siapa namanya?\"\n" +
 	"BENAR (hanya satu pertanyaan, lalu panggil prompt_payment): \"Boleh tahu nama Anda?\" atau \"May I have your name?\""
+
+// buildFoodCheckoutClosingWithPhoto ports config-builder.ts's
+// buildFoodCheckoutClosingWithPhoto exactly: the Smart Photo Moment
+// variant of the checkout-closing instructions, inserting a souvenir
+// photo question (once, before the name question) into the same
+// mandatory sequencing rules as foodCheckoutClosingEN/ID above.
+func buildFoodCheckoutClosingWithPhoto(language, voicePrompt string) string {
+	prompt := strings.TrimSpace(voicePrompt)
+	if prompt == "" {
+		if language == "en" {
+			prompt = "Would you like a souvenir photo after payment?"
+		} else {
+			prompt = "Mau foto untuk kenang-kenangan setelah bayar nanti?"
+		}
+	}
+	safePrompt := strings.ReplaceAll(prompt, `"`, `\"`)
+
+	if language == "en" {
+		return "Checkout closing order (mandatory — overrides any earlier checkout order):\n" +
+			"0. When the customer says the basket is correct or they are ready (e.g. \"that's right\", \"yes\", \"ok\", \"sudah benar\"), call confirm_order IMMEDIATELY in that turn. Do not only speak confirmation. Never ask them to confirm the order again after confirm_order succeeded.\n" +
+			"1. After confirm_order, ask loyalty card and any other checkout questions from your knowledge base first — one topic per turn. Skip any question they already answered.\n" +
+			"2. Then ask about a souvenir photo in its own separate turn — BEFORE the name question. " +
+			"Say naturally (same meaning): \"" + safePrompt + "\". " +
+			"Wait for a short yes/no, then call set_photo_souvenir_consent with consent \"yes\" or \"no\". Ask this photo question only once. If they already answered, call set_photo_souvenir_consent with that answer and do not ask again.\n" +
+			"3. Always ask for the customer's name last — in its own separate turn, immediately before payment. Never ask for the name before the photo question.\n" +
+			"4. The name question must be the ONLY sentence/question in that turn. Do not mention loyalty, photo, upsell, phone, or anything else in the same turn.\n" +
+			"5. In that same turn as the standalone name question, call prompt_payment to prepare checkout.\n" +
+			"6. When the customer answers with their name, call set_customer_name immediately — the Pay your order screen opens then.\n" +
+			"Never call prompt_payment before confirm_order or before set_photo_souvenir_consent.\n" +
+			"Never combine the photo question with the name question.\n" +
+			"Never repeat a checkout question the customer already answered.\n" +
+			"Never say \"let me confirm the order again\" after they already confirmed.\n" +
+			"BAD: asking order confirm → loyalty → photo → order confirm again → photo again.\n" +
+			"GOOD: confirm_order tool → loyalty once → photo once → \"May I have your name?\" + prompt_payment → set_customer_name."
+	}
+
+	return "Urutan penutupan checkout (wajib — mengoverride urutan checkout sebelumnya):\n" +
+		"0. Saat pelanggan bilang pesanan sudah benar atau siap bayar (misalnya \"sudah benar\", \"iya\", \"oke\", \"enggak itu aja\" lalu setuju ringkasan), segera panggil confirm_order di turn itu. Jangan hanya mengucapkan konfirmasi. Jangan minta konfirmasi pesanan lagi setelah confirm_order berhasil.\n" +
+		"1. Setelah confirm_order, tanyakan kartu loyalitas dan pertanyaan checkout lain dari basis pengetahuan dulu — satu topik per turn. Lewati pertanyaan yang sudah dijawab.\n" +
+		"2. Lalu tanyakan foto kenang-kenangan di turn terpisah — SEBELUM pertanyaan nama. " +
+		"Ucapkan secara natural (makna sama): \"" + safePrompt + "\". " +
+		"Tunggu jawaban singkat ya/tidak, lalu panggil set_photo_souvenir_consent dengan consent \"yes\" atau \"no\". Tanyakan foto hanya sekali. Jika mereka sudah menjawab, panggil set_photo_souvenir_consent dengan jawaban itu tanpa bertanya lagi.\n" +
+		"3. Selalu tanyakan nama pelanggan terakhir — di turn terpisah, tepat sebelum pembayaran. Jangan tanyakan nama sebelum pertanyaan foto.\n" +
+		"4. Pertanyaan nama harus SATU-SATUNYA kalimat/pertanyaan di turn itu. Jangan sebut loyalitas, foto, upsell, telepon, atau hal lain di turn yang sama.\n" +
+		"5. Di turn yang sama dengan pertanyaan nama standalone, panggil prompt_payment untuk menyiapkan checkout.\n" +
+		"6. Saat pelanggan menjawab dengan nama mereka, segera panggil set_customer_name — layar Bayar pesanan Anda terbuka saat itu.\n" +
+		"Jangan panggil prompt_payment sebelum confirm_order atau sebelum set_photo_souvenir_consent.\n" +
+		"Jangan gabungkan pertanyaan foto dengan pertanyaan nama.\n" +
+		"Jangan ulangi pertanyaan checkout yang sudah dijawab pelanggan.\n" +
+		"Jangan bilang \"mohon konfirmasi pesanannya dulu\" setelah mereka sudah mengonfirmasi.\n" +
+		"SALAH: konfirmasi pesanan → loyalitas → foto → konfirmasi pesanan lagi → foto lagi.\n" +
+		"BENAR: tool confirm_order → loyalitas sekali → foto sekali → \"Boleh tahu nama Anda?\" + prompt_payment → set_customer_name."
+}
+
+// resolveFoodCheckoutClosing ports config-builder.ts's
+// resolveFoodCheckoutClosing: the photo-aware variant when Smart Photo
+// Moment is enabled for this business, else the plain closing text.
+func resolveFoodCheckoutClosing(language string, photoMomentEnabled bool, photoVoicePrompt string) string {
+	if photoMomentEnabled {
+		return buildFoodCheckoutClosingWithPhoto(language, photoVoicePrompt)
+	}
+	if language == "en" {
+		return foodCheckoutClosingEN
+	}
+	return foodCheckoutClosingID
+}
 
 // resolveLanguage ports config-builder.ts's resolveLanguage.
 func resolveLanguage(rules store.AiRule, languageOverride string) string {
@@ -211,7 +278,7 @@ func formatProductLine(p store.Product) string {
 // BuildSystemInstruction is the Go port of config-builder.ts's
 // buildSystemInstruction. See the streaming Phase 2 plan for the section
 // structure this follows.
-func BuildSystemInstruction(business store.Business, rules store.AiRule, entries []store.KnowledgeEntry, products []store.Product, languageOverride string) string {
+func BuildSystemInstruction(business store.Business, rules store.AiRule, entries []store.KnowledgeEntry, products []store.Product, languageOverride string, photoMomentEnabled bool, photoVoicePrompt string) string {
 	productList := ActiveProducts(products)
 
 	knowledge := make([]store.KnowledgeEntry, len(entries))
@@ -337,7 +404,7 @@ func BuildSystemInstruction(business store.Business, rules store.AiRule, entries
 			toolsSection = defaultToolsEn
 		}
 		if orderingEnabled && !bookingEnabled {
-			toolsSection += "\n\n" + foodCheckoutClosingEN
+			toolsSection += "\n\n" + resolveFoodCheckoutClosing("en", photoMomentEnabled, photoVoicePrompt)
 		}
 		sections = append(sections, toolsSection)
 	} else {
@@ -373,7 +440,7 @@ func BuildSystemInstruction(business store.Business, rules store.AiRule, entries
 			toolsSection = defaultToolsID
 		}
 		if orderingEnabled && !bookingEnabled {
-			toolsSection += "\n\n" + foodCheckoutClosingID
+			toolsSection += "\n\n" + resolveFoodCheckoutClosing("id", photoMomentEnabled, photoVoicePrompt)
 		}
 		sections = append(sections, toolsSection)
 	}

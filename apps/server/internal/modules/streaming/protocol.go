@@ -75,6 +75,14 @@ type conversationCompletePayload struct {
 	Reason string `json:"reason"`
 }
 
+// photoConsentPayload mirrors legacy's { type: "photo.consent", consent }
+// frame — sent once set_photo_souvenir_consent records the customer's
+// answer, so the kiosk UI can react (e.g. show the photo capture screen
+// after payment) without polling.
+type photoConsentPayload struct {
+	Consent string `json:"consent"`
+}
+
 // turn_complete and interrupted carry no data — bare {"type": "..."}
 // frames, matching legacy. interrupted signals barge-in: the client
 // should flush any queued playback audio immediately.

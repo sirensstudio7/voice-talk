@@ -68,6 +68,15 @@ func (m *Module) handleVoiceSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if mode == ModeOrdering {
 		sess.orderStore = NewOrderStore()
+		if settings, err := m.store.GetPhotoSettings(ctx, business.ID); err == nil {
+			sess.photoMomentEnabled = settings.Enabled
+			sess.photoVoicePrompt = settings.VoicePrompt
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			// Not fatal to the session — Smart Photo Moment just stays
+			// off for this call, same posture as any other best-effort
+			// config lookup in this codebase.
+			sess.log.Error().Err(err).Msg("get photo settings for voice session")
+		}
 	}
 
 	endReason := m.runSession(ctx, sess)
@@ -189,7 +198,7 @@ func (m *Module) handleClientMessage(ctx context.Context, sess *Session, ps Prov
 			return
 		}
 		result, err := m.tools.Execute(ctx, sess, "add_to_order", map[string]any{"product_id": p.ProductID, "quantity": float64(p.Quantity)})
-		m.respondToolResult(send, sendErr, result, err)
+		m.respondToolResult(send, sendErr, "add_to_order", result, err)
 
 	case "order.decrement_item":
 		var p productIDPayload
@@ -198,7 +207,7 @@ func (m *Module) handleClientMessage(ctx context.Context, sess *Session, ps Prov
 			return
 		}
 		result, err := m.tools.Execute(ctx, sess, "decrement_item", map[string]any{"product_id": p.ProductID})
-		m.respondToolResult(send, sendErr, result, err)
+		m.respondToolResult(send, sendErr, "decrement_item", result, err)
 
 	case "order.remove_item":
 		var p productIDPayload
@@ -207,7 +216,7 @@ func (m *Module) handleClientMessage(ctx context.Context, sess *Session, ps Prov
 			return
 		}
 		result, err := m.tools.Execute(ctx, sess, "remove_from_order", map[string]any{"product_id": p.ProductID})
-		m.respondToolResult(send, sendErr, result, err)
+		m.respondToolResult(send, sendErr, "remove_from_order", result, err)
 
 	case "input.text":
 		var p inputTextPayload
@@ -245,7 +254,7 @@ func (m *Module) handleClientMessage(ctx context.Context, sess *Session, ps Prov
 			return
 		}
 		result, err := m.tools.Execute(ctx, sess, p.Name, p.Args)
-		m.respondToolResult(send, sendErr, result, err)
+		m.respondToolResult(send, sendErr, p.Name, result, err)
 		if err == nil && p.Name == "end_conversation" {
 			send("conversation.complete", conversationCompletePayload{Reason: "end_conversation"})
 			finish("conversation_complete")
@@ -314,6 +323,24 @@ func (m *Module) executeProviderToolCall(ctx context.Context, sess *Session, ps 
 			total, _ := result["total"].(float64)
 			send("order.updated", orderUpdatedPayload{Items: items, Total: total})
 		}
+		sendPhotoConsentSideEffect(send, call.Name, result)
+	}
+}
+
+// sendPhotoConsentSideEffect forwards a photo.consent frame whenever a
+// successful set_photo_souvenir_consent call recorded (or re-reported)
+// the customer's answer — the one tool result client UIs need to react
+// to beyond the generic tool_result/order.updated frames, matching
+// legacy's onPhotoConsent callback. Shared by both the real
+// model-driven path (executeProviderToolCall) and the client-facing
+// debug.tool_call harness (respondToolResult) so tests can exercise it
+// without a live Gemini connection.
+func sendPhotoConsentSideEffect(send func(string, any), toolName string, result map[string]any) {
+	if toolName != "set_photo_souvenir_consent" {
+		return
+	}
+	if consent, ok := result["consent"].(string); ok {
+		send("photo.consent", photoConsentPayload{Consent: consent})
 	}
 }
 
@@ -330,11 +357,12 @@ func (m *Module) recordTranscript(ctx context.Context, sess *Session, role, text
 // "items"/"total") or a generic result frame — used for client-driven
 // tool calls (order.* messages, debug.tool_call), which bypass the
 // provider entirely.
-func (m *Module) respondToolResult(send func(string, any), sendErr func(string, string), result map[string]any, err error) {
+func (m *Module) respondToolResult(send func(string, any), sendErr func(string, string), toolName string, result map[string]any, err error) {
 	if err != nil {
 		sendErr("tool_error", err.Error())
 		return
 	}
+	sendPhotoConsentSideEffect(send, toolName, result)
 	if items, ok := result["items"].([]orderLineOut); ok {
 		total, _ := result["total"].(float64)
 		send("order.updated", orderUpdatedPayload{Items: items, Total: total})

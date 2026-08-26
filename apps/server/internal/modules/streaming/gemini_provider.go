@@ -149,7 +149,7 @@ func (p *GeminiProvider) buildConnectConfig(ctx context.Context, sess *Session) 
 		return nil, "", err
 	}
 
-	instruction := promptkit.BuildSystemInstruction(sess.business, rules, entries, products, "")
+	instruction := promptkit.BuildSystemInstruction(sess.business, rules, entries, products, "", sess.photoMomentEnabled, sess.photoVoicePrompt)
 
 	model := sess.business.GeminiModel
 	if model == "" {
@@ -168,7 +168,7 @@ func (p *GeminiProvider) buildConnectConfig(ctx context.Context, sess *Session) 
 		SystemInstruction:        genai.NewContentFromText(instruction, genai.RoleUser),
 		InputAudioTranscription:  &genai.AudioTranscriptionConfig{},
 		OutputAudioTranscription: &genai.AudioTranscriptionConfig{},
-		Tools:                    buildToolDeclarations(sess.mode),
+		Tools:                    buildToolDeclarations(sess.mode, sess.photoMomentEnabled),
 	}
 	return config, model, nil
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/events"
@@ -91,6 +92,32 @@ func newBookingTestFixture(t *testing.T) fixture {
 		`UPDATE businesses SET business_type = 'salon', primary_use_case = 'appointments' WHERE id = $1`, id,
 	); err != nil {
 		t.Fatalf("force salon mode: %v", err)
+	}
+	return f
+}
+
+// newPhotoMomentTestFixture is newTestFixture (ordering mode, one
+// product) plus an enabled photo_settings row — exercises the
+// set_photo_souvenir_consent coupling described in
+// internal/modules/streaming/tools.go.
+func newPhotoMomentTestFixture(t *testing.T) fixture {
+	t.Helper()
+	f := newTestFixture(t)
+
+	ctx := context.Background()
+	queries := store.New(f.pool)
+	var businessID string
+	if err := f.pool.QueryRow(ctx, `SELECT id FROM businesses WHERE slug = $1`, f.slug).Scan(&businessID); err != nil {
+		t.Fatalf("query fixture business id: %v", err)
+	}
+	if _, err := queries.CreatePhotoSettings(ctx, businessID); err != nil {
+		t.Fatalf("create fixture photo settings: %v", err)
+	}
+	if _, err := queries.UpdatePhotoSettings(ctx, store.UpdatePhotoSettingsParams{
+		BusinessID: businessID,
+		Enabled:    pgtype.Bool{Bool: true, Valid: true},
+	}); err != nil {
+		t.Fatalf("enable fixture photo settings: %v", err)
 	}
 	return f
 }
@@ -394,6 +421,140 @@ func TestVoiceSession_Gemini(t *testing.T) {
 	}
 
 	sendMsg(t, conn, "session.end", map[string]any{})
+}
+
+// TestVoiceSession_PhotoConsentGatesCheckout exercises the Smart Photo
+// Moment coupling: set_photo_souvenir_consent is unavailable until the
+// order is confirmed, set_customer_name/prompt_payment are blocked until
+// consent is recorded, a repeat call reports what was already recorded
+// instead of erroring, and every successful consent call emits a
+// photo.consent frame the kiosk UI can react to.
+func TestVoiceSession_PhotoConsentGatesCheckout(t *testing.T) {
+	f := newPhotoMomentTestFixture(t)
+	defer f.close()
+
+	conn := f.dial(t)
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
+
+	recvUntil(t, conn, nil, "session.status")
+
+	sendMsg(t, conn, "order.add_item", addItemPayload{ProductID: f.productID, Quantity: 1})
+	recvUntil(t, conn, nil, "order.updated")
+
+	sendMsg(t, conn, "debug.tool_call", debugToolCallPayload{Name: "confirm_order"})
+	recvUntil(t, conn, nil, "tool_result")
+
+	// Name and payment are blocked before consent is recorded.
+	sendMsg(t, conn, "debug.tool_call", debugToolCallPayload{Name: "set_customer_name", Args: map[string]any{"name": "Alice"}})
+	var errPayload errorPayload
+	recvUntil(t, conn, &errPayload, "error")
+	if errPayload.Code != "tool_error" {
+		t.Fatalf("expected tool_error before photo consent, got %+v", errPayload)
+	}
+
+	sendMsg(t, conn, "debug.tool_call", debugToolCallPayload{Name: "prompt_payment"})
+	recvUntil(t, conn, &errPayload, "error")
+	if errPayload.Code != "tool_error" {
+		t.Fatalf("expected tool_error for prompt_payment before photo consent, got %+v", errPayload)
+	}
+
+	// An invalid consent value is rejected without being recorded.
+	sendMsg(t, conn, "debug.tool_call", debugToolCallPayload{Name: "set_photo_souvenir_consent", Args: map[string]any{"consent": "maybe"}})
+	recvUntil(t, conn, &errPayload, "error")
+	if errPayload.Code != "tool_error" {
+		t.Fatalf("expected tool_error for invalid consent value, got %+v", errPayload)
+	}
+
+	// A valid consent is recorded and forwarded as photo.consent.
+	sendMsg(t, conn, "debug.tool_call", debugToolCallPayload{Name: "set_photo_souvenir_consent", Args: map[string]any{"consent": "yes"}})
+	var consent photoConsentPayload
+	recvUntil(t, conn, &consent, "photo.consent")
+	if consent.Consent != "yes" {
+		t.Fatalf("expected consent yes, got %+v", consent)
+	}
+	recvUntil(t, conn, nil, "tool_result")
+
+	// A repeat call reports the already-recorded answer rather than
+	// erroring, and still forwards photo.consent (idempotent, matching
+	// tools.ts's already_recorded branch).
+	sendMsg(t, conn, "debug.tool_call", debugToolCallPayload{Name: "set_photo_souvenir_consent", Args: map[string]any{"consent": "no"}})
+	recvUntil(t, conn, &consent, "photo.consent")
+	if consent.Consent != "yes" {
+		t.Fatalf("expected the original consent (yes) to stick, got %+v", consent)
+	}
+	recvUntil(t, conn, nil, "tool_result")
+
+	// Now that consent is recorded, checkout proceeds normally.
+	sendMsg(t, conn, "debug.tool_call", debugToolCallPayload{Name: "set_customer_name", Args: map[string]any{"name": "Alice"}})
+	recvUntil(t, conn, nil, "tool_result")
+
+	sendMsg(t, conn, "debug.tool_call", debugToolCallPayload{Name: "prompt_payment"})
+	var paid struct {
+		Success bool `json:"success"`
+	}
+	recvUntil(t, conn, &paid, "tool_result")
+	if !paid.Success {
+		t.Fatalf("expected prompt_payment to succeed once consent is recorded, got %+v", paid)
+	}
+}
+
+// TestVoiceSession_PhotoConsentAutoConfirmsOrder covers the case where
+// the model asks about the souvenir photo before calling confirm_order —
+// tools.ts confirms silently rather than forcing a re-confirmation loop;
+// this asserts the Go port does the same, including persisting the order.
+func TestVoiceSession_PhotoConsentAutoConfirmsOrder(t *testing.T) {
+	f := newPhotoMomentTestFixture(t)
+	defer f.close()
+
+	conn := f.dial(t)
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
+
+	recvUntil(t, conn, nil, "session.status")
+
+	sendMsg(t, conn, "order.add_item", addItemPayload{ProductID: f.productID, Quantity: 1})
+	recvUntil(t, conn, nil, "order.updated")
+
+	sendMsg(t, conn, "debug.tool_call", debugToolCallPayload{Name: "set_photo_souvenir_consent", Args: map[string]any{"consent": "no"}})
+	var consent photoConsentPayload
+	recvUntil(t, conn, &consent, "photo.consent")
+	if consent.Consent != "no" {
+		t.Fatalf("expected consent no, got %+v", consent)
+	}
+	recvUntil(t, conn, nil, "tool_result")
+
+	sendMsg(t, conn, "session.end", map[string]any{})
+	time.Sleep(200 * time.Millisecond)
+
+	var count int
+	if err := f.pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM orders WHERE business_id = (SELECT id FROM businesses WHERE slug = $1) AND status = 'confirmed'`, f.slug,
+	).Scan(&count); err != nil {
+		t.Fatalf("query orders: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected the order to be silently confirmed by set_photo_souvenir_consent, got %d confirmed orders", count)
+	}
+}
+
+// TestVoiceSession_PhotoConsentDisabledByDefault confirms a business that
+// never enabled Smart Photo Moment gets neither the tool nor the gate —
+// the plain (non-photo) checkout sequence from before this coupling
+// existed keeps working unchanged.
+func TestVoiceSession_PhotoConsentDisabledByDefault(t *testing.T) {
+	f := newTestFixture(t)
+	defer f.close()
+
+	conn := f.dial(t)
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
+
+	recvUntil(t, conn, nil, "session.status")
+
+	sendMsg(t, conn, "debug.tool_call", debugToolCallPayload{Name: "set_photo_souvenir_consent", Args: map[string]any{"consent": "yes"}})
+	var errPayload errorPayload
+	recvUntil(t, conn, &errPayload, "error")
+	if errPayload.Code != "tool_error" {
+		t.Fatalf("expected tool_error when photo moment isn't enabled, got %+v", errPayload)
+	}
 }
 
 func TestVoiceSession_UnknownBusiness(t *testing.T) {

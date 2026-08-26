@@ -6,12 +6,14 @@ import "google.golang.org/genai"
 // session's mode, ported from apps-legacy/server/src/services/tools.ts,
 // booking-tools.ts, and faq-tools.ts. Descriptions carry the sequencing
 // rules verbatim from legacy — that's tacit knowledge worth preserving
-// exactly, not summarizing. Smart Photo Moment's set_photo_souvenir_consent
-// tool is deliberately omitted: that add-on has no Go module yet.
-func buildToolDeclarations(mode Mode) []*genai.Tool {
+// exactly, not summarizing. photoMomentEnabled is only ever true when
+// mode == ModeOrdering (see session.go) and adds
+// set_photo_souvenir_consent to the ordering set, matching tools.ts's
+// buildToolDeclarations({ orderingEnabled, photoMomentEnabled }).
+func buildToolDeclarations(mode Mode, photoMomentEnabled bool) []*genai.Tool {
 	switch mode {
 	case ModeOrdering:
-		return orderingToolDeclarations()
+		return orderingToolDeclarations(photoMomentEnabled)
 	case ModeBooking:
 		return bookingToolDeclarations()
 	default:
@@ -31,8 +33,15 @@ func integerProp(description string) *genai.Schema {
 	return &genai.Schema{Type: genai.TypeInteger, Description: description}
 }
 
-func orderingToolDeclarations() []*genai.Tool {
-	return []*genai.Tool{{FunctionDeclarations: []*genai.FunctionDeclaration{
+func orderingToolDeclarations(photoMomentEnabled bool) []*genai.Tool {
+	setCustomerNameDescription := "Save the customer's name on the order receipt. Call ONLY after confirm_order, after all other checkout questions, after your standalone name question, and after the customer has spoken their name. The Pay your order screen opens automatically when this succeeds."
+	promptPaymentDescription := "Prepare the Pay your order screen after your standalone name question. Call in the SAME turn as that name question — after all other checkout questions are done. The screen opens when set_customer_name succeeds. Never call before confirm_order or while asking loyalty or other checkout questions."
+	if photoMomentEnabled {
+		setCustomerNameDescription = "Save the customer's name on the order receipt. Call ONLY after confirm_order, after loyalty/other checkout questions, after set_photo_souvenir_consent, after your standalone name question, and after the customer has spoken their name. The Pay your order screen opens automatically when this succeeds."
+		promptPaymentDescription = "Prepare the Pay your order screen after your standalone name question. Call in the SAME turn as that name question — after set_photo_souvenir_consent and all other checkout questions. The screen opens when set_customer_name succeeds. Never call before confirm_order, before the photo souvenir question, or while asking loyalty."
+	}
+
+	declarations := []*genai.FunctionDeclaration{
 		{
 			Name:        "search_products",
 			Description: "Search menu items by name, category, or keyword.",
@@ -69,17 +78,30 @@ func orderingToolDeclarations() []*genai.Tool {
 			Description: "Confirm the order when the customer says the basket is correct or they are ready to checkout (e.g. sudah benar, oke, iya, that's right). Call this tool immediately in that turn — do not only speak a confirmation. Call before loyalty, name, or payment questions.",
 			Parameters:  schema(nil),
 		},
-		{
+	}
+
+	if photoMomentEnabled {
+		declarations = append(declarations, &genai.FunctionDeclaration{
+			Name:        "set_photo_souvenir_consent",
+			Description: "Record whether the customer wants a souvenir photo. Call AFTER loyalty/other checkout questions, AFTER they answer the photo yes/no question, and BEFORE asking for their name or calling prompt_payment.",
+			Parameters:  schema(map[string]*genai.Schema{"consent": stringProp(`Use "yes" if they want a photo, "no" if they decline.`)}, "consent"),
+		})
+	}
+
+	declarations = append(declarations,
+		&genai.FunctionDeclaration{
 			Name:        "set_customer_name",
-			Description: "Save the customer's name on the order receipt. Call ONLY after confirm_order, after all other checkout questions, after your standalone name question, and after the customer has spoken their name. The Pay your order screen opens automatically when this succeeds.",
+			Description: setCustomerNameDescription,
 			Parameters:  schema(map[string]*genai.Schema{"name": stringProp("The customer's name as they said it.")}, "name"),
 		},
-		{
+		&genai.FunctionDeclaration{
 			Name:        "prompt_payment",
-			Description: "Prepare the Pay your order screen after your standalone name question. Call in the SAME turn as that name question — after all other checkout questions are done. The screen opens when set_customer_name succeeds. Never call before confirm_order or while asking loyalty or other checkout questions.",
+			Description: promptPaymentDescription,
 			Parameters:  schema(nil),
 		},
-	}}}
+	)
+
+	return []*genai.Tool{{FunctionDeclarations: declarations}}
 }
 
 func bookingToolDeclarations() []*genai.Tool {

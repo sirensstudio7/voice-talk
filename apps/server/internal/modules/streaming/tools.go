@@ -49,6 +49,8 @@ func (t *ToolExecutor) Execute(ctx context.Context, sess *Session, name string, 
 		return t.getOrderSummary(sess)
 	case "confirm_order":
 		return t.confirmOrder(ctx, sess)
+	case "set_photo_souvenir_consent":
+		return t.setPhotoSouvenirConsent(ctx, sess, args)
 	case "set_customer_name":
 		return t.setCustomerName(ctx, sess, args)
 	case "prompt_payment":
@@ -86,6 +88,8 @@ func intArg(args map[string]any, key string, fallback int32) int32 {
 
 var errOrderingOnly = errors.New("this tool is only available in ordering mode")
 var errBookingOnly = errors.New("this tool is only available in booking mode")
+var errPhotoMomentDisabled = errors.New("smart photo moment is not enabled for this business")
+var errPhotoConsentRequired = errors.New("smart photo moment is active — ask the customer about the souvenir photo, then call set_photo_souvenir_consent, before asking for their name or calling prompt_payment")
 
 // --- Ordering tools ---
 
@@ -291,6 +295,9 @@ func (t *ToolExecutor) setCustomerName(ctx context.Context, sess *Session, args 
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+	if sess.photoMomentEnabled && sess.photoConsent == nil {
+		return nil, errPhotoConsentRequired
+	}
 
 	order, err := t.store.GetMostRecentOrderForVoiceSession(ctx, pgText(sess.voiceSessionID))
 	if err != nil {
@@ -317,6 +324,9 @@ func (t *ToolExecutor) promptPayment(ctx context.Context, sess *Session) (map[st
 	if sess.orderStore == nil {
 		return nil, errOrderingOnly
 	}
+	if sess.photoMomentEnabled && sess.photoConsent == nil {
+		return nil, errPhotoConsentRequired
+	}
 	order, err := t.store.GetMostRecentOrderForVoiceSession(ctx, pgText(sess.voiceSessionID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -325,6 +335,51 @@ func (t *ToolExecutor) promptPayment(ctx context.Context, sess *Session) (map[st
 		return nil, err
 	}
 	return map[string]any{"success": true, "prompt_payment": true, "order_id": order.ID, "total": order.Total}, nil
+}
+
+// setPhotoSouvenirConsent ports tools.ts's set_photo_souvenir_consent
+// mapping: records the customer's yes/no answer once, gating
+// setCustomerName/promptPayment (above) until it's set. A repeat call
+// (the model asking again after a barge-in, say) reports what was
+// already recorded rather than erroring, matching legacy's
+// already_recorded branch.
+func (t *ToolExecutor) setPhotoSouvenirConsent(ctx context.Context, sess *Session, args map[string]any) (map[string]any, error) {
+	if sess.orderStore == nil || !sess.photoMomentEnabled {
+		return nil, errPhotoMomentDisabled
+	}
+	raw := strings.ToLower(strings.TrimSpace(stringArg(args, "consent")))
+	if raw != "yes" && raw != "no" {
+		return nil, fmt.Errorf(`consent must be "yes" or "no"`)
+	}
+
+	if sess.photoConsent != nil {
+		return map[string]any{"success": true, "consent": *sess.photoConsent, "already_recorded": true}, nil
+	}
+
+	if err := t.ensureOrderConfirmedForPhoto(ctx, sess); err != nil {
+		return nil, err
+	}
+
+	sess.photoConsent = &raw
+	return map[string]any{"success": true, "consent": raw}, nil
+}
+
+// ensureOrderConfirmedForPhoto silently confirms the order if the model
+// asks about the souvenir photo before calling confirm_order, mirroring
+// tools.ts's ensureOrderConfirmed — without this, an out-of-order photo
+// question would force an awkward "please confirm the order again" loop
+// instead of just proceeding.
+func (t *ToolExecutor) ensureOrderConfirmedForPhoto(ctx context.Context, sess *Session) error {
+	if _, err := t.store.GetMostRecentOrderForVoiceSession(ctx, pgText(sess.voiceSessionID)); err == nil {
+		return nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if sess.orderStore.IsEmpty() {
+		return fmt.Errorf("cannot proceed — the order is empty; add items first")
+	}
+	_, err := t.confirmOrder(ctx, sess)
+	return err
 }
 
 // --- Booking tools ---
