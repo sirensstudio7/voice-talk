@@ -20,3 +20,7 @@ UPDATE ai_rules SET
   voice_gender = COALESCE(sqlc.narg('voice_gender'), voice_gender)
 WHERE business_id = sqlc.arg('business_id')
 RETURNING *;
+
+-- name: SetAIRulesAvatarURL :one
+UPDATE ai_rules SET avatar_url = $2 WHERE business_id = $1
+RETURNING *;

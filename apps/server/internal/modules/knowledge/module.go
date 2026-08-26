@@ -15,12 +15,14 @@ import (
 
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/authtoken"
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/authz"
+	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/storage"
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/store"
 )
 
 type Deps struct {
 	DB        *pgxpool.Pool
 	Redis     *redis.Client
+	Storage   *storage.Client // nil when R2 credentials aren't configured
 	Log       zerolog.Logger
 	JWTSecret string
 }
@@ -41,6 +43,9 @@ func (m *Module) RegisterRoutes(r chi.Router) {
 
 		r.Get("/ai-rules", m.getAIRules)
 		r.Patch("/ai-rules", m.updateAIRules)
+		r.Post("/ai-rules/avatar", m.uploadAvatar)
+		r.Delete("/ai-rules/avatar", m.deleteAvatar)
+		r.Get("/prompt-preview", m.promptPreview)
 
 		r.Route("/knowledge", func(r chi.Router) {
 			r.Get("/", m.listKnowledgeEntries)

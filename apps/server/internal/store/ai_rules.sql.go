@@ -77,6 +77,37 @@ func (q *Queries) GetAIRules(ctx context.Context, businessID string) (AiRule, er
 	return i, err
 }
 
+const setAIRulesAvatarURL = `-- name: SetAIRulesAvatarURL :one
+UPDATE ai_rules SET avatar_url = $2 WHERE business_id = $1
+RETURNING id, business_id, assistant_name, avatar_url, avatar_model_path, personality, tone, language, behavioral_rules, tool_instructions, idle_timeout_seconds, voice_preset, voice_gender
+`
+
+type SetAIRulesAvatarURLParams struct {
+	BusinessID string `json:"business_id"`
+	AvatarUrl  string `json:"avatar_url"`
+}
+
+func (q *Queries) SetAIRulesAvatarURL(ctx context.Context, arg SetAIRulesAvatarURLParams) (AiRule, error) {
+	row := q.db.QueryRow(ctx, setAIRulesAvatarURL, arg.BusinessID, arg.AvatarUrl)
+	var i AiRule
+	err := row.Scan(
+		&i.ID,
+		&i.BusinessID,
+		&i.AssistantName,
+		&i.AvatarUrl,
+		&i.AvatarModelPath,
+		&i.Personality,
+		&i.Tone,
+		&i.Language,
+		&i.BehavioralRules,
+		&i.ToolInstructions,
+		&i.IdleTimeoutSeconds,
+		&i.VoicePreset,
+		&i.VoiceGender,
+	)
+	return i, err
+}
+
 const updateAIRules = `-- name: UpdateAIRules :one
 UPDATE ai_rules SET
   assistant_name = COALESCE($1, assistant_name),

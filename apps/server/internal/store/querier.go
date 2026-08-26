@@ -138,6 +138,7 @@ type Querier interface {
 	MarkPhotoSessionDownloaded(ctx context.Context, id string) (PhotoSession, error)
 	RecordUsageEvent(ctx context.Context, arg RecordUsageEventParams) (UsageEvent, error)
 	ResetPresentationToDraft(ctx context.Context, arg ResetPresentationToDraftParams) error
+	SetAIRulesAvatarURL(ctx context.Context, arg SetAIRulesAvatarURLParams) (AiRule, error)
 	SetPhotoFrameURL(ctx context.Context, arg SetPhotoFrameURLParams) (PhotoSetting, error)
 	SetPhotoLogoURL(ctx context.Context, arg SetPhotoLogoURLParams) (PhotoSetting, error)
 	SetPhotoSessionResponse(ctx context.Context, arg SetPhotoSessionResponseParams) (PhotoSession, error)
