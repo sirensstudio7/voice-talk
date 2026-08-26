@@ -18,3 +18,9 @@ LIMIT 1;
 UPDATE orders SET customer_name = $2
 WHERE id = $1
 RETURNING *;
+
+-- name: ListOrdersForBusiness :many
+SELECT * FROM orders WHERE business_id = $1 ORDER BY created_at DESC LIMIT 200;
+
+-- name: ListOrderItemsForOrders :many
+SELECT * FROM order_items WHERE order_id = ANY(sqlc.arg('order_ids')::varchar[]);

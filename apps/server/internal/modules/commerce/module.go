@@ -15,12 +15,14 @@ import (
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/authtoken"
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/authz"
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/events"
+	"github.com/sirensstudio7/voice-talk/apps/server/internal/platform/storage"
 	"github.com/sirensstudio7/voice-talk/apps/server/internal/store"
 )
 
 type Deps struct {
 	DB        *pgxpool.Pool
 	Events    *events.Bus
+	Storage   *storage.Client // nil when R2 credentials aren't configured
 	Log       zerolog.Logger
 	JWTSecret string
 }
@@ -35,6 +37,8 @@ func New(deps Deps) *Module {
 }
 
 func (m *Module) RegisterRoutes(r chi.Router) {
+	r.Post("/businesses/{slug}/orders/confirm", m.confirmPublicOrder)
+
 	r.Route("/businesses/{slug}/products", func(r chi.Router) {
 		r.Use(authtoken.RequireAuth(m.deps.JWTSecret))
 		r.Use(authz.RequireBusinessMember(m.store))
@@ -43,5 +47,12 @@ func (m *Module) RegisterRoutes(r chi.Router) {
 		r.Post("/", m.createProduct)
 		r.Patch("/{id}", m.updateProduct)
 		r.Delete("/{id}", m.deleteProduct)
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(authtoken.RequireAuth(m.deps.JWTSecret))
+		r.Use(authz.RequireBusinessMember(m.store))
+		r.Get("/businesses/{slug}/orders", m.listOrders)
+		r.Post("/businesses/{slug}/product-images", m.uploadProductImage)
 	})
 }

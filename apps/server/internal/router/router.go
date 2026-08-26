@@ -73,7 +73,7 @@ func New(deps Deps) http.Handler {
 
 	modules := []Module{
 		auth.New(auth.Deps{DB: deps.DB, Redis: deps.Redis, Events: deps.Events, Storage: deps.Storage, Log: deps.Log, JWTSecret: deps.Config.JWTSecret, JWTExpireHours: deps.Config.JWTExpireHours}),
-		commerce.New(commerce.Deps{DB: deps.DB, Events: deps.Events, Log: deps.Log, JWTSecret: deps.Config.JWTSecret}),
+		commerce.New(commerce.Deps{DB: deps.DB, Events: deps.Events, Storage: deps.Storage, Log: deps.Log, JWTSecret: deps.Config.JWTSecret}),
 		booking.New(booking.Deps{DB: deps.DB, Events: deps.Events, Log: deps.Log, JWTSecret: deps.Config.JWTSecret}),
 		knowledge.New(knowledge.Deps{DB: deps.DB, Redis: deps.Redis, Log: deps.Log, JWTSecret: deps.Config.JWTSecret}),
 		streaming.New(streaming.Deps{DB: deps.DB, Redis: deps.Redis, Events: deps.Events, Log: deps.Log, GeminiAPIKey: deps.Config.GeminiAPIKey, GeminiModel: deps.Config.GeminiModel, AllowedOrigins: deps.Config.AllowedOrigins}),

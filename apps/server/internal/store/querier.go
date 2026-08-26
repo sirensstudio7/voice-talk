@@ -116,6 +116,8 @@ type Querier interface {
 	ListBusinessesForUser(ctx context.Context, userID string) ([]ListBusinessesForUserRow, error)
 	ListExpiredPhotoSessionsForBusiness(ctx context.Context, arg ListExpiredPhotoSessionsForBusinessParams) ([]PhotoSession, error)
 	ListKnowledgeEntries(ctx context.Context, businessID string) ([]KnowledgeEntry, error)
+	ListOrderItemsForOrders(ctx context.Context, orderIds []string) ([]OrderItem, error)
+	ListOrdersForBusiness(ctx context.Context, businessID string) ([]Order, error)
 	ListPhotoGalleryForBusiness(ctx context.Context, arg ListPhotoGalleryForBusinessParams) ([]PhotoSession, error)
 	ListPhotoSettingsForCleanup(ctx context.Context) ([]PhotoSetting, error)
 	ListPhotoStoragePathsForBusiness(ctx context.Context, businessID string) ([]ListPhotoStoragePathsForBusinessRow, error)

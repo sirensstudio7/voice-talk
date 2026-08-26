@@ -104,6 +104,70 @@ func (q *Queries) GetMostRecentOrderForVoiceSession(ctx context.Context, voiceSe
 	return i, err
 }
 
+const listOrderItemsForOrders = `-- name: ListOrderItemsForOrders :many
+SELECT id, order_id, product_id, name, price, quantity FROM order_items WHERE order_id = ANY($1::varchar[])
+`
+
+func (q *Queries) ListOrderItemsForOrders(ctx context.Context, orderIds []string) ([]OrderItem, error) {
+	rows, err := q.db.Query(ctx, listOrderItemsForOrders, orderIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OrderItem{}
+	for rows.Next() {
+		var i OrderItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrderID,
+			&i.ProductID,
+			&i.Name,
+			&i.Price,
+			&i.Quantity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrdersForBusiness = `-- name: ListOrdersForBusiness :many
+SELECT id, business_id, voice_session_id, status, total, customer_name, created_at, confirmed_at FROM orders WHERE business_id = $1 ORDER BY created_at DESC LIMIT 200
+`
+
+func (q *Queries) ListOrdersForBusiness(ctx context.Context, businessID string) ([]Order, error) {
+	rows, err := q.db.Query(ctx, listOrdersForBusiness, businessID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Order{}
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.BusinessID,
+			&i.VoiceSessionID,
+			&i.Status,
+			&i.Total,
+			&i.CustomerName,
+			&i.CreatedAt,
+			&i.ConfirmedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateOrderCustomerName = `-- name: UpdateOrderCustomerName :one
 UPDATE orders SET customer_name = $2
 WHERE id = $1
