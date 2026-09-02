@@ -1,0 +1,8 @@
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/uploads
+.git
+.remember
+apps-legacy

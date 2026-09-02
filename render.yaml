@@ -1,11 +1,10 @@
 services:
   - type: web
     name: voice-talk-api
-    runtime: node
+    runtime: docker
     plan: free
-    rootDir: apps/server
-    buildCommand: cd ../.. && npm install && npm run build --workspace=server
-    startCommand: node dist/src/index.js
+    dockerfilePath: ./apps/server/Dockerfile
+    dockerContext: .
     healthCheckPath: /health
     envVars:
       - key: GEMINI_MODEL
