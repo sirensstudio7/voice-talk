@@ -5,7 +5,7 @@ import {
   ChevronDownIcon,
 } from "@heroicons/react/24/outline";
 
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@voicetalk/ui";
 import { cn } from "@/lib/cn";
 import type { KnowledgeEntry } from "@/lib/api";
 

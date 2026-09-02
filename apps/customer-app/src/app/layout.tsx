@@ -1,16 +1,9 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "Lorescale · AI Cashier",
-  description: "Talk to your AI cashier in real time.",
+  title: "VoiceTalk",
+  description: "AI Voice Kiosk Experience",
 };
 
 export default function RootLayout({
@@ -19,8 +12,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} h-full`}>
-      <body className="min-h-full bg-slate-100 text-slate-900 antialiased">{children}</body>
+    <html lang="en">
+      <body className="antialiased min-h-[100dvh] w-screen overflow-hidden bg-black text-white selection:bg-brand-500/30">
+        <main className="w-full h-[100dvh] relative">
+          {children}
+        </main>
+      </body>
     </html>
   );
 }

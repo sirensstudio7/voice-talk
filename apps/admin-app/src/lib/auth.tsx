@@ -1,15 +1,23 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-
 import {
-  api,
   ApiRequestError,
-  login as apiLogin,
-  signup as apiSignup,
+  createHttpClient,
+  signIn,
+  signUp,
+  listUserBusinesses,
   type Business,
-} from "@/lib/api";
-import { detectCountryCode } from "@/lib/country";
+} from "@voicetalk/api-client";
+
+// Minimal country detect fallback
+function detectCountryCode() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return "UTC";
+  }
+}
 
 type AuthUser = { id: string; email: string; name: string; country?: string };
 
@@ -34,6 +42,8 @@ const TOKEN_KEY = "lorescale_admin_token";
 const USER_KEY = "lorescale_admin_user";
 const BUSINESS_KEY = "lorescale_admin_business";
 
+const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -45,7 +55,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const businessesRequestRef = useRef<Promise<Business[]> | null>(null);
 
   useEffect(() => {
-    // Platform super-admin impersonation handoff via URL hash
     if (typeof window !== "undefined" && window.location.hash.includes("platform_impersonate=")) {
       const hash = new URLSearchParams(window.location.hash.slice(1));
       const impersonateToken = hash.get("platform_impersonate");
@@ -61,7 +70,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           USER_KEY,
           JSON.stringify({ id: "impersonated", email: "", name: "Impersonating…" }),
         );
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
         void fetch(`${apiUrl}/admin/auth/me`, {
           headers: { Authorization: `Bearer ${impersonateToken}` },
         })
@@ -111,7 +119,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const request = (async () => {
       try {
-        const list = await api.listBusinesses(token);
+        const http = createHttpClient({ baseUrl: apiUrl, getToken: () => token });
+        const list = await listUserBusinesses(http);
         setBusinesses(list);
 
         const savedId = businessId ?? localStorage.getItem(BUSINESS_KEY);
@@ -167,7 +176,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
-    const result = await apiLogin(email, password);
+    const http = createHttpClient({ baseUrl: apiUrl });
+    const result = await signIn(http, email, password);
     persistSession(result.access_token, result.user);
     const list = result.businesses ?? [];
     setBusinesses(list);
@@ -186,8 +196,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signup = async (email: string, password: string, name?: string) => {
-    const result = await apiSignup(email, password, name, detectCountryCode());
-    if (!("access_token" in result)) {
+    const http = createHttpClient({ baseUrl: apiUrl });
+    const result = await signUp(http, email, password, name, detectCountryCode());
+    if (!result || !result.access_token) {
       return "pending";
     }
     persistSession(result.access_token, {

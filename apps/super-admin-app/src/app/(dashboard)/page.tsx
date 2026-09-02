@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import { PageHeader, StatCard, StatCardGrid } from "@/components/ui-blocks";
-import { Button } from "@/components/ui/button";
-import { UsersTable } from "@/components/users-table";
+import { PageHeader, StatCard, StatCardGrid } from "@/components/UiBlocks";
+import { Button } from "@voicetalk/ui";
+import { UsersTable } from "@/components/UsersTable";
 import { api, type DashboardResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 

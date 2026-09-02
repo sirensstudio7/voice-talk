@@ -24,23 +24,25 @@ import {
   TrashIcon,
 } from "@heroicons/react/24/outline";
 
-import { PageHeader, StatCard } from "@/components/ui";
-import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardHeader } from "@/components/ui/card";
+import { PageHeader, StatCard } from "@voicetalk/ui";
+import { Button } from "@voicetalk/ui/button";
+import { Card, CardAction, CardHeader } from "@voicetalk/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@voicetalk/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { api, type KnowledgeEntry } from "@/lib/api";
+} from "@voicetalk/ui/tooltip";
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { createHttpClient } from '@voicetalk/api-client';
+//, type KnowledgeEntry } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";

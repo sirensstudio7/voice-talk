@@ -6,9 +6,9 @@ import {
   ChevronDownIcon,
 } from "@heroicons/react/24/outline";
 
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "@voicetalk/ui";
+import { Calendar } from "@voicetalk/ui";
+import { Popover, PopoverContent, PopoverTrigger } from "@voicetalk/ui";
 import { cn } from "@/lib/cn";
 import { parseDateInputValue, toDateInputValue } from "@/lib/dates";
 

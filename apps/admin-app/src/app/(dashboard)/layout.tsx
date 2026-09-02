@@ -1,5 +1,5 @@
-import { DashboardAuthGate } from "@/components/dashboard-auth-gate";
+import { AuthGate } from "@/components/auth/AuthGate";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  return <DashboardAuthGate>{children}</DashboardAuthGate>;
+  return <AuthGate>{children}</AuthGate>;
 }

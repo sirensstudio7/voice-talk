@@ -13,11 +13,13 @@ import {
   TagIcon,
 } from "@heroicons/react/24/outline";
 
-import { PageHeader } from "@/components/ui";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { useSidebar } from "@/components/ui/sidebar";
-import { api } from "@/lib/api";
+import { PageHeader } from "@voicetalk/ui";
+import { Button } from "@voicetalk/ui/button";
+import { Card, CardContent, CardHeader } from "@voicetalk/ui/card";
+import { useSidebar } from "@voicetalk/ui/sidebar";
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { createHttpClient } from '@voicetalk/api-client';
+// } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";

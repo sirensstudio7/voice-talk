@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { use, useCallback, useEffect, useState, type ReactNode } from "react";
 
-import { StatusBadge } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/StatusBadge";
+import { Button } from "@voicetalk/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 

@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@voicetalk/avatar", "@voicetalk/shared"],
+  transpilePackages: ["@voicetalk/avatar", "@voicetalk/shared", "@voicetalk/ui", "@voicetalk/api-client"],
   turbopack: {
     root: path.join(__dirname, "../.."),
   },

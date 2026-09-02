@@ -1,29 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import {
-  ArrowUpRightIcon,
-} from "@heroicons/react/24/outline";
+import { ArrowUpRightIcon } from "@heroicons/react/24/outline";
 
+// Note: assuming these are copied over or exist.
 import { DailyOrdersChart, TopProductsPanel } from "@/components/stats-charts";
 import { SubscriptionBanner } from "@/components/subscription-banner";
-import { Button } from "@/components/ui/button";
+
 import {
+  Button,
   Card,
   CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { PageHeader, StatCard, StatCardGrid } from "@/components/ui";
-import {
-  api,
-  type AiRules,
-  type StatsDailyPoint,
-  type StatsOverview,
-  type TopProductStat,
-} from "@/lib/api";
+  PageHeader,
+  StatCard,
+  StatCardGrid,
+} from "@voicetalk/ui";
+import { useStatsSummaryQuery } from "@voicetalk/api-client";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 import { customerAppUrl } from "@/lib/customer-app";
@@ -37,57 +32,30 @@ function formatDuration(seconds: number | null | undefined) {
   return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
 }
 
-function isWorkspaceEmpty(stats: StatsOverview | null, daily: StatsDailyPoint[]) {
+function isWorkspaceEmpty(stats: any, daily: any[]) {
   if (!stats) return false;
   const hasActivity =
     stats.sessions_today > 0 ||
     stats.orders_today > 0 ||
     stats.revenue_today > 0 ||
     stats.active_sessions > 0 ||
-    daily.some((point) => point.orders > 0 || point.revenue > 0);
+    (daily && daily.some((point) => point.orders > 0 || point.revenue > 0));
   return !hasActivity;
 }
 
 export function OverviewPageClient() {
-  const { token, business } = useAuth();
-  const [stats, setStats] = useState<StatsOverview | null>(null);
-  const [daily, setDaily] = useState<StatsDailyPoint[]>([]);
-  const [topProducts, setTopProducts] = useState<TopProductStat[]>([]);
-  const [aiRules, setAiRules] = useState<AiRules | null>(null);
-  const [statsLoading, setStatsLoading] = useState(true);
+  const { business } = useAuth();
 
-  useEffect(() => {
-    if (!token || !business) {
-      setStatsLoading(false);
-      return;
-    }
+  const { data, isLoading } = useStatsSummaryQuery(business?.id ?? "", {
+    enabled: !!business?.id,
+  });
 
-    let cancelled = false;
-    setStatsLoading(true);
-    setStats(null);
-    setDaily([]);
-    setTopProducts([]);
-    setAiRules(null);
+  const stats = data?.overview ?? null;
+  const daily = data?.daily ?? [];
+  const topProducts = data?.top_products ?? [];
+  const aiRules = data?.ai_rules ?? null;
 
-    void api
-      .statsSummary(token, business.id)
-      .then((summary) => {
-        if (cancelled) return;
-        setStats(summary.overview);
-        setDaily(summary.daily);
-        setTopProducts(summary.top_products);
-        setAiRules(summary.ai_rules);
-      })
-      .finally(() => {
-        if (!cancelled) setStatsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [token, business]);
-
-  const showEmptyState = !statsLoading && isWorkspaceEmpty(stats, daily);
+  const showEmptyState = !isLoading && isWorkspaceEmpty(stats, daily);
   const orderingEnabled = business?.capabilities?.ordering_enabled ?? true;
   const bookingEnabled = business?.capabilities?.booking_enabled ?? false;
 
@@ -159,38 +127,38 @@ export function OverviewPageClient() {
           >
             <StatCard
               label="Sessions today"
-              value={statsLoading ? "…" : String(stats?.sessions_today ?? 0)}
+              value={isLoading ? "…" : String(stats?.sessions_today ?? 0)}
             />
             {orderingEnabled ? (
               <>
                 <StatCard
                   label="Orders today"
-                  value={statsLoading ? "…" : String(stats?.orders_today ?? 0)}
-                />
+                  value={isLoading ? "…" : String(stats?.orders_today ?? 0)}
+            />
                 <StatCard
                   label="Revenue today"
-                  value={statsLoading ? "…" : formatCurrency(stats?.revenue_today ?? 0)}
+                  value={isLoading ? "…" : formatCurrency(stats?.revenue_today ?? 0)}
                 />
                 <StatCard
                   label="Avg order value"
-                  value={statsLoading ? "…" : formatCurrency(stats?.avg_order_value ?? 0)}
+                  value={isLoading ? "…" : formatCurrency(stats?.avg_order_value ?? 0)}
                 />
               </>
             ) : null}
             <StatCard
               label="Avg call duration"
-              value={statsLoading ? "…" : formatDuration(stats?.avg_call_duration_seconds)}
+              value={isLoading ? "…" : formatDuration(stats?.avg_call_duration_seconds)}
             />
             <StatCard
               label="Active sessions"
-              value={statsLoading ? "…" : String(stats?.active_sessions ?? 0)}
+              value={isLoading ? "…" : String(stats?.active_sessions ?? 0)}
             />
           </StatCardGrid>
 
           {orderingEnabled ? (
             <div className="grid grid-cols-1 gap-4 @5xl/main:grid-cols-2">
-              <DailyOrdersChart data={daily} loading={statsLoading} />
-              <TopProductsPanel products={topProducts} loading={statsLoading} />
+              <DailyOrdersChart data={daily} loading={isLoading} />
+              <TopProductsPanel products={topProducts} loading={isLoading} />
             </div>
           ) : null}
         </>

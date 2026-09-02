@@ -1,0 +1,122 @@
+"use client";
+
+import Image from "next/image";
+import { useEffect, useRef } from "react";
+
+import { LanguageToggle } from "@/components/voice-controls";
+import { useBusinessSlug } from "@/context/business-context";
+import { DEFAULT_ASSISTANT_AVATAR, resolveMediaUrl } from "@/lib/menu-api";
+import { getTranscriptPlaceholder } from "@/lib/transcript-placeholder";
+import { useVoiceStore } from "@/store/voice-store";
+import { useCommerceStore } from "@/store/commerce-store";
+import { useUiStore } from "@/store/ui-store";
+import { AiLanguage } from "@/types/voice";
+
+type TranscriptPanelProps = {
+  onLanguageChange: (language: AiLanguage) => void;
+  variant?: "portrait" | "landscape";
+};
+
+export function TranscriptPanel({
+  onLanguageChange,
+  variant = "landscape",
+}: TranscriptPanelProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const { transcript, language, avatarUrl, avatarCacheBust } = useVoiceStore();
+  const { orderingEnabled, bookingEnabled, faqMode, menuCache, menuCacheSlug } = useCommerceStore();
+  const businessSlug = useBusinessSlug();
+  const businessType =
+    menuCacheSlug === businessSlug ? menuCache?.business_type : undefined;
+  const placeholder = getTranscriptPlaceholder({
+    language,
+    orderingEnabled,
+    bookingEnabled,
+    faqMode,
+    businessType,
+  });
+  const resolvedAvatarUrl = avatarUrl ? resolveMediaUrl(avatarUrl) : "";
+  const assistantAvatarSrc = resolvedAvatarUrl
+    ? `${resolvedAvatarUrl}${resolvedAvatarUrl.includes("?") ? "&" : "?"}v=${avatarCacheBust || 0}`
+    : DEFAULT_ASSISTANT_AVATAR;
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [transcript]);
+
+  return (
+    <div
+      className={`flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white/95 shadow-lg backdrop-blur-sm ${
+        variant === "portrait" ? "" : "max-h-[min(600px,100%)]"
+      }`}
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Conversation
+        </p>
+        <LanguageToggle value={language} onChange={onLanguageChange} />
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="transcript-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3"
+      >
+        {transcript.length === 0 ? (
+          <p className="px-1 text-sm leading-relaxed text-slate-600">{placeholder}</p>
+        ) : (
+          transcript.map((message, index) => {
+            const isUser = message.role === "user";
+            const showAvatar =
+              !isUser &&
+              (index === 0 || transcript[index - 1]?.role === "user");
+
+            return (
+              <div
+                key={message.id}
+                className={`flex items-end gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}
+              >
+                {!isUser && showAvatar ? (
+                  <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+                    {assistantAvatarSrc.startsWith("http") ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={assistantAvatarSrc}
+                        src={assistantAvatarSrc}
+                        alt="Lorescale"
+                        width={28}
+                        height={28}
+                        className="h-full w-full object-cover object-center"
+                      />
+                    ) : (
+                      <Image
+                        src={assistantAvatarSrc}
+                        alt="Lorescale"
+                        width={28}
+                        height={28}
+                        className="h-full w-full object-cover object-center"
+                      />
+                    )}
+                  </div>
+                ) : !isUser ? (
+                  <div className="w-7 shrink-0" />
+                ) : null}
+
+                <div
+                  className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                    isUser
+                      ? "bg-orange-500 text-white"
+                      : "bg-slate-100 text-slate-900"
+                  }`}
+                >
+                  {message.text}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}

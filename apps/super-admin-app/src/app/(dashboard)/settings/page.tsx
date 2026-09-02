@@ -2,16 +2,16 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-import { PageHeader } from "@/components/ui-blocks";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/UiBlocks";
+import { Button } from "@voicetalk/ui";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
+} from "@voicetalk/ui";
+import { Switch } from "@voicetalk/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";

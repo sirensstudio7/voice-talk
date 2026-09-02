@@ -3,7 +3,7 @@
 import * as Color from "color-bits";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { cn } from "@/lib/cn";
+import { cn } from '@voicetalk/ui';
 
 const CANVAS_FONT_FAMILY =
   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';

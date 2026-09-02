@@ -2,7 +2,7 @@
 
 import { type ReactNode } from "react";
 
-import { cn } from "@/lib/cn";
+import { cn } from '@voicetalk/ui';
 
 type VerticalMarqueeProps = {
   children: ReactNode;

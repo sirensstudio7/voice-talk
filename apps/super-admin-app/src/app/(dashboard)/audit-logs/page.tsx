@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@voicetalk/ui";
 import { api, type AuditLogItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 

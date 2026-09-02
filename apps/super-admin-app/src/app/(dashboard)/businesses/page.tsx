@@ -3,16 +3,16 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import { StatusBadge } from "@/components/status-badge";
-import { PageHeader } from "@/components/ui-blocks";
-import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/StatusBadge";
+import { PageHeader } from "@/components/UiBlocks";
+import { Button } from "@voicetalk/ui";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@voicetalk/ui";
 import { api, type BusinessListItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";

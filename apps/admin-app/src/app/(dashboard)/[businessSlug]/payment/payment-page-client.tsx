@@ -3,8 +3,10 @@
 import Image from "next/image";
 import { useEffect, useId, useRef, useState, type DragEvent } from "react";
 
-import { PageHeader } from "@/components/ui";
-import { api } from "@/lib/api";
+import { PageHeader } from "@voicetalk/ui";
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { createHttpClient } from '@voicetalk/api-client';
+// } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 

@@ -1,11 +1,10 @@
-import { redirect } from "next/navigation";
+import { BusinessProvider } from "@/context/business-context";
+import { VoiceStage } from "@/features/voice/VoiceStage";
 
-/** Legacy /b/{slug} links redirect to /{slug}. */
-export default async function LegacyBusinessPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
-  redirect(`/${slug}`);
+export default function KioskPage({ params }: { params: { slug: string } }) {
+  return (
+    <BusinessProvider slug={params.slug}>
+      <VoiceStage />
+    </BusinessProvider>
+  );
 }

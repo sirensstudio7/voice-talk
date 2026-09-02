@@ -11,11 +11,13 @@ import {
   TrashIcon,
 } from "@heroicons/react/24/outline";
 
-import { PageHeader } from "@/components/ui";
-import { Button } from "@/components/ui/button";
-import { CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useSidebar } from "@/components/ui/sidebar";
-import { api } from "@/lib/api";
+import { PageHeader } from "@voicetalk/ui";
+import { Button } from "@voicetalk/ui/button";
+import { CardDescription, CardHeader, CardTitle } from "@voicetalk/ui/card";
+import { useSidebar } from "@voicetalk/ui/sidebar";
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { createHttpClient } from '@voicetalk/api-client';
+// } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { customerAppUrl } from "@/lib/customer-app";
 import { compressImageForUpload, formatFileSize } from "@/lib/compress-image";

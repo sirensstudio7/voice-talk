@@ -5,7 +5,7 @@ import {
   AdminOverviewMockup,
   AdminRulesMockup,
 } from "@/components/landing/admin-dashboard-previews";
-import { cn } from "@/lib/cn";
+import { cn } from '@voicetalk/ui';
 
 export { AdminMenuMockup, AdminOverviewMockup, AdminRulesMockup };
 

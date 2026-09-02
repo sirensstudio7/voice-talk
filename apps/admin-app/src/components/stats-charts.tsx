@@ -5,7 +5,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@voicetalk/ui";
 import { formatCurrency } from "@/lib/currency";
 
 function formatShortDate(isoDate: string): string {

@@ -1,7 +1,7 @@
 import Image from "next/image";
 
 import logoSrc from "@/assets/lorescale-logo.png";
-import { cn } from "@/lib/cn";
+import { cn } from '@voicetalk/ui';
 
 type LorescaleLogoProps = {
   className?: string;

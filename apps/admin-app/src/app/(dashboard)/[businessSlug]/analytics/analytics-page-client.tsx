@@ -8,15 +8,17 @@ import {
 import { useEffect, useState } from "react";
 
 import { DailyOrdersChart, TopProductsPanel } from "@/components/stats-charts";
-import { PageHeader } from "@/components/ui";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@voicetalk/ui";
+import { Button } from "@voicetalk/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { api, type StatsDailyPoint, type TopProductStat } from "@/lib/api";
+} from "@voicetalk/ui/dropdown-menu";
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { createHttpClient } from '@voicetalk/api-client';
+//, type StatsDailyPoint, type TopProductStat } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { exportAnalyticsCsv, exportAnalyticsXls } from "@/lib/export-analytics";
 

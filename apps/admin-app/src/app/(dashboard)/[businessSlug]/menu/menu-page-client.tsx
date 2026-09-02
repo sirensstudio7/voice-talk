@@ -13,8 +13,10 @@ import {
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 
-import { PageHeader, StatCard } from "@/components/ui";
-import { api, type Product } from "@/lib/api";
+import { PageHeader, StatCard } from "@voicetalk/ui";
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { createHttpClient } from '@voicetalk/api-client';
+//, type Product } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { CURRENCY_PREFIX, formatCurrency } from "@/lib/currency";
 
@@ -650,8 +652,15 @@ export function MenuPageClient() {
   const salonMode = business?.capabilities?.salon_mode ?? false;
   const categoryOptions = salonMode ? SALON_CATEGORY_OPTIONS : CATEGORY_OPTIONS;
   const defaultCategory = salonMode ? "Haircuts" : "Coffee";
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: products = [], isLoading: loading, refetch } = useQuery({
+    queryKey: ["products", business?.id],
+    queryFn: async () => {
+      const http = createHttpClient({ baseUrl: API_URL, getToken: () => token });
+      const res = await http.get(`/admin/businesses/${business!.id}/products`);
+      return res as Product[];
+    },
+    enabled: !!business?.id && !!token,
+  });
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -661,19 +670,7 @@ export function MenuPageClient() {
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
 
-  const load = async () => {
-    if (!token || !business) return;
-    setLoading(true);
-    try {
-      setProducts(await api.listProducts(token, business.id));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, [token, business]);
+  
 
   const categories = useMemo(
     () => [...new Set(products.map((product) => product.category))].sort(),
@@ -765,7 +762,7 @@ export function MenuPageClient() {
       }
 
       closeForm();
-      await load();
+      await refetch();
     } finally {
       setSaving(false);
     }
@@ -797,7 +794,7 @@ export function MenuPageClient() {
     }
     await api.deleteProduct(token, business.id, product.id);
     if (editingId === product.id) closeForm();
-    await load();
+    await refetch();
   };
 
   const subtitle = useMemo(() => {

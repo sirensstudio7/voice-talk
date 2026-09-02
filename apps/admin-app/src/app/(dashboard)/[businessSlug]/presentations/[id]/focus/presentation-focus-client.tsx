@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@voicetalk/ui";
 import { api } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";

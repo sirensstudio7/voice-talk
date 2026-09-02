@@ -10,12 +10,12 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
-    "@radix-ui/react-popover": "^1.1.23",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
+    "@voicetalk/api-client": "*",
     "@voicetalk/avatar": "*",
     "@voicetalk/shared": "*",
-    "clsx": "^2.1.1",
+    "@voicetalk/ui": "*",
     "color-bits": "^1.2.0",
     "country-state-city": "^3.2.1",
     "framer-motion": "^12.42.2",
@@ -23,7 +23,6 @@
     "next": "16.2.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "tailwind-merge": "^3.6.0",
     "three": "^0.185.1"
   },
   "devDependencies": {

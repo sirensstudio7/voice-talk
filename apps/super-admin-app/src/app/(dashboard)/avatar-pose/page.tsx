@@ -27,9 +27,9 @@ import {
 
 import {
   AvatarPoseAdjustPanel,
-} from "@/components/avatar-pose-adjust-panel";
-import { AvatarPoseTimeline } from "@/components/avatar-pose-timeline";
-import { PageHeader } from "@/components/ui-blocks";
+} from "@/components/avatar-pose/AvatarPoseAdjustPanel";
+import { AvatarPoseTimeline } from "@/components/avatar-pose/AvatarPoseTimeline";
+import { PageHeader } from "@/components/UiBlocks";
 import {
   buildKeyframeClipboard,
   buildPoseClip,

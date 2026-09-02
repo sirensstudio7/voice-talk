@@ -18,8 +18,8 @@ import {
   DemoRequestLayout,
   SelectionCard,
 } from "@/components/landing/request-demo-shell";
-import { SearchableSelect } from "@/components/ui/searchable-select";
-import { cn } from "@/lib/cn";
+import { SearchableSelect } from '@voicetalk/ui';
+import { cn } from '@voicetalk/ui';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 

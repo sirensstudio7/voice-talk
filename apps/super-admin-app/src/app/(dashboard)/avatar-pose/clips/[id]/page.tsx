@@ -10,8 +10,8 @@ import {
   TrashIcon,
 } from "@heroicons/react/24/outline";
 
-import { PageHeader } from "@/components/ui-blocks";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/UiBlocks";
+import { Button } from "@voicetalk/ui";
 import {
   deleteSavedPoseClip,
   downloadPoseClipJson,

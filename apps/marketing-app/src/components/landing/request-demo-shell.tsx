@@ -8,7 +8,7 @@ import {
 import type { ReactNode } from "react";
 
 import { LorescaleLogo } from "@/components/landing/lorescale-logo";
-import { cn } from "@/lib/cn";
+import { cn } from '@voicetalk/ui';
 
 export const DEMO_STEPS = [
   { id: 1, label: "Company" },

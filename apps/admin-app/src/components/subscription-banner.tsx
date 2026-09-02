@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@voicetalk/ui";
 import { api, type AccountSubscription } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";

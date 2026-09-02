@@ -4,16 +4,16 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { PageHeader } from "@/components/ui-blocks";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/UiBlocks";
+import { Button } from "@voicetalk/ui";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { UsersTable } from "@/components/users-table";
+} from "@voicetalk/ui";
+import { UsersTable } from "@/components/UsersTable";
 import { api, type PlatformUser } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";

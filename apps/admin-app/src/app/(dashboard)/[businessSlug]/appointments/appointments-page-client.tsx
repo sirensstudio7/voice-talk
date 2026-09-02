@@ -10,8 +10,10 @@ import {
 } from "@heroicons/react/24/outline";
 
 import { DateFilter } from "@/components/date-filter";
-import { PageHeader, StatCard } from "@/components/ui";
-import { api, type Appointment } from "@/lib/api";
+import { PageHeader, StatCard } from "@voicetalk/ui";
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { createHttpClient } from '@voicetalk/api-client';
+//, type Appointment } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatFilterDateLabel, parseApiDate } from "@/lib/dates";
 

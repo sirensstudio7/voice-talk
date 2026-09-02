@@ -28,7 +28,7 @@ import {
   UserCircleIcon,
 } from "@heroicons/react/24/outline";
 
-import { cn } from "@/lib/cn";
+import { cn } from '@voicetalk/ui';
 import { formatCurrency } from "@voicetalk/shared";
 
 const CANVAS_W = 1280;
