@@ -1,5 +1,6 @@
-import type { FastifyInstance } from "fastify";
-import type { WebSocket } from "ws";
+import type { Elysia } from "elysia";
+
+import { socketRoute, type SocketBridge } from "../http/websocket.js";
 import {
   getBusinessCapabilities,
   getVoicePresetGeminiVoice,
@@ -89,7 +90,7 @@ function createTranscriptTurnBuffer() {
   };
 }
 
-function safeSendJson(socket: WebSocket, payload: Record<string, unknown>): boolean {
+function safeSendJson(socket: SocketBridge, payload: Record<string, unknown>): boolean {
   try {
     if (socket.readyState === socket.OPEN) {
       socket.send(JSON.stringify(payload));
@@ -105,14 +106,12 @@ function getGeminiModel(tenant: { geminiModel: string }): string {
   return tenant.geminiModel || env.GEMINI_MODEL;
 }
 
-export async function registerWebSocketRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/ws/session", { websocket: true }, (socket, request) => {
-    void handleSession(socket, request.query as { business?: string; language?: string });
-  });
+export function registerWebSocketRoutes(app: Elysia): void {
+  app.ws("/ws/session", socketRoute((socket, { query }) => handleSession(socket, query)));
 }
 
 async function handleSession(
-  socket: WebSocket,
+  socket: SocketBridge,
   query: { business?: string; language?: string },
 ): Promise<void> {
   const slug = query.business || env.DEFAULT_BUSINESS_SLUG;

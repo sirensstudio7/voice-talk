@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { WebSocket } from "ws";
+import type { SocketBridge } from "../http/websocket.js";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { visionEvents, visionSettings, type VisionSettings } from "../db/schema.js";
@@ -18,12 +18,12 @@ type VisionEventType =
   | "SESSION_TIMEOUT";
 
 type KioskClient = {
-  socket: WebSocket;
+  socket: SocketBridge;
   kioskId: string;
 };
 
 type VisionSourceClient = {
-  socket: WebSocket;
+  socket: SocketBridge;
   kioskId: string;
 };
 
@@ -108,7 +108,7 @@ export async function refreshHubSettings(businessSlug: string): Promise<void> {
   hub.settings = await getOrCreateVisionSettings(hub.businessId);
 }
 
-function safeSend(socket: WebSocket, payload: Record<string, unknown>): boolean {
+function safeSend(socket: SocketBridge, payload: Record<string, unknown>): boolean {
   try {
     if (socket.readyState === socket.OPEN) {
       socket.send(JSON.stringify(payload));
@@ -315,7 +315,7 @@ export async function ensureVisionHub(
 export function registerVisionSource(
   hub: BusinessVisionHub,
   kioskId: string,
-  socket: WebSocket,
+  socket: SocketBridge,
 ): void {
   hub.visionSources.set(kioskId, { socket, kioskId });
   broadcastVisionConfig(hub);
@@ -329,7 +329,7 @@ export function unregisterVisionSource(hub: BusinessVisionHub, kioskId: string):
 export function registerKioskClient(
   hub: BusinessVisionHub,
   kioskId: string,
-  socket: WebSocket,
+  socket: SocketBridge,
 ): void {
   if (hub.sessionActive) {
     const ageMs =

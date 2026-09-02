@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
-import type { FastifyRequest } from "fastify";
 import jwt from "jsonwebtoken";
 import * as OTPAuth from "otpauth";
 import { db } from "../db/client.js";
 import { withLoginDb } from "../db/login-db.js";
 import { auditLogs, platformAdmins, type PlatformAdmin } from "../db/schema.js";
 import { env } from "../env.js";
+import type { AuthContext } from "../http/context.js";
 import { hashPassword, verifyPassword } from "./jwt.js";
 import { isPlatformRole, type PlatformRole } from "./platform-rbac.js";
 
@@ -56,7 +56,7 @@ export function createPlatformAccessToken(adminId: string, role: string): string
   );
 }
 
-function readBearerToken(request: FastifyRequest): string {
+function readBearerToken(request: AuthContext): string {
   const header = request.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     throw authError("Not authenticated");
@@ -83,7 +83,7 @@ function verifyPlatformToken(
 }
 
 export async function getPlatformAdminFromPending(
-  request: FastifyRequest,
+  request: AuthContext,
 ): Promise<PlatformAdmin> {
   const token = readBearerToken(request);
   const payload = verifyPlatformToken(token, "platform_pending");
@@ -106,7 +106,7 @@ const adminCache = new Map<
 const adminInflight = new Map<string, Promise<PlatformAdmin & { role: PlatformRole }>>();
 
 export async function getCurrentPlatformAdmin(
-  request: FastifyRequest,
+  request: AuthContext,
 ): Promise<PlatformAdmin & { role: PlatformRole }> {
   const token = readBearerToken(request);
   const payload = verifyPlatformToken(token, "platform");
@@ -192,7 +192,7 @@ export async function writeAuditLog(input: {
   entityType?: string;
   entityId?: string;
   metadata?: Record<string, unknown>;
-  request?: FastifyRequest;
+  request?: AuthContext;
 }): Promise<void> {
   const ip =
     (input.request?.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||

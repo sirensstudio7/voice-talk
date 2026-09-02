@@ -24,8 +24,8 @@ kill_port() {
     fi
   fi
 
-  pkill -f "tsx watch src/index.ts" 2>/dev/null || true
-  pkill -f "node dist/index.js" 2>/dev/null || true
+  pkill -f "bun --watch src/index.ts" 2>/dev/null || true
+  pkill -f "bun src/index.ts" 2>/dev/null || true
   sleep 1
 }
 

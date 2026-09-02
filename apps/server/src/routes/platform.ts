@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, or, sql } from "drizzle-orm";
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { Elysia } from "elysia";
+import type { AuthContext } from "../http/context.js";
 import { sendAuthError, createAccessToken, hashPassword, clearUserCache } from "../auth/jwt.js";
 import {
   authenticatePlatformPassword,
@@ -64,7 +65,7 @@ import {
   rejectTopupOrder,
 } from "../services/voice-minutes.js";
 
-function clientKey(request: FastifyRequest): string {
+function clientKey(request: AuthContext): string {
   return (
     (request.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||
     request.ip ||
@@ -357,13 +358,13 @@ async function enrichUsers(
   });
 }
 
-export async function registerPlatformRoutes(app: FastifyInstance): Promise<void> {
+export async function registerPlatformRoutes(app: Elysia): Promise<void> {
   await ensurePlatformAdminSeed();
 
-  app.post("/platform/auth/login", async (request, reply) => {
+  app.post("/platform/auth/login", async (request) => {
     const key = `login:${clientKey(request)}`;
     if (!checkLoginRateLimit(key)) {
-      return reply.status(429).send({ detail: "Too many login attempts. Try again later." });
+      return request.status(429, { detail: "Too many login attempts. Try again later." });
     }
 
     const body = request.body as { email?: string; password?: string };
@@ -392,15 +393,15 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         admin: platformAdminOut({ ...admin, lastLoginAt: now }),
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/auth/setup-2fa", async (request, reply) => {
+  app.post("/platform/auth/setup-2fa", async (request) => {
     try {
       const admin = await getPlatformAdminFromPending(request);
       if (admin.totpEnabled && admin.totpSecret) {
-        return reply.status(400).send({ detail: "2FA is already enabled." });
+        return request.status(400, { detail: "2FA is already enabled." });
       }
       const { secret, otpauthUrl } = generateTotpSecret(admin.email);
       await db
@@ -409,20 +410,20 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         .where(eq(platformAdmins.id, admin.id));
       return { secret, otpauth_url: otpauthUrl };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/auth/verify-2fa", async (request, reply) => {
+  app.post("/platform/auth/verify-2fa", async (request) => {
     const body = request.body as { code?: string };
     const code = body.code?.trim() ?? "";
     try {
       const admin = await getPlatformAdminFromPending(request);
       if (!admin.totpSecret) {
-        return reply.status(400).send({ detail: "2FA is not set up. Call setup-2fa first." });
+        return request.status(400, { detail: "2FA is not set up. Call setup-2fa first." });
       }
       if (!verifyTotpCode(admin.totpSecret, code)) {
-        return reply.status(401).send({ detail: "Invalid 2FA code." });
+        return request.status(401, { detail: "Invalid 2FA code." });
       }
 
       if (!admin.totpEnabled) {
@@ -451,11 +452,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         admin: platformAdminOut({ ...admin, totpEnabled: true, lastLoginAt: new Date() }),
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/auth/logout", async (request, reply) => {
+  app.post("/platform/auth/logout", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       await writeAuditLog({
@@ -467,19 +468,19 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       });
       return { ok: true };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/auth/me", async (request, reply) => {
+  app.get("/platform/auth/me", async (request) => {
     try {
       return platformAdminOut(await getCurrentPlatformAdmin(request));
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/dashboard", async (request, reply) => {
+  app.get("/platform/dashboard", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "dashboard");
@@ -605,11 +606,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         };
       }, 20_000);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/users", async (request, reply) => {
+  app.get("/platform/users", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "users:read");
@@ -652,18 +653,18 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         limit,
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/users/:id", async (request, reply) => {
+  app.get("/platform/users/:id", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "users:read");
       const { id } = request.params as { id: string };
 
       const user = await db.query.users.findFirst({ where: eq(users.id, id) });
-      if (!user) return reply.status(404).send({ detail: "User not found" });
+      if (!user) return request.status(404, { detail: "User not found" });
 
       const memberships = await db
         .select({
@@ -716,11 +717,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         })),
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/platform/users/:id/status", async (request, reply) => {
+  app.patch("/platform/users/:id/status", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "users:write");
@@ -728,11 +729,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       const body = request.body as { status?: string };
       const status = body.status?.trim();
       if (status !== "active" && status !== "suspended") {
-        return reply.status(400).send({ detail: "status must be active or suspended" });
+        return request.status(400, { detail: "status must be active or suspended" });
       }
 
       const user = await db.query.users.findFirst({ where: eq(users.id, id) });
-      if (!user) return reply.status(404).send({ detail: "User not found" });
+      if (!user) return request.status(404, { detail: "User not found" });
 
       const action =
         user.status === "pending" && status === "active"
@@ -761,18 +762,18 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
 
       return { id, status };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/users/:id/reset-password", async (request, reply) => {
+  app.post("/platform/users/:id/reset-password", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "users:write");
       const { id } = request.params as { id: string };
 
       const user = await db.query.users.findFirst({ where: eq(users.id, id) });
-      if (!user) return reply.status(404).send({ detail: "User not found" });
+      if (!user) return request.status(404, { detail: "User not found" });
 
       const temporaryPassword = randomBytes(9).toString("base64url");
       await db
@@ -794,11 +795,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         note: "Share this temporary password securely with the customer. Email delivery is not configured in MVP.",
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/businesses", async (request, reply) => {
+  app.get("/platform/businesses", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "businesses:read");
@@ -880,18 +881,18 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         limit,
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/businesses/:id", async (request, reply) => {
+  app.get("/platform/businesses/:id", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "businesses:read");
       const { id } = request.params as { id: string };
 
       const business = await db.query.businesses.findFirst({ where: eq(businesses.id, id) });
-      if (!business) return reply.status(404).send({ detail: "Business not found" });
+      if (!business) return request.status(404, { detail: "Business not found" });
 
       const sub = await ensureSubscriptionForBusiness(id);
       const [[productCount], [sessionCount], members, rules] = await Promise.all([
@@ -942,11 +943,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         },
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/platform/businesses/:id/status", async (request, reply) => {
+  app.patch("/platform/businesses/:id/status", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "businesses:write");
@@ -954,11 +955,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       const body = request.body as { status?: string };
       const isActive = body.status === "active";
       if (body.status !== "active" && body.status !== "disabled") {
-        return reply.status(400).send({ detail: "status must be active or disabled" });
+        return request.status(400, { detail: "status must be active or disabled" });
       }
 
       const business = await db.query.businesses.findFirst({ where: eq(businesses.id, id) });
-      if (!business) return reply.status(404).send({ detail: "Business not found" });
+      if (!business) return request.status(404, { detail: "Business not found" });
 
       await db.update(businesses).set({ isActive }).where(eq(businesses.id, id));
       await writeAuditLog({
@@ -972,18 +973,18 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
 
       return { id, status: isActive ? "active" : "disabled" };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/businesses/:id/impersonate", async (request, reply) => {
+  app.post("/platform/businesses/:id/impersonate", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "impersonate");
       const { id } = request.params as { id: string };
 
       const business = await db.query.businesses.findFirst({ where: eq(businesses.id, id) });
-      if (!business) return reply.status(404).send({ detail: "Business not found" });
+      if (!business) return request.status(404, { detail: "Business not found" });
 
       const [owner] = await db
         .select({ user: users })
@@ -1006,13 +1007,13 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         )[0]?.user;
 
       if (!targetUser) {
-        return reply.status(400).send({ detail: "Business has no members to impersonate." });
+        return request.status(400, { detail: "Business has no members to impersonate." });
       }
       if (targetUser.status === "suspended") {
-        return reply.status(400).send({ detail: "Cannot impersonate a suspended user." });
+        return request.status(400, { detail: "Cannot impersonate a suspended user." });
       }
       if (targetUser.status === "pending") {
-        return reply.status(400).send({ detail: "Cannot impersonate a pending user." });
+        return request.status(400, { detail: "Cannot impersonate a pending user." });
       }
 
       await writeAuditLog({
@@ -1036,11 +1037,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         merchant_admin_url: env.MERCHANT_ADMIN_URL,
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/vision", async (request, reply) => {
+  app.get("/platform/vision", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "businesses:read");
@@ -1111,11 +1112,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         sources: ["auto", "python", "browser", "human"] as const,
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/subscriptions", async (request, reply) => {
+  app.get("/platform/subscriptions", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:read");
@@ -1288,11 +1289,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         },
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/platform/subscriptions/:id", async (request, reply) => {
+  app.patch("/platform/subscriptions/:id", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
@@ -1309,7 +1310,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       const existing = await db.query.subscriptions.findFirst({
         where: eq(subscriptions.id, id),
       });
-      if (!existing) return reply.status(404).send({ detail: "Subscription not found" });
+      if (!existing) return request.status(404, { detail: "Subscription not found" });
 
       const [updated] = await db
         .update(subscriptions)
@@ -1355,27 +1356,27 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         notes: updated!.notes,
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/settings", async (request, reply) => {
+  app.get("/platform/settings", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "dashboard");
       return await getPublicSettingsMap();
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/platform/settings", async (request, reply) => {
+  app.patch("/platform/settings", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "settings:write");
       const body = request.body as Record<string, string>;
       if (!body || typeof body !== "object") {
-        return reply.status(400).send({ detail: "Expected settings object" });
+        return request.status(400, { detail: "Expected settings object" });
       }
 
       const current = await getSettingsMap();
@@ -1428,11 +1429,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
 
       return await getPublicSettingsMap();
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/demo-requests", async (request, reply) => {
+  app.get("/platform/demo-requests", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "demo_requests:read");
@@ -1495,11 +1496,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         limit,
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/platform/demo-requests/:id", async (request, reply) => {
+  app.patch("/platform/demo-requests/:id", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "demo_requests:write");
@@ -1509,11 +1510,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       const existing = await db.query.demoRequests.findFirst({
         where: eq(demoRequests.id, id),
       });
-      if (!existing) return reply.status(404).send({ detail: "Demo request not found" });
+      if (!existing) return request.status(404, { detail: "Demo request not found" });
 
       const nextStatus = body.status?.trim();
       if (nextStatus && !["new", "contacted", "closed"].includes(nextStatus)) {
-        return reply.status(400).send({ detail: "status must be new, contacted, or closed" });
+        return request.status(400, { detail: "status must be new, contacted, or closed" });
       }
 
       const [updated] = await db
@@ -1554,11 +1555,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         updated_at: updated!.updatedAt.toISOString(),
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/audit-logs", async (request, reply) => {
+  app.get("/platform/audit-logs", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "audit:read");
@@ -1606,11 +1607,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         limit,
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/subscription-requests", async (request, reply) => {
+  app.get("/platform/subscription-requests", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:read");
@@ -1681,11 +1682,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         limit,
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/subscription-requests/:id", async (request, reply) => {
+  app.get("/platform/subscription-requests/:id", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:read");
@@ -1713,7 +1714,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         .where(eq(subscriptionRequests.id, id))
         .limit(1);
 
-      if (!row) return reply.status(404).send({ detail: "Request not found" });
+      if (!row) return request.status(404, { detail: "Request not found" });
 
       const entitlement = await getEntitlementSnapshot(row.userId);
       const paidPlans = await listPaidPlans();
@@ -1744,11 +1745,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         })),
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/subscription-requests/:id/activate", async (request, reply) => {
+  app.post("/platform/subscription-requests/:id/activate", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
@@ -1764,7 +1765,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       if (body.custom_ends_at) {
         customEndsAt = new Date(body.custom_ends_at);
         if (Number.isNaN(customEndsAt.getTime())) {
-          return reply.status(400).send({ detail: "Invalid custom_ends_at" });
+          return request.status(400, { detail: "Invalid custom_ends_at" });
         }
       }
 
@@ -1793,18 +1794,18 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         return { id, status: "approved", entitlement };
       } catch (err) {
         if (err instanceof Error && "statusCode" in err) {
-          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          return request.status((err as Error & { statusCode: number }).statusCode, {
             detail: err.message,
           });
         }
         throw err;
       }
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/subscription-requests/:id/reject", async (request, reply) => {
+  app.post("/platform/subscription-requests/:id/reject", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
@@ -1819,7 +1820,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         });
       } catch (err) {
         if (err instanceof Error && "statusCode" in err) {
-          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          return request.status((err as Error & { statusCode: number }).statusCode, {
             detail: err.message,
           });
         }
@@ -1837,11 +1838,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
 
       return { id, status: "rejected" };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/addon-requests", async (request, reply) => {
+  app.get("/platform/addon-requests", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:read");
@@ -1876,11 +1877,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         limit,
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/addon-requests/:id/approve", async (request, reply) => {
+  app.post("/platform/addon-requests/:id/approve", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
@@ -1895,7 +1896,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       if (body.custom_ends_at) {
         customEndsAt = new Date(body.custom_ends_at);
         if (Number.isNaN(customEndsAt.getTime())) {
-          return reply.status(400).send({ detail: "Invalid custom_ends_at" });
+          return request.status(400, { detail: "Invalid custom_ends_at" });
         }
       }
 
@@ -1932,18 +1933,18 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         };
       } catch (err) {
         if (err instanceof Error && "statusCode" in err) {
-          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          return request.status((err as Error & { statusCode: number }).statusCode, {
             detail: err.message,
           });
         }
         throw err;
       }
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/addon-requests/:id/reject", async (request, reply) => {
+  app.post("/platform/addon-requests/:id/reject", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
@@ -1958,7 +1959,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         });
       } catch (err) {
         if (err instanceof Error && "statusCode" in err) {
-          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          return request.status((err as Error & { statusCode: number }).statusCode, {
             detail: err.message,
           });
         }
@@ -1976,11 +1977,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
 
       return { id, status: "rejected" };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/addon-requests/:id/suspend", async (request, reply) => {
+  app.post("/platform/addon-requests/:id/suspend", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
@@ -1989,7 +1990,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
 
       const { items } = await listAddonRequestRows({ limit: 500, offset: 0 });
       const found = items.find((r) => r.id === id);
-      if (!found) return reply.status(404).send({ detail: "Request not found" });
+      if (!found) return request.status(404, { detail: "Request not found" });
 
       try {
         const sub = await suspendAddon({
@@ -2011,18 +2012,18 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         return { id, status: "suspended" };
       } catch (err) {
         if (err instanceof Error && "statusCode" in err) {
-          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          return request.status((err as Error & { statusCode: number }).statusCode, {
             detail: err.message,
           });
         }
         throw err;
       }
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/topup-orders", async (request, reply) => {
+  app.get("/platform/topup-orders", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:read");
@@ -2039,11 +2040,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         })),
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/topup-orders/:id/approve", async (request, reply) => {
+  app.post("/platform/topup-orders/:id/approve", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
@@ -2060,15 +2061,15 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       return orderOut(order);
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/topup-orders/:id/reject", async (request, reply) => {
+  app.post("/platform/topup-orders/:id/reject", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
@@ -2086,15 +2087,15 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       return { id, status: "rejected" };
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/users/:id/voice-minutes", async (request, reply) => {
+  app.get("/platform/users/:id/voice-minutes", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:read");
@@ -2105,11 +2106,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       ]);
       return { wallet, ledger };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/platform/users/:id/voice-minutes/adjust", async (request, reply) => {
+  app.post("/platform/users/:id/voice-minutes/adjust", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
@@ -2132,15 +2133,15 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       return wallet;
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/platform/pricing", async (request, reply) => {
+  app.get("/platform/pricing", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:read");
@@ -2195,11 +2196,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
           })),
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/platform/pricing/plans/:code", async (request, reply) => {
+  app.patch("/platform/pricing/plans/:code", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
@@ -2213,7 +2214,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       };
       const plan = await db.query.plans.findFirst({ where: eq(plans.code, code) });
       if (!plan) {
-        return reply.status(404).send({ detail: "Plan not found." });
+        return request.status(404, { detail: "Plan not found." });
       }
       const updates: Partial<typeof plans.$inferInsert> = {};
       if (body.monthly_price_idr !== undefined) {
@@ -2235,12 +2236,12 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       if (body.workspace_limit !== undefined) {
         const limit = parsePositiveInt(body.workspace_limit, "Workspace limit");
         if (limit < 1) {
-          return reply.status(400).send({ detail: "Workspace limit must be at least 1." });
+          return request.status(400, { detail: "Workspace limit must be at least 1." });
         }
         updates.workspaceLimit = limit;
       }
       if (Object.keys(updates).length === 0) {
-        return reply.status(400).send({ detail: "No pricing fields to update." });
+        return request.status(400, { detail: "No pricing fields to update." });
       }
       const [updated] = await db.update(plans).set(updates).where(eq(plans.id, plan.id)).returning();
       await writeAuditLog({
@@ -2264,15 +2265,15 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       };
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/platform/pricing/addons/:code", async (request, reply) => {
+  app.patch("/platform/pricing/addons/:code", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
@@ -2285,7 +2286,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       };
       const addon = await db.query.addons.findFirst({ where: eq(addons.code, code) });
       if (!addon) {
-        return reply.status(404).send({ detail: "Add-on not found." });
+        return request.status(404, { detail: "Add-on not found." });
       }
       const updates: Partial<typeof addons.$inferInsert> = {};
       if (body.monthly_price_idr !== undefined) {
@@ -2303,7 +2304,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         updates.discount12mPercent = parsePercent(body.discount_12m_percent, "12-month discount");
       }
       if (Object.keys(updates).length === 0) {
-        return reply.status(400).send({ detail: "No pricing fields to update." });
+        return request.status(400, { detail: "No pricing fields to update." });
       }
       const [updated] = await db.update(addons).set(updates).where(eq(addons.id, addon.id)).returning();
       await writeAuditLog({
@@ -2327,15 +2328,15 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       };
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/platform/pricing/topup-packages/:id", async (request, reply) => {
+  app.patch("/platform/pricing/topup-packages/:id", async (request) => {
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
@@ -2347,7 +2348,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       };
       const pkg = await db.query.topupPackages.findFirst({ where: eq(topupPackages.id, id) });
       if (!pkg) {
-        return reply.status(404).send({ detail: "Top-up package not found." });
+        return request.status(404, { detail: "Top-up package not found." });
       }
       const updates: Partial<typeof topupPackages.$inferInsert> = { updatedAt: new Date() };
       if (body.price_idr !== undefined) {
@@ -2356,7 +2357,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       if (body.minutes !== undefined) {
         const minutes = parsePositiveInt(body.minutes, "Minutes");
         if (minutes < 1) {
-          return reply.status(400).send({ detail: "Minutes must be at least 1." });
+          return request.status(400, { detail: "Minutes must be at least 1." });
         }
         updates.minutes = minutes;
       }
@@ -2368,7 +2369,7 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
         body.minutes === undefined &&
         body.discount_percent === undefined
       ) {
-        return reply.status(400).send({ detail: "No pricing fields to update." });
+        return request.status(400, { detail: "No pricing fields to update." });
       }
       const [updated] = await db
         .update(topupPackages)
@@ -2396,11 +2397,11 @@ export async function registerPlatformRoutes(app: FastifyInstance): Promise<void
       };
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 }

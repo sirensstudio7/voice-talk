@@ -1,5 +1,6 @@
-import type { FastifyInstance } from "fastify";
-import type { WebSocket } from "ws";
+import type { Elysia } from "elysia";
+
+import { socketRoute, type SocketBridge } from "../http/websocket.js";
 import { env } from "../env.js";
 import { getBusinessBySlug } from "../services/tenant.js";
 import {
@@ -24,7 +25,7 @@ type VisionEventType =
   | "PERSON_LOST"
   | "SESSION_TIMEOUT";
 
-function safeSend(socket: WebSocket, payload: Record<string, unknown>): boolean {
+function safeSend(socket: SocketBridge, payload: Record<string, unknown>): boolean {
   try {
     if (socket.readyState === socket.OPEN) {
       socket.send(JSON.stringify(payload));
@@ -36,18 +37,13 @@ function safeSend(socket: WebSocket, payload: Record<string, unknown>): boolean 
   return false;
 }
 
-export async function registerVisionWebSocketRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/ws/vision", { websocket: true }, (socket, request) => {
-    void handleVisionSource(socket, request.query as Record<string, string | undefined>);
-  });
-
-  app.get("/ws/kiosk", { websocket: true }, (socket, request) => {
-    void handleKioskClient(socket, request.query as Record<string, string | undefined>);
-  });
+export function registerVisionWebSocketRoutes(app: Elysia): void {
+  app.ws("/ws/vision", socketRoute((socket, { query }) => handleVisionSource(socket, query)));
+  app.ws("/ws/kiosk", socketRoute((socket, { query }) => handleKioskClient(socket, query)));
 }
 
 async function handleVisionSource(
-  socket: WebSocket,
+  socket: SocketBridge,
   query: Record<string, string | undefined>,
 ): Promise<void> {
   const slug = query.business || env.DEFAULT_BUSINESS_SLUG;
@@ -96,7 +92,7 @@ async function handleVisionSource(
 }
 
 async function handleKioskClient(
-  socket: WebSocket,
+  socket: SocketBridge,
   query: Record<string, string | undefined>,
 ): Promise<void> {
   const slug = query.business || env.DEFAULT_BUSINESS_SLUG;

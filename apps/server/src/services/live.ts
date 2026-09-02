@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { GoogleGenAI } from "@google/genai";
 import { getVoicePresetGeminiVoice } from "@voicetalk/shared";
-import type { WebSocket } from "ws";
+import type { SocketBridge } from "../http/websocket.js";
 
 import { db } from "../db/client.js";
 import {
@@ -1337,10 +1337,10 @@ export async function maybeLiveAiReply(sessionId: string, viewerText: string) {
   }
 }
 
-type LiveSocket = { ws: WebSocket; role: "host" | "viewer" };
+type LiveSocket = { ws: SocketBridge; role: "host" | "viewer" };
 const rooms = new Map<string, Set<LiveSocket>>();
 
-export function joinLiveRoom(sessionId: string, role: "host" | "viewer", ws: WebSocket) {
+export function joinLiveRoom(sessionId: string, role: "host" | "viewer", ws: SocketBridge) {
   let room = rooms.get(sessionId);
   if (!room) {
     room = new Set();

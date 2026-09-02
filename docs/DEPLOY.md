@@ -21,7 +21,7 @@ Storage buckets are no longer provisioned in SQL — uploads go to local disk
 
 Copy credentials into a secure note for Render env vars.
 
-## 2. Render — Fastify API
+## 2. Render — Elysia API
 
 1. Connect GitHub repo to Render
 2. Use [`render.yaml`](../render.yaml) (Blueprint) or create a **Web Service**:

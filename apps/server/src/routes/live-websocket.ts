@@ -1,5 +1,6 @@
-import type { FastifyInstance } from "fastify";
-import type { WebSocket } from "ws";
+import type { Elysia } from "elysia";
+
+import { socketRoute, type SocketBridge } from "../http/websocket.js";
 
 import { requireBusinessAccess } from "../auth/jwt.js";
 import {
@@ -12,10 +13,11 @@ import {
   postLiveMessage,
 } from "../services/live.js";
 
-export async function registerLiveWebSocketRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/ws/live/:sessionId", { websocket: true }, (socket: WebSocket, request) => {
-    const { sessionId } = request.params as { sessionId: string };
-    const query = request.query as { role?: string; name?: string; token?: string };
+export function registerLiveWebSocketRoutes(app: Elysia): void {
+  app.ws(
+    "/ws/live/:sessionId",
+    socketRoute((socket: SocketBridge, { params, query, headers }) => {
+    const sessionId = params.sessionId as string;
     const role = query.role === "host" ? "host" : "viewer";
     const displayName = (query.name ?? (role === "host" ? "Host" : "Guest")).slice(0, 80);
 
@@ -23,10 +25,10 @@ export async function registerLiveWebSocketRoutes(app: FastifyInstance): Promise
       try {
         if (role === "host") {
           const session = await getLiveSessionById(sessionId);
-          if (!request.headers.authorization && query.token) {
-            request.headers.authorization = `Bearer ${query.token}`;
+          if (!headers.authorization && query.token) {
+            headers.authorization = `Bearer ${query.token}`;
           }
-          await requireBusinessAccess(request, session.business_id);
+          await requireBusinessAccess({ headers }, session.business_id);
         } else {
           await getPublicLiveSession(sessionId);
         }
@@ -73,5 +75,6 @@ export async function registerLiveWebSocketRoutes(app: FastifyInstance): Promise
         socket.close(4404, "LIVE not found");
       }
     })();
-  });
+    }),
+  );
 }

@@ -4,7 +4,7 @@ Phase 1 voice vertical slice for the AI Cashier demo.
 
 ## Stack
 
-- `apps/server` — Fastify + Gemini Live API + Supabase Postgres + multi-tenant admin API
+- `apps/server` — Elysia on Bun + Gemini Live API + Postgres + multi-tenant admin API
 - `apps/customer-app` — Next.js customer voice UI (`/b/{slug}`)
 - `apps/admin-app` — Next.js admin dashboard (menu, knowledge, AI rules, orders, analytics)
 - `apps/marketing-app` — Next.js marketing landing page
@@ -128,7 +128,7 @@ npm run demo:cloudflare
 
 The script will:
 
-1. Start the Fastify API on port 8000
+1. Start the API on port 8000
 2. Open a Cloudflare tunnel for the API
 3. Start the Next.js app on port 6670
 4. Open a Cloudflare tunnel for the frontend

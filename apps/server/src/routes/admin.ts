@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { Elysia } from "elysia";
 import sharp from "sharp";
 import {
   mergeTranscriptMessages,
@@ -131,6 +131,8 @@ import {
   updatePhotoSettings,
 } from "../services/photo-moment.js";
 import { orderToOut } from "./public.js";
+import { logger } from "../http/logger.js";
+import { readUploadedFile } from "../http/multipart.js";
 
 const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const DISPLAY_ORIENTATIONS = new Set(["portrait", "landscape", "auto"]);
@@ -287,8 +289,8 @@ function buildConversationDetail(
   };
 }
 
-export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/admin/auth/login", async (request, reply) => {
+export async function registerAdminRoutes(app: Elysia): Promise<void> {
+  app.post("/admin/auth/login", async (request) => {
     const body = request.body as { email: string; password: string };
     try {
       const normalizedEmail = body.email.toLowerCase().trim();
@@ -298,17 +300,17 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         }),
       );
       if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
-        return reply.status(401).send({ detail: "Invalid credentials" });
+        return request.status(401, { detail: "Invalid credentials" });
       }
       if (user.status === "suspended") {
-        return reply.status(403).send({
+        return request.status(403, {
           detail: user.lastLoginAt
             ? "Account suspended"
             : "Your registration was not approved.",
         });
       }
       if (user.status === "pending") {
-        return reply.status(403).send({ detail: "Your account is awaiting admin approval." });
+        return request.status(403, { detail: "Your account is awaiting admin approval." });
       }
       await withLoginDb((loginDb) =>
         loginDb.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id)),
@@ -320,11 +322,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         businesses: await listBusinessesForUser(user.id),
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/auth/signup", async (request, reply) => {
+  app.post("/admin/auth/signup", async (request) => {
     const body = request.body as {
       email?: string;
       password?: string;
@@ -336,18 +338,18 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     const country = (body.country ?? "").trim().toUpperCase().slice(0, 2);
 
     if (!email || !password) {
-      return reply.status(400).send({ detail: "Email and password are required." });
+      return request.status(400, { detail: "Email and password are required." });
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return reply.status(400).send({ detail: "Enter a valid email address." });
+      return request.status(400, { detail: "Enter a valid email address." });
     }
     if (password.length < 8) {
-      return reply.status(400).send({ detail: "Password must be at least 8 characters." });
+      return request.status(400, { detail: "Password must be at least 8 characters." });
     }
 
     const existing = await db.query.users.findFirst({ where: eq(users.email, email) });
     if (existing) {
-      return reply.status(400).send({ detail: "Email already exists." });
+      return request.status(400, { detail: "Email already exists." });
     }
 
     const name = body.name?.trim() || email.split("@")[0] || "User";
@@ -368,27 +370,27 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     }
 
     if (approvalRequired) {
-      return reply.status(201).send({
+      return request.status(201, {
         status: "pending",
         message: "Your account is awaiting admin approval. You'll be able to sign in once approved.",
         user: userOut(user!),
       });
     }
 
-    return reply.status(201).send({
+    return request.status(201, {
       access_token: createAccessToken(user!.id),
       token_type: "bearer",
       user: userOut(user!),
     });
   });
 
-  app.patch("/admin/auth/me", async (request, reply) => {
+  app.patch("/admin/auth/me", async (request) => {
     try {
       const user = await getCurrentUser(request);
       const body = request.body as { country?: string };
       const country = (body.country ?? "").trim().toUpperCase().slice(0, 2);
       if (country && !/^[A-Z]{2}$/.test(country)) {
-        return reply.status(400).send({ detail: "country must be a 2-letter ISO code." });
+        return request.status(400, { detail: "country must be a 2-letter ISO code." });
       }
       if (!country || user.country) {
         return userOut(user);
@@ -401,35 +403,35 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       clearUserCache(user.id);
       return userOut(updated!);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/auth/me", async (request, reply) => {
+  app.get("/admin/auth/me", async (request) => {
     try {
       return userOut(await getCurrentUser(request));
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses", async (request, reply) => {
+  app.get("/admin/businesses", async (request) => {
     try {
       const userId = getAuthUserId(request);
       return listBusinessesForUser(userId);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/check-slug", async (request, reply) => {
+  app.get("/admin/businesses/check-slug", async (request) => {
     try {
       await getCurrentUser(request);
       const { slug: rawSlug } = request.query as { slug?: string };
       const slug = rawSlug?.toLowerCase().trim() ?? "";
 
       if (!isValidSlug(slug)) {
-        return reply.status(400).send({ detail: "Invalid slug format." });
+        return request.status(400, { detail: "Invalid slug format." });
       }
 
       const existing = await db.query.businesses.findFirst({ where: eq(businesses.slug, slug) });
@@ -438,18 +440,18 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
       return { available: true };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses", async (request, reply) => {
+  app.post("/admin/businesses", async (request) => {
     try {
       const user = await getCurrentUser(request);
       try {
         await assertCanCreateWorkspace(user.id);
       } catch (err) {
         if (err instanceof Error && "statusCode" in err) {
-          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          return request.status((err as Error & { statusCode: number }).statusCode, {
             detail: err.message,
           });
         }
@@ -464,10 +466,10 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       };
       const slug = body.slug.toLowerCase().trim();
       if (!isValidSlug(slug)) {
-        return reply.status(400).send({ detail: "Invalid slug format." });
+        return request.status(400, { detail: "Invalid slug format." });
       }
       const existing = await db.query.businesses.findFirst({ where: eq(businesses.slug, slug) });
-      if (existing) return reply.status(400).send({ detail: "Slug already exists" });
+      if (existing) return request.status(400, { detail: "Slug already exists" });
 
       const [business] = await db
         .insert(businesses)
@@ -495,13 +497,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         }),
       );
 
-      return reply.status(201).send(businessOut(business!));
+      return request.status(201, businessOut(business!));
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/admin/businesses/:businessId/onboarding", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId/onboarding", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
@@ -512,7 +514,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       };
 
       if (!body.business_type || !body.primary_use_case) {
-        return reply.status(400).send({
+        return request.status(400, {
           detail: "Business type and primary use case are required to complete onboarding.",
         });
       }
@@ -573,11 +575,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         ai_rules: aiRulesOut(rules!),
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/admin/businesses/:businessId", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
@@ -596,51 +598,49 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .returning();
       return businessOut(updated!);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.delete("/admin/businesses/:businessId", async (request, reply) => {
+  app.delete("/admin/businesses/:businessId", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const userId = getAuthUserId(request);
       await deleteBusinessAsOwner(userId, businessId);
       clearBusinessAccessCache(businessId);
-      return reply.status(204).send();
+      return request.status(204, );
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/payment", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/payment", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
       return { payment_qr_url: business.paymentQrUrl || "" };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/payment/qr", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/payment/qr", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      const data = await request.file();
-      if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+      const data = readUploadedFile(request.body);
+      if (!data) return request.status(400, { detail: "No file uploaded." });
 
       const contentType = (data.mimetype || "").toLowerCase();
       const extension = ALLOWED_IMAGE_TYPES[contentType];
       if (!extension) {
-        return reply
-          .status(400)
-          .send({ detail: "Upload a PNG, JPG, WEBP, or GIF image for your payment QR code." });
+        return request.status(400, { detail: "Upload a PNG, JPG, WEBP, or GIF image for your payment QR code." });
       }
 
       const buffer = await data.toBuffer();
-      if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+      if (!buffer.length) return request.status(400, { detail: "Uploaded file is empty." });
       if (buffer.length > MAX_UPLOAD_BYTES) {
-        return reply.status(400).send({ detail: "QR image must be 5 MB or smaller." });
+        return request.status(400, { detail: "QR image must be 5 MB or smaller." });
       }
 
       await deleteFromStorage("payment-qr", business.id);
@@ -658,11 +658,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .returning();
       return { payment_qr_url: updated!.paymentQrUrl };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.delete("/admin/businesses/:businessId/payment/qr", async (request, reply) => {
+  app.delete("/admin/businesses/:businessId/payment/qr", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
@@ -670,11 +670,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       await db.update(businesses).set({ paymentQrUrl: "" }).where(eq(businesses.id, business.id));
       return { payment_qr_url: "" };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/appearance", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/appearance", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
@@ -684,11 +684,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         display_orientation: business.displayOrientation || "landscape",
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/admin/businesses/:businessId/appearance", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId/appearance", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
@@ -716,33 +716,33 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       };
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/appearance/background", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/appearance/background", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      const data = await request.file();
-      if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+      const data = readUploadedFile(request.body);
+      if (!data) return request.status(400, { detail: "No file uploaded." });
 
       const contentType = (data.mimetype || "").toLowerCase();
       const extension = ALLOWED_IMAGE_TYPES[contentType];
       if (!extension) {
-        return reply.status(400).send({
+        return request.status(400, {
           detail: "Upload a PNG, JPG, WEBP, or GIF image for the voice page background.",
         });
       }
 
       const buffer = await data.toBuffer();
-      if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+      if (!buffer.length) return request.status(400, { detail: "Uploaded file is empty." });
       if (buffer.length > MAX_UPLOAD_BYTES) {
-        return reply.status(400).send({ detail: "Background image must be 5 MB or smaller." });
+        return request.status(400, { detail: "Background image must be 5 MB or smaller." });
       }
 
       await deleteFromStorage("backgrounds", business.id);
@@ -764,11 +764,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         display_orientation: updated!.displayOrientation || "landscape",
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.delete("/admin/businesses/:businessId/appearance/background", async (request, reply) => {
+  app.delete("/admin/businesses/:businessId/appearance/background", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
@@ -776,7 +776,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       try {
         await deleteFromStorage("backgrounds", business.id);
       } catch (storageErr) {
-        request.log.warn(
+        logger.warn(
           { err: storageErr, businessId: business.id },
           "Background file delete failed; clearing database URL anyway",
         );
@@ -794,11 +794,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         display_orientation: updated!.displayOrientation || "landscape",
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/products", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/products", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -809,11 +809,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .orderBy(products.sortOrder, products.name);
       return rows.map(productOut);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/products", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/products", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -834,13 +834,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           durationMin: Number(body.duration_min ?? 30),
         })
         .returning();
-      return reply.status(201).send(productOut(product!));
+      return request.status(201, productOut(product!));
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/admin/businesses/:businessId/products/:productRowId", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId/products/:productRowId", async (request) => {
     try {
       const { businessId, productRowId } = request.params as {
         businessId: string;
@@ -849,7 +849,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       await requireBusinessAccess(request, businessId);
       const product = await db.query.products.findFirst({ where: eq(products.id, productRowId) });
       if (!product || product.businessId !== businessId) {
-        return reply.status(404).send({ detail: "Product not found" });
+        return request.status(404, { detail: "Product not found" });
       }
       const body = request.body as Record<string, unknown>;
       const updates: Partial<typeof products.$inferInsert> = {};
@@ -871,11 +871,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .returning();
       return productOut(updated!);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.delete("/admin/businesses/:businessId/products/:productRowId", async (request, reply) => {
+  app.delete("/admin/businesses/:businessId/products/:productRowId", async (request) => {
     try {
       const { businessId, productRowId } = request.params as {
         businessId: string;
@@ -884,32 +884,32 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       await requireBusinessAccess(request, businessId);
       const product = await db.query.products.findFirst({ where: eq(products.id, productRowId) });
       if (!product || product.businessId !== businessId) {
-        return reply.status(404).send({ detail: "Product not found" });
+        return request.status(404, { detail: "Product not found" });
       }
       await db.delete(products).where(eq(products.id, productRowId));
-      return reply.status(204).send();
+      return request.status(204, );
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/product-images", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/product-images", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const data = await request.file();
-      if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+      const data = readUploadedFile(request.body);
+      if (!data) return request.status(400, { detail: "No file uploaded." });
 
       const contentType = (data.mimetype || "").toLowerCase();
       const extension = ALLOWED_IMAGE_TYPES[contentType];
       if (!extension) {
-        return reply.status(400).send({ detail: "Upload a PNG, JPG, WEBP, or GIF image." });
+        return request.status(400, { detail: "Upload a PNG, JPG, WEBP, or GIF image." });
       }
 
       const buffer = await data.toBuffer();
-      if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+      if (!buffer.length) return request.status(400, { detail: "Uploaded file is empty." });
       if (buffer.length > MAX_UPLOAD_BYTES) {
-        return reply.status(400).send({ detail: "Image must be 5 MB or smaller." });
+        return request.status(400, { detail: "Image must be 5 MB or smaller." });
       }
 
       const filename = `${randomUUID().replace(/-/g, "")}${extension}`;
@@ -919,13 +919,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         buffer,
         contentType,
       );
-      return reply.status(201).send({ image_url: url });
+      return request.status(201, { image_url: url });
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/knowledge", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/knowledge", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -936,11 +936,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .orderBy(knowledgeEntries.sortOrder, knowledgeEntries.category);
       return rows.map(knowledgeOut);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/knowledge", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/knowledge", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -955,13 +955,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           sortOrder: Number(body.sort_order ?? 0),
         })
         .returning();
-      return reply.status(201).send(knowledgeOut(entry!));
+      return request.status(201, knowledgeOut(entry!));
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/admin/businesses/:businessId/knowledge/:entryId", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId/knowledge/:entryId", async (request) => {
     try {
       const { businessId, entryId } = request.params as { businessId: string; entryId: string };
       await requireBusinessAccess(request, businessId);
@@ -969,7 +969,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         where: eq(knowledgeEntries.id, entryId),
       });
       if (!entry || entry.businessId !== businessId) {
-        return reply.status(404).send({ detail: "Knowledge entry not found" });
+        return request.status(404, { detail: "Knowledge entry not found" });
       }
       const body = request.body as Record<string, unknown>;
       const updates: Partial<typeof knowledgeEntries.$inferInsert> = {};
@@ -985,11 +985,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .returning();
       return knowledgeOut(updated!);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.delete("/admin/businesses/:businessId/knowledge/:entryId", async (request, reply) => {
+  app.delete("/admin/businesses/:businessId/knowledge/:entryId", async (request) => {
     try {
       const { businessId, entryId } = request.params as { businessId: string; entryId: string };
       await requireBusinessAccess(request, businessId);
@@ -997,16 +997,16 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         where: eq(knowledgeEntries.id, entryId),
       });
       if (!entry || entry.businessId !== businessId) {
-        return reply.status(404).send({ detail: "Knowledge entry not found" });
+        return request.status(404, { detail: "Knowledge entry not found" });
       }
       await db.delete(knowledgeEntries).where(eq(knowledgeEntries.id, entryId));
-      return reply.status(204).send();
+      return request.status(204, );
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.delete("/admin/businesses/:businessId/knowledge", async (request, reply) => {
+  app.delete("/admin/businesses/:businessId/knowledge", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -1016,11 +1016,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .returning({ id: knowledgeEntries.id });
       return { deleted: deleted.length };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/ai-rules", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/ai-rules", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
@@ -1041,11 +1041,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
       return aiRulesOut(rules!);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/admin/businesses/:businessId/ai-rules", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId/ai-rules", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
@@ -1094,29 +1094,29 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .returning();
       return aiRulesOut(updated!);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/ai-rules/avatar", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/ai-rules/avatar", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      const data = await request.file();
-      if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+      const data = readUploadedFile(request.body);
+      if (!data) return request.status(400, { detail: "No file uploaded." });
 
       const contentType = (data.mimetype || "").toLowerCase();
       const extension = ALLOWED_IMAGE_TYPES[contentType];
       if (!extension) {
-        return reply.status(400).send({
+        return request.status(400, {
           detail: "Upload a PNG, JPG, WEBP, or GIF image for the assistant avatar.",
         });
       }
 
       const buffer = await data.toBuffer();
-      if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+      if (!buffer.length) return request.status(400, { detail: "Uploaded file is empty." });
       if (buffer.length > MAX_UPLOAD_BYTES) {
-        return reply.status(400).send({ detail: "Avatar image must be 5 MB or smaller." });
+        return request.status(400, { detail: "Avatar image must be 5 MB or smaller." });
       }
 
       let rules = await db.query.aiRules.findFirst({ where: eq(aiRules.businessId, businessId) });
@@ -1150,17 +1150,17 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .returning();
       return aiRulesOut(updated!);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.delete("/admin/businesses/:businessId/ai-rules/avatar", async (request, reply) => {
+  app.delete("/admin/businesses/:businessId/ai-rules/avatar", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
       const rules = await db.query.aiRules.findFirst({ where: eq(aiRules.businessId, businessId) });
       if (!rules) {
-        return reply.status(404).send({ detail: "AI rules not found." });
+        return request.status(404, { detail: "AI rules not found." });
       }
 
       await deleteFromStorage("assistant-avatars", business.id);
@@ -1171,23 +1171,23 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .returning();
       return aiRulesOut(updated!);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/prompt-preview", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/prompt-preview", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       const business = await getBusinessWithRelations(businessId);
-      if (!business) return reply.status(404).send({ detail: "Business not found" });
+      if (!business) return request.status(404, { detail: "Business not found" });
       return { system_instruction: buildSystemInstruction(business) };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/orders", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/orders", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -1231,15 +1231,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       );
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/conversations", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/conversations", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -1317,15 +1317,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       });
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/conversations/export", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/conversations/export", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -1388,15 +1388,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       );
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/conversations/:sessionId", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/conversations/:sessionId", async (request) => {
     try {
       const { businessId, sessionId } = request.params as {
         businessId: string;
@@ -1406,7 +1406,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       const session = await db.query.voiceSessions.findFirst({
         where: and(eq(voiceSessions.id, sessionId), eq(voiceSessions.businessId, businessId)),
       });
-      if (!session) return reply.status(404).send({ detail: "Conversation not found" });
+      if (!session) return request.status(404, { detail: "Conversation not found" });
 
       const messages = await db
         .select()
@@ -1422,11 +1422,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
 
       return buildConversationDetail(session, messages, sessionOrders[0]);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/stats/summary", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/stats/summary", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
@@ -1455,52 +1455,52 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         ai_rules: aiRulesOut(rules!),
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/stats/overview", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/stats/overview", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       return fetchStatsOverview(businessId);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/stats/daily", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/stats/daily", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       return fetchStatsDaily(businessId);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/stats/top-products", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/stats/top-products", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       return fetchStatsTopProducts(businessId);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/appointments", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/appointments", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       const { date } = request.query as { date?: string };
       return listAppointments(businessId, date);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/admin/businesses/:businessId/appointments/:appointmentId/cancel", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId/appointments/:appointmentId/cancel", async (request) => {
     try {
       const { businessId, appointmentId } = request.params as {
         businessId: string;
@@ -1509,43 +1509,43 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       await requireBusinessAccess(request, businessId);
       return cancelAppointment(businessId, appointmentId);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/schedule", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/schedule", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       return listBusinessHours(businessId);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.put("/admin/businesses/:businessId/schedule", async (request, reply) => {
+  app.put("/admin/businesses/:businessId/schedule", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       const body = request.body as { hours: BusinessHourInput[] };
       return saveBusinessHours(businessId, body.hours ?? []);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/vision-settings", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/vision-settings", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       const settings = await getOrCreateVisionSettings(businessId);
       return visionSettingsOut(settings);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/admin/businesses/:businessId/vision-settings", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId/vision-settings", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
@@ -1619,11 +1619,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
       return visionSettingsOut(updated!);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/vision-metrics", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/vision-metrics", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -1631,11 +1631,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       const periodDays = days ? Math.max(1, Math.min(90, Number(days))) : 7;
       return getVisionMetrics(businessId, periodDays);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/transactions", async (request, reply) => {
+  app.get("/admin/transactions", async (request) => {
     try {
       const user = await getCurrentUser(request);
 
@@ -1731,20 +1731,20 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
 
       return { items };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/subscription/me", async (request, reply) => {
+  app.get("/admin/subscription/me", async (request) => {
     try {
       const user = await getCurrentUser(request);
       return getEntitlementSnapshot(user.id);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/subscription/plans", async (request, reply) => {
+  app.get("/admin/subscription/plans", async (request) => {
     try {
       await getCurrentUser(request);
       const paid = await listPaidPlans();
@@ -1758,23 +1758,23 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         monthly_voice_minutes: Math.round(p.monthlyVoiceSeconds / 60),
       }));
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/subscription/request", async (request, reply) => {
+  app.post("/admin/subscription/request", async (request) => {
     try {
       const user = await getCurrentUser(request);
       const body = request.body as { plan_code?: string };
       const planCode = body.plan_code?.trim().toLowerCase() ?? "";
       if (!planCode) {
-        return reply.status(400).send({ detail: "plan_code is required" });
+        return request.status(400, { detail: "plan_code is required" });
       }
 
       try {
         const { requestId, plan } = await createSubscriptionRequest(user.id, planCode);
         const entitlement = await getEntitlementSnapshot(user.id);
-        return reply.status(201).send({
+        return request.status(201, {
           id: requestId,
           requested_plan: { code: plan.code, name: plan.name, workspace_limit: plan.workspaceLimit },
           status: "pending",
@@ -1782,18 +1782,18 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (err) {
         if (err instanceof Error && "statusCode" in err) {
-          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          return request.status((err as Error & { statusCode: number }).statusCode, {
             detail: err.message,
           });
         }
         throw err;
       }
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/addons", async (request, reply) => {
+  app.get("/admin/addons", async (request) => {
     try {
       await getCurrentUser(request);
       const rows = await listAddons();
@@ -1805,44 +1805,44 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         monthly_price_idr: a.monthlyPriceIdr,
       }));
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/addons/:code", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/addons/:code", async (request) => {
     try {
       const { businessId, code } = request.params as { businessId: string; code: string };
       await requireBusinessAccess(request, businessId);
       return getAddonStatusForBusiness(businessId, code);
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/addons/payment-proof", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/addons/payment-proof", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const data = await request.file();
-      if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+      const data = readUploadedFile(request.body);
+      if (!data) return request.status(400, { detail: "No file uploaded." });
 
       const contentType = (data.mimetype || "").toLowerCase();
       const extension = ALLOWED_IMAGE_TYPES[contentType];
       if (!extension) {
-        return reply.status(400).send({
+        return request.status(400, {
           detail: "Upload a PNG, JPG, WEBP, or GIF image of your payment proof.",
         });
       }
 
       const buffer = await data.toBuffer();
-      if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+      if (!buffer.length) return request.status(400, { detail: "Uploaded file is empty." });
       if (buffer.length > MAX_UPLOAD_BYTES) {
-        return reply.status(400).send({ detail: "Payment proof must be 5 MB or smaller." });
+        return request.status(400, { detail: "Payment proof must be 5 MB or smaller." });
       }
 
       const url = await uploadToStorage(
@@ -1853,11 +1853,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       );
       return { url };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/addons/:code/request", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/addons/:code/request", async (request) => {
     try {
       const user = await getCurrentUser(request);
       const { businessId, code } = request.params as { businessId: string; code: string };
@@ -1899,7 +1899,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           body.payment_proof_url?.trim() || null,
           body.transaction_code,
         );
-        return reply.status(201).send({
+        return request.status(201, {
           id: requestId,
           status: "pending",
           transaction_code: transactionCode,
@@ -1911,18 +1911,18 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (err) {
         if (err instanceof Error && "statusCode" in err) {
-          return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          return request.status((err as Error & { statusCode: number }).statusCode, {
             detail: err.message,
           });
         }
         throw err;
       }
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/photo/settings", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/photo/settings", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -1930,11 +1930,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       const status = await getAddonStatusForBusiness(businessId, SMART_PHOTO_MOMENT_CODE);
       return { ...photoSettingsOut(settings), subscription_status: status.subscription_status };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/admin/businesses/:businessId/photo/settings", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId/photo/settings", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -1957,33 +1957,33 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       return updated;
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/photo/branding/:kind", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/photo/branding/:kind", async (request) => {
     try {
       const { businessId, kind } = request.params as { businessId: string; kind: string };
       if (kind !== "logo" && kind !== "frame") {
-        return reply.status(400).send({ detail: "kind must be logo or frame" });
+        return request.status(400, { detail: "kind must be logo or frame" });
       }
       await requireBusinessAccess(request, businessId);
-      const data = await request.file();
-      if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+      const data = readUploadedFile(request.body);
+      if (!data) return request.status(400, { detail: "No file uploaded." });
 
       const contentType = (data.mimetype || "").toLowerCase();
       if (kind === "frame" && contentType !== "image/png") {
-        return reply.status(400).send({
+        return request.status(400, {
           detail: "Frame must be a PNG with transparency (twibbon-style).",
         });
       }
       const extension = ALLOWED_IMAGE_TYPES[contentType];
       if (!extension) {
-        return reply.status(400).send({
+        return request.status(400, {
           detail:
             kind === "frame"
               ? "Frame must be a PNG with transparency (twibbon-style)."
@@ -1992,9 +1992,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const buffer = await data.toBuffer();
-      if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+      if (!buffer.length) return request.status(400, { detail: "Uploaded file is empty." });
       if (buffer.length > MAX_UPLOAD_BYTES) {
-        return reply.status(400).send({ detail: "Image must be 5 MB or smaller." });
+        return request.status(400, { detail: "Image must be 5 MB or smaller." });
       }
 
       if (kind === "frame") {
@@ -2002,12 +2002,12 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         const width = meta.width ?? 0;
         const height = meta.height ?? 0;
         if (height <= 0) {
-          return reply.status(400).send({ detail: "Could not read frame dimensions." });
+          return request.status(400, { detail: "Could not read frame dimensions." });
         }
         const ratio = width / height;
         const storyRatio = 9 / 16;
         if (Math.abs(ratio - storyRatio) > 0.02) {
-          return reply.status(400).send({
+          return request.status(400, {
             detail: `Frame must be 9:16 (Instagram Story), e.g. 1080×1920. Got ${width}×${height}.`,
           });
         }
@@ -2020,15 +2020,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       });
       return updated;
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.delete("/admin/businesses/:businessId/photo/branding/:kind", async (request, reply) => {
+  app.delete("/admin/businesses/:businessId/photo/branding/:kind", async (request) => {
     try {
       const { businessId, kind } = request.params as { businessId: string; kind: string };
       if (kind !== "logo" && kind !== "frame") {
-        return reply.status(400).send({ detail: "kind must be logo or frame" });
+        return request.status(400, { detail: "kind must be logo or frame" });
       }
       await requireBusinessAccess(request, businessId);
       const updated = await updatePhotoSettings(businessId, {
@@ -2036,11 +2036,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       });
       return updated;
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/photo/gallery", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/photo/gallery", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -2057,11 +2057,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         offset,
       });
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.delete("/admin/businesses/:businessId/photo/gallery/:sessionId", async (request, reply) => {
+  app.delete("/admin/businesses/:businessId/photo/gallery/:sessionId", async (request) => {
     try {
       const { businessId, sessionId } = request.params as {
         businessId: string;
@@ -2072,67 +2072,67 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true };
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/photo/analytics", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/photo/analytics", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       return getPhotoAnalytics(businessId);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/voice-minutes/wallet", async (request, reply) => {
+  app.get("/admin/voice-minutes/wallet", async (request) => {
     try {
       const user = await getCurrentUser(request);
       return getVoiceMinuteWallet(user.id);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/voice-minutes/packages", async (request, reply) => {
+  app.get("/admin/voice-minutes/packages", async (request) => {
     try {
       await getCurrentUser(request);
       const packages = await listActiveTopupPackages();
       return { items: packages.map(packageOut) };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/voice-minutes/orders", async (request, reply) => {
+  app.get("/admin/voice-minutes/orders", async (request) => {
     try {
       const user = await getCurrentUser(request);
       const orders = await listUserTopupOrders(user.id);
       return { items: orders.map(orderOut) };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/voice-minutes/payment-proof", async (request, reply) => {
+  app.post("/admin/voice-minutes/payment-proof", async (request) => {
     try {
       const user = await getCurrentUser(request);
-      const data = await request.file();
-      if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+      const data = readUploadedFile(request.body);
+      if (!data) return request.status(400, { detail: "No file uploaded." });
       const contentType = (data.mimetype || "").toLowerCase();
       const extension = ALLOWED_IMAGE_TYPES[contentType];
       if (!extension) {
-        return reply.status(400).send({ detail: "Upload a PNG, JPG, WEBP, or GIF image." });
+        return request.status(400, { detail: "Upload a PNG, JPG, WEBP, or GIF image." });
       }
       const buffer = await data.toBuffer();
-      if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+      if (!buffer.length) return request.status(400, { detail: "Uploaded file is empty." });
       if (buffer.length > MAX_UPLOAD_BYTES) {
-        return reply.status(400).send({ detail: "Payment proof must be 5 MB or smaller." });
+        return request.status(400, { detail: "Payment proof must be 5 MB or smaller." });
       }
       const url = await uploadToStorage(
         "payment-proofs",
@@ -2142,11 +2142,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       );
       return { url };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/voice-minutes/orders", async (request, reply) => {
+  app.post("/admin/voice-minutes/orders", async (request) => {
     try {
       const user = await getCurrentUser(request);
       const body = (request.body ?? {}) as {
@@ -2156,7 +2156,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         notes?: string;
       };
       if (!body.package_id) {
-        return reply.status(400).send({ detail: "package_id is required." });
+        return request.status(400, { detail: "package_id is required." });
       }
       const order = await createTopupOrder({
         userId: user.id,
@@ -2165,14 +2165,14 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         paymentProofUrl: body.payment_proof_url,
         notes: body.notes,
       });
-      return reply.status(201).send(orderOut(order));
+      return request.status(201, orderOut(order));
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 }

@@ -3,15 +3,16 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { Elysia } from "elysia";
+import type { AuthContext } from "../http/context.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const devVisionScript = join(repoRoot, "scripts/dev-vision.sh");
 const visionLogPath = join(repoRoot, ".vision.log");
 
-function isLocalDevRequest(request: FastifyRequest): boolean {
-  const host = request.hostname;
+function isLocalDevRequest(request: AuthContext): boolean {
+  const host = (request.headers.host ?? "").split(":")[0];
   return host === "localhost" || host === "127.0.0.1";
 }
 
@@ -25,18 +26,18 @@ async function readLogTail(maxLines = 20): Promise<string[]> {
   }
 }
 
-export async function registerDevVisionRoutes(app: FastifyInstance): Promise<void> {
+export async function registerDevVisionRoutes(app: Elysia): Promise<void> {
   if (process.env.NODE_ENV === "production") return;
 
-  app.post("/dev/vision/restart", async (request, reply) => {
+  app.post("/dev/vision/restart", async (request) => {
     if (!isLocalDevRequest(request)) {
-      return reply.status(403).send({ detail: "Dev vision launcher is localhost-only." });
+      return request.status(403, { detail: "Dev vision launcher is localhost-only." });
     }
 
     const body = request.body as { business_slug?: string };
     const businessSlug = String(body.business_slug ?? "").trim();
     if (!businessSlug) {
-      return reply.status(400).send({ detail: "business_slug is required." });
+      return request.status(400, { detail: "business_slug is required." });
     }
 
     try {
@@ -51,13 +52,13 @@ export async function registerDevVisionRoutes(app: FastifyInstance): Promise<voi
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to restart vision.";
-      return reply.status(500).send({ detail: message });
+      return request.status(500, { detail: message });
     }
   });
 
-  app.get("/dev/vision/status", async (request, reply) => {
+  app.get("/dev/vision/status", async (request) => {
     if (!isLocalDevRequest(request)) {
-      return reply.status(403).send({ detail: "Dev vision launcher is localhost-only." });
+      return request.status(403, { detail: "Dev vision launcher is localhost-only." });
     }
 
     try {
@@ -72,7 +73,7 @@ export async function registerDevVisionRoutes(app: FastifyInstance): Promise<voi
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to read vision status.";
-      return reply.status(500).send({ detail: message });
+      return request.status(500, { detail: message });
     }
   });
 }

@@ -1,11 +1,11 @@
 import bcrypt from "bcrypt";
-import type { FastifyReply, FastifyRequest } from "fastify";
 import jwt from "jsonwebtoken";
 import { and, eq } from "drizzle-orm";
 import { getBusinessCapabilities } from "@voicetalk/shared";
 import { db } from "../db/client.js";
 import { businessMembers, businesses, users, type User } from "../db/schema.js";
 import { env } from "../env.js";
+import type { AuthContext, StatusContext } from "../http/context.js";
 
 const JWT_ALGORITHM = "HS256";
 const USER_CACHE_TTL_MS = 60_000;
@@ -32,7 +32,7 @@ export function createAccessToken(userId: string): string {
   });
 }
 
-function readBearerToken(request: FastifyRequest): string {
+function readBearerToken(request: AuthContext): string {
   const header = request.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     throw authError("Not authenticated");
@@ -40,7 +40,7 @@ function readBearerToken(request: FastifyRequest): string {
   return header.slice("Bearer ".length);
 }
 
-export function getAuthUserId(request: FastifyRequest): string {
+export function getAuthUserId(request: AuthContext): string {
   const token = readBearerToken(request);
   try {
     const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: [JWT_ALGORITHM] }) as {
@@ -67,7 +67,7 @@ async function getCachedUser(userId: string): Promise<User | undefined> {
   return user;
 }
 
-export async function getCurrentUser(request: FastifyRequest): Promise<User> {
+export async function getCurrentUser(request: AuthContext): Promise<User> {
   const userId = getAuthUserId(request);
   const user = await getCachedUser(userId);
   if (!user) throw authError("User not found");
@@ -125,7 +125,7 @@ function publicErrorDetail(error: unknown): string {
 }
 
 export async function requireBusinessAccess(
-  request: FastifyRequest,
+  request: AuthContext,
   businessId: string,
 ): Promise<typeof businesses.$inferSelect> {
   const userId = getAuthUserId(request);
@@ -175,13 +175,12 @@ function notFoundError(detail: string) {
   return err;
 }
 
-export function sendAuthError(reply: FastifyReply, error: unknown): void {
+export function sendAuthError(request: StatusContext, error: unknown): unknown {
   const statusCode =
     error instanceof Error && "statusCode" in error
       ? (error as Error & { statusCode: number }).statusCode
       : 500;
-  const detail = publicErrorDetail(error);
-  reply.status(statusCode).send({ detail });
+  return request.status(statusCode, { detail: publicErrorDetail(error) });
 }
 
 export function userOut(user: User) {

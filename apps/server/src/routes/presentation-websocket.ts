@@ -1,5 +1,6 @@
-import type { FastifyInstance } from "fastify";
-import type { WebSocket } from "ws";
+import type { Elysia } from "elysia";
+
+import { socketRoute, type SocketBridge } from "../http/websocket.js";
 import { and, eq } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import { getVoicePresetGeminiVoice } from "@voicetalk/shared";
@@ -21,7 +22,7 @@ import {
   runPresenterLiveSession,
 } from "../services/presenter-live.js";
 
-function safeSendJson(socket: WebSocket, payload: Record<string, unknown>): boolean {
+function safeSendJson(socket: SocketBridge, payload: Record<string, unknown>): boolean {
   try {
     if (socket.readyState === socket.OPEN) {
       socket.send(JSON.stringify(payload));
@@ -121,16 +122,15 @@ ${styleBlock}
 ${factsBlock}`;
 }
 
-export async function registerPresentationWebSocketRoutes(
-  app: FastifyInstance,
-): Promise<void> {
-  app.get("/ws/presentation-session", { websocket: true }, (socket, request) => {
-    void handlePresenterSession(socket, request.query as Record<string, string | undefined>);
-  });
+export function registerPresentationWebSocketRoutes(app: Elysia): void {
+  app.ws(
+    "/ws/presentation-session",
+    socketRoute((socket, { query }) => handlePresenterSession(socket, query)),
+  );
 }
 
 async function handlePresenterSession(
-  socket: WebSocket,
+  socket: SocketBridge,
   query: { token?: string; businessId?: string; sessionId?: string },
 ): Promise<void> {
   const token = String(query.token ?? "").trim();

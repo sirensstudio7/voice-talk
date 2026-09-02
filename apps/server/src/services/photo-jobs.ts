@@ -1,5 +1,3 @@
-import type { FastifyInstance } from "fastify";
-
 import { expireQrTokens, deleteExpiredPhotos } from "./photo-moment.js";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -50,8 +48,4 @@ export function startPhotoMomentJobs(log: {
 
   setInterval(() => void runHourly(), HOUR_MS);
   setInterval(() => void runDaily(), DAY_MS);
-}
-
-export function registerPhotoMomentJobs(app: FastifyInstance): void {
-  startPhotoMomentJobs(app.log);
 }

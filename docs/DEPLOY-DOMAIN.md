@@ -4,7 +4,7 @@ Example layout (replace `yourdomain.com` with yours):
 
 | Subdomain | Service | Hosts |
 |---|---|---|
-| `api.yourdomain.com` | Render | Fastify (`apps/server`) — REST + WebSocket |
+| `api.yourdomain.com` | Render | Elysia on Bun (`apps/server`) — REST + WebSocket |
 | `app.yourdomain.com` | Vercel | Customer voice UI (`apps/customer-app`) |
 | `dashboard.yourdomain.com` | Vercel | Merchant admin (`apps/admin-app`) |
 | `admin.yourdomain.com` | Vercel | Super Admin / platform ops (`apps/super-admin-app`) |

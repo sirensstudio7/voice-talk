@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { Logger } from "../http/logger.js";
 
 import { sweepOrphanVoiceSessions } from "./voice-minutes.js";
 
@@ -11,17 +11,17 @@ function isMissingRelation(err: unknown): boolean {
   return /relation .* does not exist/i.test(msg);
 }
 
-export function registerVoiceMinuteJobs(app: FastifyInstance): void {
+export function registerVoiceMinuteJobs(log: Logger): void {
   const run = async () => {
     try {
       const n = await sweepOrphanVoiceSessions();
-      if (n > 0) app.log.info({ closed: n }, "Closed orphan voice sessions and debited minutes");
+      if (n > 0) log.info({ closed: n }, "Closed orphan voice sessions and debited minutes");
     } catch (err) {
       if (isMissingRelation(err)) {
-        app.log.warn?.({ err }, "Voice minute orphan sweep skipped (tables not migrated yet)");
+        log.warn?.({ err }, "Voice minute orphan sweep skipped (tables not migrated yet)");
         return;
       }
-      app.log.error({ err }, "Failed to sweep orphan voice sessions");
+      log.error({ err }, "Failed to sweep orphan voice sessions");
     }
   };
 

@@ -1,7 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
-import ws from "ws";
 
 import { env, hasSupabaseStorage } from "../env.js";
 
@@ -17,9 +16,9 @@ let supabase: ReturnType<typeof createClient> | null = null;
 function getSupabase() {
   if (!hasSupabaseStorage()) return null;
   if (!supabase) {
+    // Bun provides a global WebSocket, so the client needs no transport shim.
     supabase = createClient(env.SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!, {
       auth: { persistSession: false, autoRefreshToken: false },
-      realtime: { transport: ws as unknown as typeof WebSocket },
     });
   }
   return supabase;

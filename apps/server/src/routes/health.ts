@@ -1,8 +1,8 @@
-import type { FastifyInstance } from "fastify";
+import type { Elysia } from "elysia";
 import { checkDbHealth } from "../db/health.js";
 import { env } from "../env.js";
 
-export async function registerHealthRoutes(app: FastifyInstance): Promise<void> {
+export async function registerHealthRoutes(app: Elysia): Promise<void> {
   app.get("/health", async (request) => {
     const query = request.query as { db?: string };
     const checkDb = query.db === "1";

@@ -38,7 +38,7 @@ They are no longer provisioned by SQL.
 
 ## 3. Copy credentials to `.env`
 
-### Database URL (for Fastify on Render)
+### Database URL (for the API on Render)
 
 **Project Settings → Database → Connection string → URI**
 
@@ -98,4 +98,4 @@ Upload a test image in admin — URL should be a `https://....supabase.co/storag
 | `syntax error at or near "supabase"` | You pasted the **file path**, not the SQL. Open `supabase/setup-all.sql`, copy all text, paste in SQL Editor |
 | Seed says user exists | Normal on re-run; data is idempotent for business slug |
 
-Next: [`DEPLOY-DOMAIN.md`](DEPLOY-DOMAIN.md) to deploy Fastify + frontends on your domain.
+Next: [`DEPLOY-DOMAIN.md`](DEPLOY-DOMAIN.md) to deploy the API + frontends on your domain.

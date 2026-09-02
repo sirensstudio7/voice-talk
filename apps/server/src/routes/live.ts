@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { Elysia } from "elysia";
 
 import { requireBusinessAccess, sendAuthError } from "../auth/jwt.js";
 import {
@@ -29,18 +29,18 @@ function statusFromError(err: unknown): number {
   return 500;
 }
 
-export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/admin/businesses/:businessId/live/sessions", async (request, reply) => {
+export async function registerLiveRoutes(app: Elysia): Promise<void> {
+  app.get("/admin/businesses/:businessId/live/sessions", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       return { items: await listLiveSessions(businessId) };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/live/sessions", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/live/sessions", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
@@ -49,27 +49,27 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         title: String(body.title ?? ""),
         product_ids: body.product_ids,
       });
-      return reply.status(201).send(created);
+      return request.status(201, created);
     } catch (err) {
       const status = statusFromError(err);
-      if (status === 401 || status === 403) return sendAuthError(reply, err);
-      return reply.status(status).send({
+      if (status === 401 || status === 403) return sendAuthError(request, err);
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Failed to create LIVE",
       });
     }
   });
 
-  app.get("/admin/businesses/:businessId/live/catalog", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/live/catalog", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       return { items: await listLiveProductCatalog(businessId) };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/live/sessions/:sessionId", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/live/sessions/:sessionId", async (request) => {
     try {
       const { businessId, sessionId } = request.params as {
         businessId: string;
@@ -78,13 +78,13 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
       await requireBusinessAccess(request, businessId);
       return getLiveSessionForBusiness(businessId, sessionId);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
   app.get(
     "/admin/businesses/:businessId/live/sessions/:sessionId/orders",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
@@ -93,14 +93,14 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         await requireBusinessAccess(request, businessId);
         return { items: await listLiveSessionOrders(businessId, sessionId) };
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
 
   app.post(
     "/admin/businesses/:businessId/live/sessions/:sessionId/dedicated-products",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
@@ -125,18 +125,18 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
           description: String(body.description ?? ""),
           image_url: String(body.image_url ?? ""),
         });
-        return reply.status(201).send(next);
+        return request.status(201, next);
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to add LIVE product",
         });
       }
     },
   );
 
-  app.patch("/admin/businesses/:businessId/live/catalog/:productRowId", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId/live/catalog/:productRowId", async (request) => {
     try {
       const { businessId, productRowId } = request.params as {
         businessId: string;
@@ -163,14 +163,14 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
       });
     } catch (err) {
       const status = statusFromError(err);
-      if (status === 401 || status === 403) return sendAuthError(reply, err);
-      return reply.status(status).send({
+      if (status === 401 || status === 403) return sendAuthError(request, err);
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Failed to update LIVE product",
       });
     }
   });
 
-  app.delete("/admin/businesses/:businessId/live/catalog/:productRowId", async (request, reply) => {
+  app.delete("/admin/businesses/:businessId/live/catalog/:productRowId", async (request) => {
     try {
       const { businessId, productRowId } = request.params as {
         businessId: string;
@@ -181,8 +181,8 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true };
     } catch (err) {
       const status = statusFromError(err);
-      if (status === 401 || status === 403) return sendAuthError(reply, err);
-      return reply.status(status).send({
+      if (status === 401 || status === 403) return sendAuthError(request, err);
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Failed to delete LIVE product",
       });
     }
@@ -190,7 +190,7 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
 
   app.put(
     "/admin/businesses/:businessId/live/sessions/:sessionId/products",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
@@ -201,8 +201,8 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         return setLiveSessionProducts(businessId, sessionId, body.product_ids ?? []);
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to update products",
         });
       }
@@ -211,7 +211,7 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/admin/businesses/:businessId/live/sessions/:sessionId/start",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
@@ -221,8 +221,8 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         return startLiveSession(businessId, sessionId);
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to start LIVE",
         });
       }
@@ -231,7 +231,7 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     "/admin/businesses/:businessId/live/sessions/:sessionId/end",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
@@ -241,8 +241,8 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         return endLiveSession(businessId, sessionId);
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to end LIVE",
         });
       }
@@ -251,7 +251,7 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     "/admin/businesses/:businessId/live/sessions/:sessionId/messages",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
@@ -261,14 +261,14 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         await getLiveSessionForBusiness(businessId, sessionId);
         return { items: await listLiveMessages(sessionId) };
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
 
   app.get(
     "/admin/businesses/:businessId/live/sessions/:sessionId/knowledge",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
@@ -277,14 +277,14 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         await requireBusinessAccess(request, businessId);
         return { items: await listLiveKnowledge(businessId, sessionId) };
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
 
   app.post(
     "/admin/businesses/:businessId/live/sessions/:sessionId/knowledge",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
@@ -296,11 +296,11 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
           title: body.title,
           content: String(body.content ?? ""),
         });
-        return reply.status(201).send(created);
+        return request.status(201, created);
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to add talking point",
         });
       }
@@ -309,7 +309,7 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     "/admin/businesses/:businessId/live/sessions/:sessionId/knowledge/:entryId",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId, entryId } = request.params as {
           businessId: string;
@@ -321,8 +321,8 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         return updateLiveKnowledge(businessId, sessionId, entryId, body);
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to update talking point",
         });
       }
@@ -331,7 +331,7 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     "/admin/businesses/:businessId/live/sessions/:sessionId/knowledge/:entryId",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId, entryId } = request.params as {
           businessId: string;
@@ -340,14 +340,14 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         };
         await requireBusinessAccess(request, businessId);
         await deleteLiveKnowledge(businessId, sessionId, entryId);
-        return reply.status(204).send();
+        return request.status(204, );
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
 
-  app.get("/live/sessions/:sessionId", async (request, reply) => {
+  app.get("/live/sessions/:sessionId", async (request) => {
     try {
       const { sessionId } = request.params as { sessionId: string };
       const session = await getPublicLiveSession(sessionId);
@@ -355,13 +355,13 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
       return { session, messages };
     } catch (err) {
       const status = statusFromError(err);
-      return reply.status(status).send({
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "LIVE not found",
       });
     }
   });
 
-  app.post("/live/sessions/:sessionId/orders", async (request, reply) => {
+  app.post("/live/sessions/:sessionId/orders", async (request) => {
     try {
       const { sessionId } = request.params as { sessionId: string };
       const body = (request.body ?? {}) as {
@@ -378,10 +378,10 @@ export async function registerLiveRoutes(app: FastifyInstance): Promise<void> {
         customer_address: body.customer_address,
         customer_notes: body.customer_notes,
       });
-      return reply.status(201).send(created);
+      return request.status(201, created);
     } catch (err) {
       const status = statusFromError(err);
-      return reply.status(status).send({
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Failed to confirm LIVE order",
       });
     }

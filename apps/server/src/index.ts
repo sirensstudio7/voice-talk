@@ -1,13 +1,11 @@
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
-import cors from "@fastify/cors";
-import multipart from "@fastify/multipart";
-import fastifyStatic from "@fastify/static";
-import websocket from "@fastify/websocket";
-import Fastify from "fastify";
+import { cors } from "@elysiajs/cors";
+import { staticPlugin } from "@elysiajs/static";
+import { Elysia } from "elysia";
 import { closeDb, startDbPoolWatchdog } from "./db/client.js";
 import { warmDbConnection } from "./db/health.js";
 import { env, getProductionDomains, hasSupabaseStorage, isAllowedOrigin } from "./env.js";
+import { logger } from "./http/logger.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerPlatformRoutes } from "./routes/platform.js";
@@ -21,59 +19,59 @@ import { registerCampaignBannerRoutes } from "./routes/campaign-banner.js";
 import { registerLiveRoutes } from "./routes/live.js";
 import { registerLiveWebSocketRoutes } from "./routes/live-websocket.js";
 import { initVisionEventBus } from "./services/vision-orchestrator.js";
-import { registerPhotoMomentJobs } from "./services/photo-jobs.js";
+import { startPhotoMomentJobs } from "./services/photo-jobs.js";
 import { registerVoiceMinuteJobs } from "./services/voice-minute-jobs.js";
 import { getUploadRoot, MAX_PRESENTATION_UPLOAD_BYTES } from "./storage/index.js";
 
-const app = Fastify({ logger: true });
+export const app = new Elysia();
 
-await app.register(cors, {
-  origin: (origin, cb) => {
-    if (isAllowedOrigin(origin)) {
-      cb(null, true);
-      return;
-    }
-    app.log.warn({ origin }, "CORS origin not allowed");
-    cb(null, false);
-  },
-  credentials: true,
-  methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-});
+app.use(
+  cors({
+    origin: ({ headers }) => isAllowedOrigin(headers.get("origin") ?? undefined),
+    credentials: true,
+    methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+  }),
+);
 
-await app.register(multipart, {
-  limits: { fileSize: Math.max(8 * 1024 * 1024, MAX_PRESENTATION_UPLOAD_BYTES) },
-});
-await app.register(websocket);
+/** Elysia caps request bodies per-server rather than per-plugin. */
+export const MAX_BODY_BYTES = Math.max(8 * 1024 * 1024, MAX_PRESENTATION_UPLOAD_BYTES);
+
+/** `ip` replaces Fastify's `request.ip`, used for audit-log attribution. */
+app.derive(({ server, request }) => ({
+  ip: server?.requestIP(request)?.address ?? "",
+}));
 
 if (!hasSupabaseStorage()) {
   const uploadRoot = getUploadRoot();
   await mkdir(uploadRoot, { recursive: true });
-  await app.register(fastifyStatic, {
-    root: uploadRoot,
-    prefix: "/uploads/",
-    decorateReply: false,
-  });
+  app.use(staticPlugin({ assets: uploadRoot, prefix: "/uploads", indexHTML: false }));
 }
 
-await registerHealthRoutes(app);
-await registerPublicRoutes(app);
-await registerAdminRoutes(app);
-await registerPresentationRoutes(app);
-await registerLuckySpinRoutes(app);
-await registerCampaignBannerRoutes(app);
-await registerLiveRoutes(app);
-await registerPlatformRoutes(app);
-await registerWebSocketRoutes(app);
-await registerPresentationWebSocketRoutes(app);
-await registerLiveWebSocketRoutes(app);
-await registerVisionWebSocketRoutes(app);
+registerHealthRoutes(app);
+registerPublicRoutes(app);
+registerAdminRoutes(app);
+registerPresentationRoutes(app);
+registerLuckySpinRoutes(app);
+registerCampaignBannerRoutes(app);
+registerLiveRoutes(app);
+registerPlatformRoutes(app);
+registerWebSocketRoutes(app);
+registerPresentationWebSocketRoutes(app);
+registerLiveWebSocketRoutes(app);
+registerVisionWebSocketRoutes(app);
 await initVisionEventBus();
-registerPhotoMomentJobs(app);
-registerVoiceMinuteJobs(app);
+startPhotoMomentJobs(logger);
+registerVoiceMinuteJobs(logger);
 
-app.setErrorHandler((error, _request, reply) => {
+app.onError(({ error, code, set }) => {
+  if (code === "NOT_FOUND") {
+    set.status = 404;
+    return { detail: "Not Found" };
+  }
+
   const err = error as Error & { statusCode?: number; cause?: Error };
-  const statusCode = err.statusCode ?? 500;
+  set.status = err.statusCode ?? 500;
+
   const cause =
     err.name === "DrizzleQueryError" && err.cause?.message ? err.cause.message : err.message;
   const combined = `${err.message} ${cause}`;
@@ -82,7 +80,8 @@ app.setErrorHandler((error, _request, reply) => {
   )
     ? "Database connection timed out. Please retry in a moment."
     : cause;
-  reply.status(statusCode).send({ detail });
+
+  return { detail };
 });
 
 const start = async () => {
@@ -97,20 +96,25 @@ const start = async () => {
 
   await warmDbConnection();
   startDbPoolWatchdog();
-  await app.listen({ port: env.PORT ?? env.API_PORT, host: "0.0.0.0" });
+
+  app.listen(
+    {
+      port: env.PORT ?? env.API_PORT,
+      hostname: "0.0.0.0",
+      maxRequestBodySize: MAX_BODY_BYTES,
+    },
+    ({ hostname, port }) => logger.info({ hostname, port }, "Server listening"),
+  );
 };
 
-process.on("SIGINT", async () => {
-  await app.close();
+const shutdown = async () => {
+  await app.stop();
   await closeDb();
   process.exit(0);
-});
+};
 
-process.on("SIGTERM", async () => {
-  await app.close();
-  await closeDb();
-  process.exit(0);
-});
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 
 start().catch((err) => {
   console.error(err);
