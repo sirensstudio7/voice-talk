@@ -39,14 +39,3 @@ CREATE INDEX IF NOT EXISTS idx_campaign_banners_business
   ON campaign_banners(business_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_banners_active
   ON campaign_banners(business_id, is_active, display_order);
-
--- Campaign banner images bucket
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-  'campaign-banners',
-  'campaign-banners',
-  true,
-  3145728,
-  ARRAY['image/png', 'image/jpeg', 'image/webp']
-)
-ON CONFLICT (id) DO NOTHING;

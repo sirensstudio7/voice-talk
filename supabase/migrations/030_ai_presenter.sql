@@ -109,28 +109,3 @@ CREATE TABLE IF NOT EXISTS presentation_embeddings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_presentation_embeddings_presentation ON presentation_embeddings(presentation_id);
-
--- Presentation assets bucket (PPT, audio). Public for MVP playback simplicity.
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('presentation-assets', 'presentation-assets', true)
-ON CONFLICT (id) DO NOTHING;
-
-DROP POLICY IF EXISTS "Public read presentation-assets" ON storage.objects;
-CREATE POLICY "Public read presentation-assets"
-  ON storage.objects FOR SELECT
-  USING (bucket_id = 'presentation-assets');
-
-DROP POLICY IF EXISTS "Service upload presentation-assets" ON storage.objects;
-CREATE POLICY "Service upload presentation-assets"
-  ON storage.objects FOR INSERT
-  WITH CHECK (bucket_id = 'presentation-assets');
-
-DROP POLICY IF EXISTS "Service update presentation-assets" ON storage.objects;
-CREATE POLICY "Service update presentation-assets"
-  ON storage.objects FOR UPDATE
-  USING (bucket_id = 'presentation-assets');
-
-DROP POLICY IF EXISTS "Service delete presentation-assets" ON storage.objects;
-CREATE POLICY "Service delete presentation-assets"
-  ON storage.objects FOR DELETE
-  USING (bucket_id = 'presentation-assets');

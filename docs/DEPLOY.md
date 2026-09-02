@@ -15,7 +15,9 @@ For **custom domain** (api/app/admin subdomains), see [`DEPLOY-DOMAIN.md`](DEPLO
 In Supabase SQL Editor, run:
 
 1. `supabase/migrations/001_initial_schema.sql`
-2. `supabase/migrations/002_storage_buckets.sql`
+
+Storage buckets are no longer provisioned in SQL — uploads go to local disk
+(`apps/server/uploads/`) unless `SUPABASE_*` env vars are set.
 
 Copy credentials into a secure note for Render env vars.
 

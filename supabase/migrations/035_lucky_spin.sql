@@ -78,13 +78,3 @@ CREATE INDEX IF NOT EXISTS idx_lucky_spin_winners_customer
   ON lucky_spin_winners(campaign_id, customer_identifier);
 
 -- Public prize images (Supabase only; local migrate skips this section).
--- Lucky spin prize bucket
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-  'lucky-spin-prizes',
-  'lucky-spin-prizes',
-  true,
-  2097152,
-  ARRAY['image/png', 'image/jpeg', 'image/webp']
-)
-ON CONFLICT (id) DO NOTHING;

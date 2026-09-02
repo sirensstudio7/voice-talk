@@ -1,4 +1,9 @@
-# Supabase setup (new project)
+| Storage upload fails | Check the bucket exists in the dashboard; check `SUPABASE_SERVICE_ROLE_KEY` |
+# Supabase setup (legacy)
+
+> **Deprecated.** Phase 1 runs on plain Postgres — the schema no longer contains
+> any Supabase-specific SQL, and uploads default to local disk. Keep this only
+> for the existing Supabase deployment until it is cut over.
 
 Follow these steps once. Takes about 15 minutes.
 
@@ -28,7 +33,8 @@ You should see “Success. No rows returned.”
 
 **Query 1 — tables:** copy all of [`001_initial_schema.sql`](../supabase/migrations/001_initial_schema.sql) → Run
 
-**Query 2 — storage:** copy all of [`002_storage_buckets.sql`](../supabase/migrations/002_storage_buckets.sql) → Run
+**Storage buckets:** create them in the Supabase dashboard (Storage → New bucket).
+They are no longer provisioned by SQL.
 
 ## 3. Copy credentials to `.env`
 
@@ -88,7 +94,7 @@ Upload a test image in admin — URL should be a `https://....supabase.co/storag
 | Problem | Fix |
 |---|---|
 | `connection refused` | Use pooler URL port **6543**, not direct 5432, on serverless hosts |
-| Storage upload fails | Re-run `002_storage_buckets.sql`; check `SUPABASE_SERVICE_ROLE_KEY` |
+| Storage upload fails | Check the bucket exists in the dashboard; check `SUPABASE_SERVICE_ROLE_KEY` |
 | `syntax error at or near "supabase"` | You pasted the **file path**, not the SQL. Open `supabase/setup-all.sql`, copy all text, paste in SQL Editor |
 | Seed says user exists | Normal on re-run; data is idempotent for business slug |
 

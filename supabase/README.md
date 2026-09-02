@@ -1,32 +1,28 @@
-# Supabase setup (production)
+# Database schema
 
-**New project:** follow [`docs/SUPABASE-SETUP.md`](docs/SUPABASE-SETUP.md)
-
-**Custom domain deploy:** follow [`docs/DEPLOY-DOMAIN.md`](docs/DEPLOY-DOMAIN.md)
-
-Quick checklist:
+Plain Postgres — no Supabase-specific SQL. `migrations/` applies cleanly to any
+Postgres 16 instance.
 
 ```bash
-npm run setup:supabase   # prints steps
+docker compose up -d          # local Postgres on :5432
+npm run seed:db               # migrate + seed
 ```
 
-Run in Supabase SQL Editor (in order):
+`setup-all.sql` is the same schema flattened into one file, for pasting into a
+SQL console when you cannot run the migrate script.
 
-1. [`migrations/001_initial_schema.sql`](migrations/001_initial_schema.sql) — tables
-2. [`migrations/002_storage_buckets.sql`](migrations/002_storage_buckets.sql) — Storage buckets (Supabase only)
+## Storage
 
-Then copy to root `.env`:
+Uploads go to `apps/server/uploads/` and are served from `/uploads/`. Setting
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` switches uploads to Supabase
+Storage instead — buckets must then be created in the Supabase dashboard, as
+they are no longer provisioned by SQL. See [`docs/SUPABASE-SETUP.md`](../docs/SUPABASE-SETUP.md)
+(legacy) for that path.
 
-- **Database → Connection pooler** (Transaction mode, port 6543) → `DATABASE_URL`
-- **Project Settings → API → URL** → `SUPABASE_URL`
-- **Project Settings → API → service_role** → `SUPABASE_SERVICE_ROLE_KEY`
-
-# Local setup (no Supabase)
+## Local setup without Docker
 
 ```bash
 brew services start postgresql@16
-createdb voicetalk   # once
+createdb voicetalk
 npm run seed:db
 ```
-
-Uploads use `apps/server/uploads/` locally when `SUPABASE_*` is unset.
