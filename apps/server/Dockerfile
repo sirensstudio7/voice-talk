@@ -3,14 +3,15 @@ FROM oven/bun:1.4-slim
 
 WORKDIR /app
 
-# Workspace manifests first, so a dependency-only change reuses the layer.
+# Manifests first, so a dependency-only change reuses the install layer. The
+# shared package comes in whole because its `prepare` hook builds it during
+# install; it is small and changes far less often than the server sources.
 COPY package.json bun.lock ./
 COPY apps/server/package.json apps/server/
-COPY packages/shared/package.json packages/shared/
+COPY packages/shared packages/shared
 
 RUN bun install --frozen-lockfile
 
-COPY packages/shared packages/shared
 COPY apps/server apps/server
 COPY supabase supabase
 
