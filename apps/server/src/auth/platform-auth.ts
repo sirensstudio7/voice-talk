@@ -6,9 +6,12 @@ import { withLoginDb } from "../db/login-db.js";
 import { auditLogs, platformAdmins, type PlatformAdmin } from "../db/schema.js";
 import { env } from "../env.js";
 import type { AuthContext } from "../http/context.js";
+import { logger } from "../http/logger.js";
 import { rateLimit } from "../redis.js";
 import { hashPassword, verifyPassword } from "./jwt.js";
 import { isPlatformRole, type PlatformRole } from "./platform-rbac.js";
+
+const log = logger.child({ component: "platform" });
 
 const JWT_ALGORITHM = "HS256";
 const PENDING_TTL_SECONDS = 10 * 60;
@@ -226,7 +229,7 @@ export async function ensurePlatformAdminSeed(): Promise<void> {
     status: "active",
     totpEnabled: false,
   });
-  console.info(`Seeded platform super admin: ${email}`);
+  log.info({ email }, "platform.admin_seeded");
 }
 
 /** Login limiter backed by Redis so every instance shares one window. */

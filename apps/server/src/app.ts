@@ -3,6 +3,9 @@ import { cors } from "@elysiajs/cors";
 import { staticPlugin } from "@elysiajs/static";
 import { Elysia } from "elysia";
 import { hasObjectStorage, isAllowedOrigin } from "./env.js";
+import { publicErrorDetail } from "./http/errors.js";
+import { logger } from "./http/logger.js";
+import { registerRequestLogging } from "./http/request-logging.js";
 import { validationDetail } from "./http/validation.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerCampaignBannerRoutes } from "./routes/campaign-banner.js";
@@ -35,6 +38,8 @@ export async function buildApp(): Promise<Elysia> {
       origin: ({ headers }) => isAllowedOrigin(headers.get("origin") ?? undefined),
       credentials: true,
       methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+      // Lets the browser apps read the correlation id off failed responses.
+      exposeHeaders: ["x-request-id"],
     }),
   );
 
@@ -42,6 +47,10 @@ export async function buildApp(): Promise<Elysia> {
   app.derive(({ server, request }) => ({
     ip: server?.requestIP(request)?.address ?? "",
   }));
+
+  // Request correlation and the access log. Registered before routes (like
+  // onError below) because precompile attaches hooks at route registration.
+  registerRequestLogging(app);
 
   if (!hasObjectStorage()) {
     const uploadRoot = getUploadRoot();
@@ -52,7 +61,7 @@ export async function buildApp(): Promise<Elysia> {
   // onError must be registered before the routes: Elysia resolves the error
   // handler when a route is added, so a later hook never sees validation
   // errors from earlier routes.
-  app.onError(({ error, code, set }) => {
+  app.onError(({ error, code, request, set }) => {
     if (code === "NOT_FOUND") {
       set.status = 404;
       return { detail: "Not Found" };
@@ -64,18 +73,21 @@ export async function buildApp(): Promise<Elysia> {
     }
 
     const err = error as Error & { statusCode?: number; cause?: Error };
-    set.status = err.statusCode ?? 500;
+    const status = err.statusCode ?? 500;
+    set.status = status;
 
-    const cause =
-      err.name === "DrizzleQueryError" && err.cause?.message ? err.cause.message : err.message;
-    const combined = `${err.message} ${cause}`;
-    const detail = /CONNECT_TIMEOUT|connect timed out|timed out|ECONNREFUSED|connection/i.test(
-      combined,
-    )
-      ? "Database connection timed out. Please retry in a moment."
-      : cause;
+    if (status >= 500) {
+      // Unhandled failures are the lines an incident review starts from. The
+      // full error (stack + cause) goes to the log; the response gets generic
+      // copy that never leaks SQL or connection internals.
+      const { pathname } = new URL(request.url);
+      logger.error(
+        { err, status, method: request.method, path: pathname },
+        "http.error",
+      );
+    }
 
-    return { detail };
+    return { detail: publicErrorDetail(err, status) };
   });
 
   // Every registration must finish before listen(): precompile compiles the

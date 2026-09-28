@@ -3,6 +3,7 @@ import type { Elysia } from "elysia";
 import { socketRoute, type SocketBridge } from "../http/websocket.js";
 
 import { requireBusinessAccess } from "../auth/jwt.js";
+import { logger, shouldLogThrottled } from "../http/logger.js";
 import {
   getLiveSessionById,
   getPublicLiveSession,
@@ -12,6 +13,8 @@ import {
   maybeLiveAiReply,
   postLiveMessage,
 } from "../services/live.js";
+
+const log = logger.child({ component: "live" });
 
 export function registerLiveWebSocketRoutes(app: Elysia): void {
   app.ws(
@@ -64,10 +67,12 @@ export function registerLiveWebSocketRoutes(app: Elysia): void {
                 productId: taggedProduct,
               });
               void maybeLiveAiReply(sessionId, message.body).catch((err) => {
-                console.warn("[live] AI reply failed", err);
+                log.warn({ err, sessionId }, "live.ai_reply_failed");
               });
             } catch (err) {
-              console.warn("[live] chat frame failed", err);
+              if (shouldLogThrottled(`live.chat_frame_failed:${sessionId}`)) {
+                log.warn({ err, sessionId }, "live.chat_frame_failed");
+              }
             }
           })();
         });

@@ -8,6 +8,7 @@ import {
   sendAuthError,
 } from "../auth/jwt.js";
 import { db } from "../db/client.js";
+import { logger } from "../http/logger.js";
 import {
   AI_PRESENTER_CODE,
   assertLanguageAllowed,
@@ -618,7 +619,10 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
               pptxBuffer: buffer,
             });
           } catch (thumbErr) {
-            console.warn("[presentations] thumbnail after upload failed", thumbErr);
+            logger.warn(
+              { err: thumbErr, presentationId },
+              "presentation.thumbnail_failed",
+            );
           }
         }
 

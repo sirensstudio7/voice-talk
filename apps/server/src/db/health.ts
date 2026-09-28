@@ -1,5 +1,8 @@
 import { SQL } from "bun";
 import { env } from "../env.js";
+import { logger } from "../http/logger.js";
+
+const log = logger.child({ component: "db" });
 
 export type DbHealth = {
   online: boolean;
@@ -97,8 +100,8 @@ export async function checkDbHealth(timeoutMs = 5000, force = false): Promise<Db
 export async function warmDbConnection(): Promise<void> {
   const health = await checkDbHealth(15_000, true);
   if (!health.online) {
-    console.warn(`Database warmup failed: ${health.error ?? "unknown error"}`);
+    log.warn({ error: health.error ?? "unknown error" }, "db.warmup_failed");
     return;
   }
-  console.info(`Database connected (${health.latencyMs}ms)`);
+  log.info({ latencyMs: health.latencyMs }, "db.connected");
 }

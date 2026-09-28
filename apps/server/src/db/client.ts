@@ -1,7 +1,10 @@
 import { SQL } from "bun";
 import { drizzle, type BunSQLDatabase } from "drizzle-orm/bun-sql";
 import { env } from "../env.js";
+import { logger } from "../http/logger.js";
 import * as schema from "./schema.js";
+
+const log = logger.child({ component: "db" });
 
 export type AppDb = BunSQLDatabase<typeof schema>;
 
@@ -34,7 +37,7 @@ export async function resetDbPool(reason: string): Promise<void> {
   if (resetting) return resetting;
 
   resetting = (async () => {
-    console.warn(`[db] resetting shared pool: ${reason}`);
+    log.warn({ reason }, "db.pool.reset");
     const old = client;
     client = createSqlClient();
     db = drizzle(client, { schema });

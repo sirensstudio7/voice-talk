@@ -9,18 +9,12 @@ import { registerVoiceMinuteJobs } from "./services/voice-minute-jobs.js";
 
 const app = await buildApp();
 
-startPhotoMomentJobs(logger);
-registerVoiceMinuteJobs(logger);
+startPhotoMomentJobs(logger.child({ component: "jobs" }));
+registerVoiceMinuteJobs(logger.child({ component: "jobs" }));
 
 const start = async () => {
   const allowedOrigins = env.ALLOWED_ORIGINS?.trim();
   const productionDomains = getProductionDomains();
-  console.info(`Gemini model default: ${env.GEMINI_MODEL}`);
-  console.info(`API key configured: ${Boolean(env.GEMINI_API_KEY)}`);
-  console.info(`Default business slug: ${env.DEFAULT_BUSINESS_SLUG}`);
-  console.info(`Object storage: ${hasObjectStorage() ? "s3" : "local disk"}`);
-  console.info(`CORS allowed origins: ${allowedOrigins || "(all)"}`);
-  console.info(`CORS production domains: ${productionDomains.join(", ") || "(none)"}`);
 
   await warmDbConnection();
   startDbPoolWatchdog();
@@ -31,22 +25,51 @@ const start = async () => {
       hostname: "0.0.0.0",
       maxRequestBodySize: MAX_BODY_BYTES,
     },
-    ({ hostname, port }) => logger.info({ hostname, port }, "Server listening"),
+    ({ hostname, port }) =>
+      logger.info(
+        {
+          hostname,
+          port,
+          model: env.GEMINI_MODEL,
+          gemini_key_configured: Boolean(env.GEMINI_API_KEY),
+          storage: hasObjectStorage() ? "s3" : "local",
+          default_business_slug: env.DEFAULT_BUSINESS_SLUG,
+          cors_origins: allowedOrigins || "(all)",
+          cors_production_domains: productionDomains.join(",") || "(none)",
+        },
+        "server.listening",
+      ),
   );
 };
 
-const shutdown = async () => {
+let shuttingDown = false;
+const shutdown = async (signal: string) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, "server.shutdown");
   await app.stop();
   closeRedis();
   await closeDb();
   process.exit(0);
 };
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+
+// A process that reached an undefined state must not keep serving traffic;
+// the supervisor restarts it. Rejections are logged but do not exit: this
+// server has many fire-and-forget tasks where one rejected promise is benign.
+process.on("uncaughtException", (error) => {
+  logger.error({ err: error }, "server.fatal");
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  logger.error({ err: reason }, "server.unhandled_rejection");
+});
 
 start().catch((err) => {
-  console.error(err);
+  logger.error({ err }, "server.fatal");
   process.exit(1);
 });
 

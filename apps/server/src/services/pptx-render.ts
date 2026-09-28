@@ -1,4 +1,7 @@
 import { convertPptxToPng } from "pptx-glimpse";
+import { logger } from "../http/logger.js";
+
+const log = logger.child({ component: "pptx" });
 
 export type RenderedSlideImage = {
   slideNumber: number;
@@ -36,7 +39,7 @@ export async function renderFirstSlideThumbnail(buffer: Buffer): Promise<Buffer 
     const first = results[0];
     return first ? Buffer.from(first.png) : null;
   } catch (err) {
-    console.warn("[pptx-render] first-slide thumbnail failed", err);
+    log.warn({ err }, "pptx.thumbnail_failed");
     return null;
   }
 }

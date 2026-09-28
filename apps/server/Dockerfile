@@ -35,6 +35,12 @@ COPY db db
 WORKDIR /app/apps/server
 
 ENV NODE_ENV=production
+
+# Build commit, injected by CI (`docker build --build-arg GIT_SHA=…`). Every
+# log line carries it as `version`, so an incident can be tied to a deploy.
+ARG GIT_SHA=""
+ENV GIT_SHA=$GIT_SHA
+
 EXPOSE 8000
 
 # Bun runs the TypeScript entrypoint directly — there is no build output.

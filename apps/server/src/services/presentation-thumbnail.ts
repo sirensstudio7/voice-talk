@@ -2,8 +2,11 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "../db/client.js";
 import { presentationFiles, presentations, presentationSlides } from "../db/schema.js";
+import { logger } from "../http/logger.js";
 import { downloadFromStorage, PRESENTATION_BUCKET, uploadToStorage } from "../storage/index.js";
 import { renderFirstSlideThumbnail } from "./pptx-render.js";
+
+const log = logger.child({ component: "presentation" });
 
 const backfilling = new Set<string>();
 
@@ -68,7 +71,7 @@ export function enqueueMissingThumbnails(
           pptxBuffer: buffer,
         });
       } catch (err) {
-        console.warn("[presentation-thumbnail] backfill failed", row.id, err);
+        log.warn({ err, presentationId: row.id }, "presentation.thumbnail_backfill_failed");
       } finally {
         backfilling.delete(row.id);
       }

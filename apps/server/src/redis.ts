@@ -1,5 +1,8 @@
 import { RedisClient } from "bun";
 import { env } from "./env.js";
+import { logger } from "./http/logger.js";
+
+const log = logger.child({ component: "redis" });
 
 /**
  * Shared Redis state for anything that must agree across API instances:
@@ -34,9 +37,7 @@ export async function rateLimit(key: string, limit: number, windowMs: number): P
     );
     return count <= limit;
   } catch (error) {
-    console.warn(
-      `[redis] rate limit unavailable for ${key}: ${error instanceof Error ? error.message : error}`,
-    );
+    log.warn({ err: error }, "redis.rate_limit_unavailable");
     return true;
   }
 }
@@ -56,9 +57,7 @@ export async function withJobLock(
     const acquired = await redis.set(key, token, "NX", "PX", String(ttlMs));
     if (acquired !== "OK") return false;
   } catch (error) {
-    console.warn(
-      `[redis] job lock unavailable for ${name}: ${error instanceof Error ? error.message : error}`,
-    );
+    log.warn({ err: error, job: name }, "redis.job_lock_unavailable");
     return false;
   }
 

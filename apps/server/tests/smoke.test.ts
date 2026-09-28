@@ -155,4 +155,30 @@ suite("api smoke", () => {
     const response = await api("/public/kiosks/unlock", json({ business: "sunrise-coffee" }));
     expect(response.status).toBe(400);
   });
+
+  test("request logging: echoes x-request-id and emits an access line", async () => {
+    const { __setLogLevel, __setLogSink } = await import("../src/http/logger.js");
+    const lines: string[] = [];
+    __setLogSink((line) => lines.push(line));
+    __setLogLevel("debug");
+    try {
+      const response = await api("/menu?business=sunrise-coffee", {
+        headers: { "x-request-id": "smoke-request-1" },
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-request-id")).toBe("smoke-request-1");
+
+      // onAfterResponse runs from a setImmediate — let it land.
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      const access = lines
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .find((entry) => entry.msg === "http.request" && entry.path === "/menu");
+      expect(access).toBeDefined();
+      expect(access!.requestId).toBe("smoke-request-1");
+      expect(access!.status).toBe(200);
+    } finally {
+      __setLogSink(null);
+      __setLogLevel(null);
+    }
+  });
 });

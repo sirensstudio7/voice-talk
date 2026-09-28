@@ -7,6 +7,7 @@ import { getVoicePresetGeminiVoice } from "@voicetalk/shared";
 
 import { env } from "../env.js";
 import { db } from "../db/client.js";
+import { logger, shouldLogThrottled } from "../http/logger.js";
 import {
   aiRules,
   businessMembers,
@@ -252,7 +253,9 @@ async function handlePresenterSession(
         textQueue.push(PRESENTER_SHUTDOWN);
       }
     } catch (err) {
-      console.warn("[presentation-ws] bad client message", err);
+      if (shouldLogThrottled(`ws.presentation_bad_frame:${sessionId}`)) {
+        logger.warn({ err, sessionId }, "ws.presentation_bad_frame");
+      }
     }
   });
 
@@ -288,7 +291,10 @@ async function handlePresenterSession(
       },
     });
   } catch (err) {
-    console.error("[presentation-ws] live session failed", err);
+    logger.error(
+      { err, sessionId, presentationId: presentation.id },
+      "ws.presentation_session_failed",
+    );
     safeSendJson(socket, {
       type: "error",
       error: err instanceof Error ? err.message : "Live session failed",

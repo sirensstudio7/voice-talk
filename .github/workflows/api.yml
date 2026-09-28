@@ -84,6 +84,8 @@ jobs:
           push: false
           load: true
           tags: voicetalk-api:ci
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=api-image
           cache-to: type=gha,scope=api-image,mode=max
       - name: Smoke the image
@@ -148,5 +150,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=api-image
           cache-to: type=gha,scope=api-image,mode=max

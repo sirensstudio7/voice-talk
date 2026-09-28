@@ -73,6 +73,9 @@ docker compose -f docker-compose.prod.yml up -d
 ```
 
 - **Health check:** `GET /health` (`?db=1` also pings Postgres + Redis)
+- **Deploy marker:** published images carry the build commit as `GIT_SHA`;
+  every log line shows it as `version`, so an incident can be tied to a deploy.
+  Only set `GIT_SHA` by hand when you build the image yourself.
 - **Port:** the app listens on `PORT`, falling back to `API_PORT` (8000).
   Most platforms inject `PORT` and route to it — don't set it there.
 - **TLS/domain:** terminate at your platform router or a reverse proxy

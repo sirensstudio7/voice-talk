@@ -5,6 +5,8 @@ import { db } from "../db/client.js";
 import { businessMembers, businesses, users, type User } from "../db/schema.js";
 import { env } from "../env.js";
 import type { AuthContext, StatusContext } from "../http/context.js";
+import { publicErrorDetail } from "../http/errors.js";
+import { logger } from "../http/logger.js";
 
 const JWT_ALGORITHM = "HS256";
 const USER_CACHE_TTL_MS = 60_000;
@@ -111,24 +113,6 @@ export function clearBusinessAccessCache(businessId?: string): void {
   }
 }
 
-function publicErrorDetail(error: unknown): string {
-  if (!(error instanceof Error)) return "Internal error";
-
-  const parts = [error.message];
-  if (error.cause instanceof Error) parts.push(error.cause.message);
-  const combined = parts.join(" ");
-
-  if (/CONNECT_TIMEOUT|connect timed out|timed out|ECONNREFUSED|connection/i.test(combined)) {
-    return "Database connection timed out. Please retry in a moment.";
-  }
-
-  if (error.name === "DrizzleQueryError" && error.cause instanceof Error) {
-    return error.cause.message;
-  }
-
-  return error.message;
-}
-
 export async function requireBusinessAccess(
   request: AuthContext,
   businessId: string,
@@ -185,7 +169,12 @@ export function sendAuthError(request: StatusContext, error: unknown): unknown {
     error instanceof Error && "statusCode" in error
       ? (error as Error & { statusCode: number }).statusCode
       : 500;
-  return request.status(statusCode, { detail: publicErrorDetail(error) });
+  if (statusCode >= 500) {
+    // Routes that catch their own errors never reach app.onError; log here so
+    // a 500 always has an operator-visible line.
+    logger.error({ err: error, status: statusCode }, "http.error");
+  }
+  return request.status(statusCode, { detail: publicErrorDetail(error, statusCode) });
 }
 
 export function userOut(user: User) {

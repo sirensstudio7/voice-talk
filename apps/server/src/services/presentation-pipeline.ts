@@ -9,6 +9,7 @@ import {
   presentationSlides,
 } from "../db/schema.js";
 import { downloadFromStorage, PRESENTATION_BUCKET, uploadToStorage } from "../storage/index.js";
+import { logger } from "../http/logger.js";
 import {
   buildDefaultGreetingClosing,
   buildTalkingPointsFromSlide,
@@ -18,6 +19,8 @@ import {
 import { parsePptxBuffer } from "./pptx-parser.js";
 import { persistPresentationThumbnail } from "./presentation-thumbnail.js";
 import { resolveGeminiApiKeyForBusiness } from "./user-api-keys.js";
+
+const log = logger.child({ component: "presentation" });
 
 const running = new Set<string>();
 /** Soft-cancel flags — checked between pipeline steps. */
@@ -117,7 +120,7 @@ export async function ensurePresentationStageAudio(presentationId: string): Prom
       text: presentation.greetingScript,
     });
     if (!ok) {
-      console.warn("[presentation-pipeline] ensure greeting TTS failed", presentationId);
+      log.warn({ presentationId, kind: "greeting" }, "presentation.tts_failed");
     }
   }
 
@@ -130,7 +133,7 @@ export async function ensurePresentationStageAudio(presentationId: string): Prom
       text: presentation.closingScript,
     });
     if (!ok) {
-      console.warn("[presentation-pipeline] ensure closing TTS failed", presentationId);
+      log.warn({ presentationId, kind: "closing" }, "presentation.tts_failed");
     }
   }
 }
@@ -171,7 +174,7 @@ export async function ensureSlideAudio(
     await resolveGeminiApiKeyForBusiness(presentation.businessId),
   );
   if (!tts) {
-    console.warn("[presentation-pipeline] ensure slide TTS failed", presentationId, slideId);
+    log.warn({ presentationId, slideId, kind: "slide" }, "presentation.tts_failed");
     return false;
   }
 
@@ -197,7 +200,7 @@ export function enqueuePresentationProcessing(
 ): void {
   if (running.has(presentationId)) {
     if (!opts?.force) return;
-    console.warn("[presentation-pipeline] force re-queue", presentationId);
+    log.info({ presentationId }, "presentation.requeued");
     cancelled.add(presentationId);
     running.delete(presentationId);
   }
@@ -206,7 +209,7 @@ export function enqueuePresentationProcessing(
   void processPresentation(presentationId)
     .catch((err) => {
       if (err && typeof err === "object" && "cancelled" in err) return;
-      console.error("[presentation-pipeline]", presentationId, err);
+      log.error({ err, presentationId }, "presentation.pipeline_failed");
     })
     .finally(() => {
       running.delete(presentationId);
@@ -327,7 +330,7 @@ function enqueueThumbnail(input: {
   pptxBuffer: Buffer;
 }): void {
   void persistPresentationThumbnail(input).catch((err) => {
-    console.warn("[presentation-pipeline] background thumbnail failed", input.presentationId, err);
+    log.warn({ err, presentationId: input.presentationId }, "presentation.thumbnail_failed");
   });
 }
 
@@ -473,7 +476,7 @@ async function processPresentation(presentationId: string): Promise<void> {
       slides: insertedSlides,
       files,
     }).catch((err) => {
-      console.warn("[presentation-pipeline] background indexing failed", presentationId, err);
+      log.warn({ err, presentationId }, "presentation.indexing_failed");
     });
 
     const pptxFile = files.find((f) => f.fileType === "pptx");

@@ -1,4 +1,5 @@
 import { ensurePlatformAdminSeed } from "../auth/platform-auth.js";
+import { logger } from "../http/logger.js";
 import type { Elysia } from "elysia";
 import { registerPlatformAuthRoutes } from "./platform/auth.js";
 import { registerPlatformDashboardRoutes } from "./platform/dashboard.js";
@@ -20,10 +21,7 @@ export async function registerPlatformRoutes(app: Elysia): Promise<void> {
   try {
     await ensurePlatformAdminSeed();
   } catch (error) {
-    console.warn(
-      "[auth] platform admin seed skipped:",
-      error instanceof Error ? error.message : error,
-    );
+    logger.warn({ err: error }, "platform.seed_skipped");
   }
 
   registerPlatformAuthRoutes(app);

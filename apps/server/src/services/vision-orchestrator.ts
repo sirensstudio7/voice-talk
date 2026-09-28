@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { SocketBridge } from "../http/websocket.js";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
+import { logger } from "../http/logger.js";
 import { redis } from "../redis.js";
 import { visionEvents, visionSettings, type VisionSettings } from "../db/schema.js";
 import {
@@ -10,6 +11,8 @@ import {
   normalizeVisionSource,
   visionSettingsOut,
 } from "./vision-settings.js";
+
+const log = logger.child({ component: "vision" });
 
 type VisionEventType =
   | "PERSON_ENTER"
@@ -138,7 +141,7 @@ async function recordVisionEvent(
       metadata: JSON.stringify(metadata),
     });
   } catch (err) {
-    console.error("Failed to record vision event:", err);
+    log.error({ err, businessId, kioskId, eventType }, "vision.record_failed");
   }
 }
 
@@ -219,8 +222,9 @@ function tryDeliverPendingGreetingTrigger(hub: BusinessVisionHub): number {
     hub.triggerPendingUntil = Date.now() + TRIGGER_PENDING_MS;
     clearPendingTriggerRetry(hub);
     scheduleGreetingRelease(hub);
-    console.info(
-      `Vision greeting trigger business=${hub.businessSlug} delivered=${delivered} track=${pending.trackId ?? "none"}`,
+    log.info(
+      { businessSlug: hub.businessSlug, delivered, trackId: pending.trackId ?? null },
+      "vision.trigger_delivered",
     );
   }
   return delivered;
@@ -244,8 +248,9 @@ function schedulePendingTriggerRetry(hub: BusinessVisionHub): void {
 
     hub.pendingTriggerRetryCount += 1;
     if (hub.pendingTriggerRetryCount >= PENDING_TRIGGER_RETRY_MAX) {
-      console.warn(
-        `Vision greeting trigger business=${hub.businessSlug} gave up after ${PENDING_TRIGGER_RETRY_MAX} retries`,
+      log.warn(
+        { businessSlug: hub.businessSlug, retries: PENDING_TRIGGER_RETRY_MAX },
+        "vision.trigger_gave_up",
       );
       clearPendingTriggerRetry(hub);
       return;
@@ -271,9 +276,7 @@ function scheduleGreetingRelease(hub: BusinessVisionHub): void {
     if (hub.sessionActive) {
       return;
     }
-    console.warn(
-      `Releasing vision trigger business=${hub.businessSlug} (kiosk never acknowledged greeting)`,
-    );
+    log.warn({ businessSlug: hub.businessSlug }, "vision.trigger_released");
     releaseKioskSession(hub);
   }, GREETING_RELEASE_MS);
 }
@@ -336,9 +339,7 @@ export function registerKioskClient(
     const ageMs =
       hub.sessionActiveSince > 0 ? Date.now() - hub.sessionActiveSince : GREETING_RELEASE_MS;
     if (ageMs >= GREETING_RELEASE_MS) {
-      console.info(
-        `Vision stale session cleared business=${hub.businessSlug} on kiosk connect age_ms=${ageMs}`,
-      );
+      log.info({ businessSlug: hub.businessSlug, ageMs }, "vision.stale_session_cleared");
       releaseKioskSession(hub);
     }
   }
@@ -355,9 +356,7 @@ export function registerKioskClient(
   ) {
     const delivered = tryDeliverPendingGreetingTrigger(hub);
     if (delivered > 0) {
-      console.info(
-        `Replayed pending greeting trigger business=${hub.businessSlug} kiosk=${kioskId}`,
-      );
+      log.info({ businessSlug: hub.businessSlug, kioskId }, "vision.trigger_replayed");
     } else {
       schedulePendingTriggerRetry(hub);
     }
@@ -454,26 +453,27 @@ export async function handleVisionEvent(
     if (hub.sessionActive) {
       const staleMs = Date.now() - hub.sessionActiveSince;
       if (staleMs < GREETING_RELEASE_MS) {
-        console.info(
-          `Vision greeting skipped business=${hub.businessSlug} reason=session_active age_ms=${staleMs}`,
+        log.debug(
+          { businessSlug: hub.businessSlug, reason: "session_active", ageMs: staleMs },
+          "vision.greeting_skipped",
         );
         return;
       }
-      console.warn(
-        `Vision greeting forcing reset business=${hub.businessSlug} stale_session_ms=${staleMs}`,
+      log.warn(
+        { businessSlug: hub.businessSlug, staleSessionMs: staleMs },
+        "vision.session_forced_reset",
       );
       hub.sessionActive = false;
       hub.sessionActiveSince = 0;
     }
     if (Date.now() < hub.cooldownUntil) {
-      console.info(
-        `Vision greeting skipped business=${hub.businessSlug} reason=cooldown`,
-      );
+      log.debug({ businessSlug: hub.businessSlug, reason: "cooldown" }, "vision.greeting_skipped");
       return;
     }
     if (!hub.settings.cameraTriggerEnabled) {
-      console.info(
-        `Vision greeting skipped business=${hub.businessSlug} reason=trigger_disabled`,
+      log.debug(
+        { businessSlug: hub.businessSlug, reason: "trigger_disabled" },
+        "vision.greeting_skipped",
       );
       return;
     }
@@ -495,8 +495,9 @@ export async function handleVisionEvent(
 
     const delivered = tryDeliverPendingGreetingTrigger(hub);
     if (delivered === 0) {
-      console.info(
-        `Vision greeting trigger business=${hub.businessSlug} delivered=0 track=${trackId ?? "none"} — retrying`,
+      log.info(
+        { businessSlug: hub.businessSlug, trackId: trackId ?? null },
+        "vision.trigger_pending",
       );
       schedulePendingTriggerRetry(hub);
     }
@@ -552,6 +553,6 @@ export async function publishVisionEvent(
   try {
     await redis.send("PUBLISH", [`vision:${businessSlug}`, JSON.stringify(payload)]);
   } catch (err) {
-    console.error("Vision Redis publish failed:", err);
+    log.error({ err, businessSlug }, "vision.publish_failed");
   }
 }

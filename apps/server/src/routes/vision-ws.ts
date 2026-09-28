@@ -2,6 +2,7 @@ import type { Elysia } from "elysia";
 
 import { socketRoute, type SocketBridge } from "../http/websocket.js";
 import { env } from "../env.js";
+import { logger, shouldLogThrottled } from "../http/logger.js";
 import { getBusinessBySlug } from "../services/tenant.js";
 import {
   buildVisionConfigPayload,
@@ -24,6 +25,8 @@ type VisionEventType =
   | "PERSON_CONFIRMED"
   | "PERSON_LOST"
   | "SESSION_TIMEOUT";
+
+const log = logger.child({ component: "vision" });
 
 function safeSend(socket: SocketBridge, payload: Record<string, unknown>): boolean {
   try {
@@ -57,7 +60,7 @@ async function handleVisionSource(
   const hub = await ensureVisionHub(tenant.id, slug);
   hub.settings = await getOrCreateVisionSettings(tenant.id);
   registerVisionSource(hub, kioskId, socket);
-  console.info(`Vision source connected business=${slug} kiosk=${kioskId}`);
+  log.info({ businessSlug: slug, kioskId }, "vision.source_connected");
   safeSend(socket, buildVisionConfigPayload(hub));
 
   socket.on("message", (raw) => {
@@ -81,13 +84,15 @@ async function handleVisionSource(
         void publishVisionEvent(slug, { ...payload, business: slug });
       }
     } catch (err) {
-      console.error("Vision source message error:", err);
+      if (shouldLogThrottled(`vision.source_message_failed:${slug}:${kioskId}`)) {
+        log.error({ err, businessSlug: slug, kioskId }, "vision.source_message_failed");
+      }
     }
   });
 
   socket.on("close", () => {
     unregisterVisionSource(hub, kioskId);
-    console.info(`Vision source disconnected business=${slug} kiosk=${kioskId}`);
+    log.info({ businessSlug: slug, kioskId }, "vision.source_disconnected");
   });
 }
 
@@ -120,7 +125,7 @@ async function handleKioskClient(
   const hub = await ensureVisionHub(tenant.id, slug);
   hub.settings = await getOrCreateVisionSettings(tenant.id);
   registerKioskClient(hub, kioskId, socket);
-  console.info(`Kiosk client connected business=${slug} kiosk=${kioskId}`);
+  log.info({ businessSlug: slug, kioskId }, "vision.kiosk_connected");
 
   socket.on("message", (raw) => {
     try {
@@ -140,12 +145,14 @@ async function handleKioskClient(
         void handleVisionEvent(hub, kioskId, event, trackId, "browser");
       }
     } catch (err) {
-      console.error("Kiosk client message error:", err);
+      if (shouldLogThrottled(`vision.kiosk_message_failed:${slug}:${kioskId}`)) {
+        log.error({ err, businessSlug: slug, kioskId }, "vision.kiosk_message_failed");
+      }
     }
   });
 
   socket.on("close", () => {
     unregisterKioskClient(hub, kioskId);
-    console.info(`Kiosk client disconnected business=${slug} kiosk=${kioskId}`);
+    log.info({ businessSlug: slug, kioskId }, "vision.kiosk_disconnected");
   });
 }
