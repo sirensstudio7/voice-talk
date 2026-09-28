@@ -1,6 +1,6 @@
 # TKT-009 — Cache photo branding assets
 
-- **Status:** proposed
+- **Status:** in-progress (code on `feat/multi-instance-hardening`)
 - **Priority:** P2
 - **Area:** performance
 - **Effort:** S (≤ 1 day)
@@ -32,10 +32,19 @@ above a size threshold (frames are already constrained by the upload path).
 
 ## Acceptance criteria
 
-- [ ] Two consecutive captures for the same business hit storage once (count via
-      R2 request metric or log).
-- [ ] Updating the frame/logo is reflected on the next capture (cache cleared).
-- [ ] Cache size is bounded and documented.
+- [x] Two consecutive captures for the same business hit storage once (unit
+      test with a counting loader; production confirms via the new counters).
+- [x] Updating the frame/logo is reflected on the next capture: the cache key
+      embeds `photo_settings.updated_at`, so a change makes new keys.
+- [x] Cache size is bounded and documented (100 entries, 4 MB per asset, 10 min
+      TTL; `photo.branding_cache_hits_total` / `_misses_total`).
+
+## Implementation notes
+
+- `services/photo-asset-cache.ts` caches the *source* bytes keyed by
+  `path#settingsVersion`; the per-capture resize still happens in
+  `applyBranding`, so different capture sizes work unchanged.
+- The loader is injectable, which is what the unit test uses instead of R2.
 
 ## Out of scope
 
