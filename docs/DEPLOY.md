@@ -9,7 +9,7 @@ For **custom domain** (api/app/admin subdomains), see [`DEPLOY-DOMAIN.md`](DEPLO
   `DATABASE_URL` from `db/migrations/`
 - A Redis instance (Upstash) — rate limits + background-job locks
 - An S3-compatible bucket for uploads — production uses Cloudflare R2
-- [Render](https://render.com) account (API)
+- A container host for the API image (VM with Docker, Fly.io, Railway, Cloud Run, Kubernetes…)
 - [Vercel](https://vercel.com) account (customer-app + admin-app)
 
 ## 1. Database
@@ -21,7 +21,7 @@ applied with the built-in runner (idempotent, no tracking table needed):
 DATABASE_URL="postgresql://...?sslmode=require" bun run seed:db
 ```
 
-Copy the credentials into a secure note for Render env vars. Poolers work as-is —
+Copy the credentials into a secure note for your host's env vars. Poolers work as-is —
 the driver connects with prepared statements disabled.
 
 ## 2. Object storage (Cloudflare R2)
@@ -50,73 +50,95 @@ bun scripts/migrate-storage-to-r2.ts             # copy objects
 bun scripts/migrate-storage-to-r2.ts --rewrite-db # point stored URLs at R2
 ```
 
-## 3. Render — Elysia API
+## 3. API container (any host)
 
-1. Connect GitHub repo to Render
-2. Use [`render.yaml`](../render.yaml) (Blueprint): the API deploys as a Docker
-   service from [`apps/server/Dockerfile`](../apps/server/Dockerfile), on the
-   `oven/bun` image. There is no build step — `bun src/index.ts` runs the
-   TypeScript entrypoint directly. CI also publishes the image to
-   `ghcr.io/<owner>/<repo>` if you prefer deploying from a registry.
-   - **Health check:** `/health`
+The API is a plain Docker image, so any OCI-capable host works — a VM with
+Docker, Fly.io, Railway, Google Cloud Run, Kubernetes, Coolify, Nomad… CI
+publishes every main build to `ghcr.io/<owner>/<repo>` (`latest`, branch,
+short-sha and semver tags), or build locally with
+`docker build -f apps/server/Dockerfile .`.
 
-3. Set environment variables:
+```bash
+# From GHCR (default) or your own registry:
+docker run -d --name voice-talk-api \
+  --env-file apps/server/.env.production.local \
+  -p 8000:8000 -e PORT=8000 \
+  ghcr.io/sirensstudio7/voice-talk:latest
+```
+
+Or with [`docker-compose.prod.yml`](../docker-compose.prod.yml):
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+- **Health check:** `GET /health` (`?db=1` also pings Postgres + Redis)
+- **Port:** the app listens on `PORT`, falling back to `API_PORT` (8000).
+  Most platforms inject `PORT` and route to it — don't set it there.
+- **TLS/domain:** terminate at your platform router or a reverse proxy
+  (Caddy, nginx, Traefik) in front of the container.
+
+Set these variables on the host (or in the env file):
 
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | Aiven (or any managed Postgres) URL, `?sslmode=require` |
 | `REDIS_URL` | Upstash `rediss://` URL — rate limits + background-job locks |
 | `S3_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` |
+| `S3_BUCKET` | Bucket name (prefixes separate the storage areas) |
 | `S3_ACCESS_KEY_ID` | R2 API token key |
 | `S3_SECRET_ACCESS_KEY` | R2 API token secret |
 | `S3_REGION` | `auto` |
 | `S3_PUBLIC_BASE_URL` | Bucket public URL / custom domain |
+| `PUBLIC_API_URL` | Public API origin phones can reach (QR links) — required |
 | `GEMINI_API_KEY` | Google AI Studio key |
 | `JWT_SECRET` | Random 32+ char string |
 | `GEMINI_MODEL` | `gemini-3.1-flash-live-preview` |
 
-4. After deploy, verify: `https://YOUR-SERVICE.onrender.com/health`
+After deploy, verify: `https://YOUR-API-HOST/health`
 
-5. Run seed once (from your machine):
+Run seed once (from your machine):
 
 ```bash
 DATABASE_URL="your-postgres-url" bun run --filter server seed
 ```
 
-> Free tier sleeps after inactivity. Voice WebSocket demos may disconnect — use a paid instance for reliable demos.
+> Free tiers that sleep make voice WebSockets drop — use an always-on
+> instance for demos.
 
-## 4. Vercel — frontends
+## 4. Frontends (Next.js, any host)
 
-Deploy each app separately (or as monorepo projects):
+Deploy each app separately (Vercel, Netlify, Node, Docker…):
 
 ### customer-app
 
 - Root: `apps/customer-app`
 - Env:
-  - `NEXT_PUBLIC_API_URL=https://YOUR-SERVICE.onrender.com`
-  - `NEXT_PUBLIC_WS_URL=wss://YOUR-SERVICE.onrender.com/ws/session`
+  - `NEXT_PUBLIC_API_URL=https://YOUR-API-HOST`
+  - `NEXT_PUBLIC_WS_URL=wss://YOUR-API-HOST/ws/session`
 
 ### admin-app
 
 - Root: `apps/admin-app`
 - Env:
-  - `NEXT_PUBLIC_API_URL=https://YOUR-SERVICE.onrender.com`
+  - `NEXT_PUBLIC_API_URL=https://YOUR-API-HOST`
 
 Redeploy after setting env vars.
 
-## 5. Quick local demo (no Render)
+## 5. Quick local demo (no cloud host)
 
 ```bash
 bun run demo:cloudflare
 ```
 
-Shares a temporary public URL via Cloudflare Tunnel while running locally.
+Shares a temporary public URL via Cloudflare Tunnel while running locally
+(it also sets `PUBLIC_API_URL`, so QR links work during the demo).
 
 ## Checklist
 
 - [ ] Migrations applied from `db/migrations`
-- [ ] R2 buckets created and existing objects copied (`migrate-storage-to-r2.ts`)
-- [ ] Render `/health` returns `{"status":"ok",...}`
-- [ ] Seed data exists (Sunrise Coffee)
+- [ ] Object storage bucket created (`lorescale`) and, if migrating, objects copied (`migrate-storage-to-r2.ts`)
+- [ ] API `/health` returns `{"status":"ok",...}`
+- [ ] Seed data exists (Sunrise Coffee) — only if you ran the seed
 - [ ] Admin login works on Vercel
 - [ ] Voice session connects (customer app)

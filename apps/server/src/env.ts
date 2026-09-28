@@ -18,7 +18,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().default("dev-secret-change-in-production"),
   JWT_EXPIRE_HOURS: z.coerce.number().default(72),
   API_PORT: z.coerce.number().default(8000),
-  /** Render/Railway set PORT; prefer it over API_PORT in production. */
+  /** Most container hosts inject PORT (Fly, Railway, Cloud Run, Render…). */
   PORT: z.coerce.number().optional(),
   DEFAULT_BUSINESS_SLUG: z.string().default("sunrise-coffee"),
   /** Public marketing hero iframe — pinless access is limited to this slug. */
@@ -51,7 +51,7 @@ const envSchema = z.object({
 
 export const env = envSchema.parse(process.env);
 
-/** Object storage is mandatory in production: Render's disk is ephemeral. */
+/** Production configuration that has no sane generic default. */
 if (process.env.NODE_ENV === "production") {
   const missing = (
     [
@@ -60,10 +60,11 @@ if (process.env.NODE_ENV === "production") {
       "S3_ACCESS_KEY_ID",
       "S3_SECRET_ACCESS_KEY",
       "S3_PUBLIC_BASE_URL",
+      "PUBLIC_API_URL",
     ] as const
   ).filter((key) => !env[key]);
   if (missing.length > 0) {
-    throw new Error(`Object storage is required in production; missing ${missing.join(", ")}`);
+    throw new Error(`Production configuration incomplete; missing ${missing.join(", ")}`);
   }
 }
 
@@ -76,13 +77,16 @@ function isLocalhostUrl(url: string): boolean {
   }
 }
 
-/** Public API phones can reach. Never localhost. */
+/** Public API origin used in server-generated links (QR codes). Never localhost in production. */
 export function getPublicApiBaseUrl(): string {
   const configured = env.PUBLIC_API_URL?.trim();
   if (configured && !isLocalhostUrl(configured)) {
     return configured.replace(/\/+$/, "");
   }
-  return "https://voice-talk-api.onrender.com";
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("PUBLIC_API_URL is required in production");
+  }
+  return `http://localhost:${env.PORT ?? env.API_PORT}`;
 }
 
 /** QR links are scanned on customer phones — never emit localhost. */

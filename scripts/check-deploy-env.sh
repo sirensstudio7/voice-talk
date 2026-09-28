@@ -47,4 +47,4 @@ if [[ $missing -eq 1 ]]; then
   exit 1
 fi
 
-echo "Production env looks ready. See docs/DEPLOY.md for Render + Vercel steps."
+echo "Production env looks ready. See docs/DEPLOY.md for deployment steps."

@@ -1,6 +1,5 @@
-# Render has no first-class Bun runtime, so the API ships as a container.
-# Alpine keeps the image ~2x smaller than the Debian slim variant; sharp has
-# musl builds and Bun ships an official alpine runtime.
+# Ships as a container so any OCI-capable host (VM, Fly.io, Railway, Cloud
+# Run, Kubernetes, Coolify…) can serve the API.
 FROM oven/bun:1.4.0-alpine
 
 # Campaign text on photos is rasterised by sharp's librsvg. Without

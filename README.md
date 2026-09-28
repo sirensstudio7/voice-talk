@@ -170,7 +170,7 @@ NEXT_PUBLIC_WS_URL=wss://YOUR-TUNNEL-URL.trycloudflare.com/ws/session
 ### Production: managed Postgres + custom domain
 
 1. **Database + storage:** see [`docs/DEPLOY.md`](docs/DEPLOY.md) — Aiven Postgres, Cloudflare R2 buckets, migration/copy scripts
-2. **Deploy:** [`docs/DEPLOY-DOMAIN.md`](docs/DEPLOY-DOMAIN.md) — Render (API) + Vercel (apps) + DNS
+2. **Deploy:** [`docs/DEPLOY-DOMAIN.md`](docs/DEPLOY-DOMAIN.md) — container host (API) + frontends + DNS
 
 ```bash
 bun run seed:db          # apply migrations from db/migrations

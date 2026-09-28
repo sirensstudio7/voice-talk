@@ -3,7 +3,7 @@
  *
  * Fastify shipped a pino instance as `app.log`; Elysia has no logger of its own.
  * This keeps the same `(obj, msg)` call shape the job modules already use, and
- * the same newline-delimited JSON on stdout that the Render log viewer parses.
+ * the same newline-delimited JSON on stdout for any log collector.
  */
 export type Logger = {
   info: (obj: unknown, msg?: string) => void;

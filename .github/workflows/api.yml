@@ -97,6 +97,7 @@ jobs:
             -e S3_ACCESS_KEY_ID=ci \
             -e S3_SECRET_ACCESS_KEY=ci \
             -e S3_PUBLIC_BASE_URL=http://127.0.0.1:9 \
+            -e PUBLIC_API_URL=https://api.example.com \
             -e PLATFORM_ADMIN_EMAIL="$PLATFORM_ADMIN_EMAIL" \
             -e PLATFORM_ADMIN_PASSWORD="$PLATFORM_ADMIN_PASSWORD" \
             voicetalk-api:ci
