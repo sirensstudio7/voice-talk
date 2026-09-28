@@ -188,6 +188,7 @@ provision throwaway Postgres + Redis containers and run the full suite
 (health, logins, validation rejections).
 
 CI runs the same lint, typecheck and tests on every push or PR that touches
-the API ([`.github/workflows/api.yml`](.github/workflows/api.yml)).
+the API, then builds the production Docker image and boots it against the
+service containers ([`.github/workflows/api.yml`](.github/workflows/api.yml)).
 
 Template: [`.env.production.example`](.env.production.example)

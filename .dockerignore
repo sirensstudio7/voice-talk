@@ -6,3 +6,8 @@ node_modules
 .git
 .remember
 apps-legacy
+
+# Never bake environment files into the image (apps/server/.env has secrets).
+**/.env
+**/.env.local
+**/.env.*.local

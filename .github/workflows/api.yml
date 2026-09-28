@@ -72,3 +72,21 @@ jobs:
       - name: Tests
         working-directory: apps/server
         run: bun test
+      - name: Build image
+        run: docker build -t voicetalk-api -f apps/server/Dockerfile .
+      - name: Smoke the image
+        run: |
+          docker run -d --name api-image --network host \
+            -e DATABASE_URL="$DATABASE_URL" \
+            -e REDIS_URL="$REDIS_URL" \
+            -e PORT=8098 \
+            -e PLATFORM_ADMIN_EMAIL="$PLATFORM_ADMIN_EMAIL" \
+            -e PLATFORM_ADMIN_PASSWORD="$PLATFORM_ADMIN_PASSWORD" \
+            voicetalk-api
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8098/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -sf "http://127.0.0.1:8098/health?db=1" | grep -q '"db_online":true'
+          curl -sf "http://127.0.0.1:8098/health?db=1" | grep -q '"redis_online":true'
+          docker rm -f api-image
