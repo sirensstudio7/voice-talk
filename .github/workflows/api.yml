@@ -54,7 +54,7 @@ jobs:
       PLATFORM_ADMIN_EMAIL: superadmin@lorescale.com
       PLATFORM_ADMIN_PASSWORD: superadmin123
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
