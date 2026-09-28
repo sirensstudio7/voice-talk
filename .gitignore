@@ -20,3 +20,4 @@ dist/
 .vision.slug
 apps/server/uploads/
 .vercel
+backups/

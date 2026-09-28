@@ -7,27 +7,17 @@ import { SQL } from "bun";
  *   bun scripts/migrate-storage-to-r2.ts --dry-run      # inventory only
  *   bun scripts/migrate-storage-to-r2.ts                # copy objects
  *   bun scripts/migrate-storage-to-r2.ts --rewrite-db   # copy + rewrite URLs
+ *   bun scripts/migrate-storage-to-r2.ts --rewrite-only # rewrite URLs (no copy)
  *
  * Source env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (service role, not anon).
  * Destination env: S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY,
  * S3_REGION (default auto) and S3_PUBLIC_BASE_URL. DATABASE_URL is only needed
  * for --rewrite-db. Re-runs are safe: objects are overwritten in place.
  */
-const BUCKETS = [
-  "lorescale-photos",
-  "photo-branding",
-  "presentation-assets",
-  "campaign-banners",
-  "lucky-spin-prizes",
-  "payment-qr",
-  "payment-proofs",
-  "product-images",
-  "assistant-avatars",
-];
-
 const flags = new Set(process.argv.slice(2));
 const dryRun = flags.has("--dry-run");
 const rewriteDb = flags.has("--rewrite-db");
+const rewriteOnly = flags.has("--rewrite-only");
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -58,6 +48,15 @@ const authHeaders: Record<string, string> = {
   apikey: supabaseKey,
   authorization: `Bearer ${supabaseKey}`,
 };
+
+async function listBuckets(): Promise<string[]> {
+  const response = await fetch(`${supabaseUrl}/storage/v1/bucket`, { headers: authHeaders });
+  if (!response.ok) {
+    throw new Error(`list buckets: ${response.status} ${await response.text()}`);
+  }
+  const buckets = (await response.json()) as Array<{ name: string }>;
+  return buckets.map((bucket) => bucket.name).sort();
+}
 
 async function listObjects(bucket: string, prefix: string): Promise<string[]> {
   const limit = 1000;
@@ -124,14 +123,14 @@ async function rewriteStoredUrls(): Promise<void> {
 
   let touchedColumns = 0;
   for (const column of columns) {
-    const target = `"${column.table_schema}"."${column.table_name}"."${column.column_name}"`;
+    const qualified = `"${column.table_name}"."${column.column_name}"`;
     const [{ count }] = (await sql.unsafe(
-      `select count(*)::int as count from "${column.table_schema}"."${column.table_name}" where ${target} like $1`,
+      `select count(*)::int as count from "${column.table_schema}"."${column.table_name}" where ${qualified} like $1`,
       [pattern],
     )) as Array<{ count: number }>;
     if (count === 0) continue;
     await sql.unsafe(
-      `update "${column.table_schema}"."${column.table_name}" set ${target} = replace(${target}, $1, $2) where ${target} like $3`,
+      `update "${column.table_schema}"."${column.table_name}" set "${column.column_name}" = replace(${qualified}, $1, $2) where ${qualified} like $3`,
       [oldBase, s3PublicBaseUrl, pattern],
     );
     touchedColumns += 1;
@@ -149,24 +148,28 @@ async function rewriteStoredUrls(): Promise<void> {
 }
 
 async function main() {
-  console.log(
-    `${dryRun ? "[dry-run] " : ""}Copying Supabase Storage -> ${s3Endpoint} (${s3PublicBaseUrl})`,
-  );
-  let totalObjects = 0;
-  let totalBytes = 0;
-  for (const bucket of BUCKETS) {
-    const { objects, bytes } = await copyBucket(bucket);
-    totalObjects += objects;
-    totalBytes += bytes;
+  if (!rewriteOnly) {
     console.log(
-      `  ${bucket}: ${objects} object(s), ${(bytes / 1024 / 1024).toFixed(1)} MB${dryRun ? "" : " copied"}`,
+      `${dryRun ? "[dry-run] " : ""}Copying Supabase Storage -> ${s3Endpoint} (${s3PublicBaseUrl})`,
+    );
+    const buckets = await listBuckets();
+    console.log(`Source buckets: ${buckets.join(", ")}`);
+    let totalObjects = 0;
+    let totalBytes = 0;
+    for (const bucket of buckets) {
+      const { objects, bytes } = await copyBucket(bucket);
+      totalObjects += objects;
+      totalBytes += bytes;
+      console.log(
+        `  ${bucket}: ${objects} object(s), ${(bytes / 1024 / 1024).toFixed(1)} MB${dryRun ? "" : " copied"}`,
+      );
+    }
+    console.log(
+      `Done: ${totalObjects} object(s), ${(totalBytes / 1024 / 1024).toFixed(1)} MB${dryRun ? " (dry run)" : ""}.`,
     );
   }
-  console.log(
-    `Done: ${totalObjects} object(s), ${(totalBytes / 1024 / 1024).toFixed(1)} MB${dryRun ? " (dry run)" : ""}.`,
-  );
 
-  if (rewriteDb && !dryRun) {
+  if ((rewriteDb || rewriteOnly) && !dryRun) {
     await rewriteStoredUrls();
   } else if (rewriteDb) {
     console.log("Skipping --rewrite-db in dry-run mode.");
