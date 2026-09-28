@@ -67,6 +67,17 @@ async function migrate() {
     "052_live_only_products.sql",
     "053_live_session_orders.sql",
     "054_live_order_customer_details.sql",
+    "055_kiosk_ui_mode.sql",
+    "056_user_api_keys.sql",
+    "057_user_api_key_source.sql",
+    "058_vision_source_human.sql",
+    "059_booking_addon.sql",
+    "060_booking_settings.sql",
+    "061_booking_staff_photo.sql",
+    "062_presentation_share_token.sql",
+    "063_kiosk_displays.sql",
+    "064_kiosk_unlock_lease.sql",
+    "065_voice_session_kiosk_display.sql",
   ];
 
   for (const file of migrationFiles) {

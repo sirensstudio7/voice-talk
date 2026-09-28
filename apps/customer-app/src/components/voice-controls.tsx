@@ -4,6 +4,7 @@ import {
   CommandLineIcon,
   EllipsisHorizontalIcon,
   HomeIcon,
+  LockClosedIcon,
   MicrophoneIcon,
   PhoneXMarkIcon,
 } from "@heroicons/react/24/outline";
@@ -87,9 +88,11 @@ function AnimatedStatusLabel({ label }: { label: string }) {
 
 interface ExperienceHeaderProps {
   onDisconnect: () => void;
+  onLockKiosk?: () => void;
   orderingEnabled?: boolean;
   bookingEnabled?: boolean;
   compact?: boolean;
+  position?: "absolute" | "relative";
 }
 
 export function LanguageToggle({
@@ -205,9 +208,11 @@ export function LanguageToggle({
 
 export function ExperienceHeader({
   onDisconnect,
+  onLockKiosk,
   orderingEnabled = true,
   bookingEnabled = false,
   compact = false,
+  position = "absolute",
 }: ExperienceHeaderProps) {
   const { status, error, assistantName, avatarUrl, avatarCacheBust, conversationPhase } =
     useSessionStore();
@@ -235,13 +240,17 @@ export function ExperienceHeader({
 
   return (
     <header
-      className={`absolute inset-x-0 top-0 z-20 flex items-center justify-between ${
+      className={`${
+        position === "relative" ? "relative z-20" : "absolute inset-x-0 top-0 z-20"
+      } flex items-center justify-between ${
         compact ? "px-3 pt-3" : "px-5 pt-5"
-      }`}
+      } ${position === "relative" ? (compact ? "pb-2" : "pb-3") : ""}`}
     >
-      <button type="button" className={iconButtonClass} aria-label="Home">
-        <HomeIcon className={headerIconClass} />
-      </button>
+      <div className={`flex items-center ${compact ? "gap-1.5" : "gap-2.5"}`}>
+        <button type="button" className={iconButtonClass} aria-label="Home">
+          <HomeIcon className={headerIconClass} />
+        </button>
+      </div>
 
       <div className={`flex items-center ${compact ? "gap-1.5" : "gap-2.5"}`}>
         <div
@@ -331,6 +340,19 @@ export function ExperienceHeader({
                   >
                     <PhoneXMarkIcon className="h-4 w-4" />
                     End session
+                  </button>
+                ) : null}
+                {onLockKiosk ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onLockKiosk();
+                      setMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <LockClosedIcon className="h-4 w-4" />
+                    Lock kiosk
                   </button>
                 ) : null}
                 {error ? (

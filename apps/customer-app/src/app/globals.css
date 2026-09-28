@@ -148,10 +148,10 @@ body {
 @keyframes avatar-pulse {
   0%,
   100% {
-    transform: scale(1);
+    transform: scale(1.05);
   }
   50% {
-    transform: scale(1.02);
+    transform: scale(1.1);
   }
 }
 
@@ -276,4 +276,27 @@ body {
   animation-fill-mode: forwards;
   will-change: transform, opacity, top;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+@keyframes pin-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-10px);
+  }
+  40% {
+    transform: translateX(10px);
+  }
+  60% {
+    transform: translateX(-6px);
+  }
+  80% {
+    transform: translateX(6px);
+  }
+}
+
+.pin-shake {
+  animation: pin-shake 0.38s ease;
 }

@@ -17,11 +17,13 @@ export async function fetchAvailability(
   businessSlug: string,
   productId: string,
   date: string,
+  staffId?: string | null,
 ): Promise<string[]> {
   const params = new URLSearchParams({
     product_id: productId,
     date,
   });
+  if (staffId) params.set("staff_id", staffId);
   const response = await fetchWithTimeout(
     `${API_URL}/businesses/${encodeURIComponent(businessSlug)}/availability?${params.toString()}`,
     { cache: "no-store" },
@@ -41,6 +43,7 @@ export async function bookAppointment(
     starts_at: string;
     customer_name: string;
     customer_phone?: string;
+    staff_id?: string;
   },
 ): Promise<AppointmentBooking> {
   const response = await fetchWithTimeout(

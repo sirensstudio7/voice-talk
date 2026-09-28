@@ -9,13 +9,14 @@ import {
 } from "@voicetalk/avatar";
 
 import { VoiceAudioEngine } from "@/lib/voice-audio";
-import { mergeTranscriptChunk, stripVerbalizedToolCalls, isStandaloneCustomerNameAsk } from "@voicetalk/shared";
+import { mergeTranscriptChunk, isAssistantTranscriptContinuation, stripVerbalizedToolCalls, isStandaloneCustomerNameAsk } from "@voicetalk/shared";
 import {
   OrderSyncAction,
   registerOrderSyncHandler,
   unregisterOrderSyncHandler,
 } from "@/lib/order-sync";
 import { useBusinessSlug } from "@/context/business-context";
+import { appendKioskAuth } from "@/lib/kiosk-access";
 import { useSessionStore } from "@/store/session-store";
 import { OrderState, TranscriptMessage } from "@/types/voice";
 
@@ -34,6 +35,7 @@ function buildWsUrl(businessSlug: string, language: string): string {
   const url = new URL(base);
   url.searchParams.set("business", businessSlug);
   url.searchParams.set("language", language);
+  appendKioskAuth(url, businessSlug);
   return url.toString();
 }
 
@@ -210,6 +212,7 @@ export function useVoiceSession() {
   const prefetchModeRef = useRef(false);
   const [sessionWarm, setSessionWarm] = useState(false);
   const [micPrimed, setMicPrimed] = useState(false);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [continuousListenActive, setContinuousListenActive] = useState(false);
   const [assistantSpeaking, setAssistantSpeaking] = useState(false);
   const [mouthOpen, setMouthOpen] = useState(0);
@@ -221,6 +224,7 @@ export function useVoiceSession() {
   const [greetingPoseActive, setGreetingPoseActive] = useState(false);
   /** True after session.greeting until the first assistant audio starts the wave. */
   const greetingAwaitingSpeechRef = useRef(false);
+  const greetingWaveUsedRef = useRef(false);
   const greetingPoseEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Avatar thumbs-up — armed when assistant says Ok / Baik. */
   const thumbsUpPoseActiveRef = useRef(false);
@@ -282,7 +286,8 @@ export function useVoiceSession() {
   );
   /** Start a short hello wave when greeting audio begins (matches clip period). */
   const triggerGreetingWave = useCallback(() => {
-    if (greetingPoseActiveRef.current) return;
+    if (greetingWaveUsedRef.current || greetingPoseActiveRef.current) return;
+    greetingWaveUsedRef.current = true;
     greetingAwaitingSpeechRef.current = false;
     setThumbsUpPoseActiveBoth(false);
     setTalkingHandPoseActiveBoth(false);
@@ -346,6 +351,7 @@ export function useVoiceSession() {
   const serverSessionReadyRef = useRef(false);
   const serverSessionReadyResolveRef = useRef<(() => void) | null>(null);
   const revealLoopRef = useRef<number | null>(null);
+  const turnCompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatResetPendingRef = useRef(false);
   const chatResetGenerationRef = useRef(0);
   const {
@@ -382,7 +388,15 @@ export function useVoiceSession() {
     audioRef.current?.setVoicePreset(voicePreset);
   }, [voicePreset]);
 
+  const clearTurnCompleteTimer = useCallback(() => {
+    if (turnCompleteTimerRef.current) {
+      clearTimeout(turnCompleteTimerRef.current);
+      turnCompleteTimerRef.current = null;
+    }
+  }, []);
+
   const resetAssistantSync = useCallback(() => {
+    clearTurnCompleteTimer();
     assistantFullTextRef.current = "";
     assistantAudioStartedRef.current = false;
     visionGreetingTextRef.current = false;
@@ -392,7 +406,7 @@ export function useVoiceSession() {
       cancelAnimationFrame(revealLoopRef.current);
       revealLoopRef.current = null;
     }
-  }, []);
+  }, [clearTurnCompleteTimer]);
 
   const runRevealTick = useCallback(() => {
     const fullText = assistantFullTextRef.current;
@@ -407,7 +421,7 @@ export function useVoiceSession() {
 
     let visibleText: string;
     if (!assistantAudioStartedRef.current && !hasAudio) {
-      visibleText = "";
+      visibleText = fullText;
     } else if (!hasAudio || progress >= 1) {
       visibleText = fullText;
     } else {
@@ -431,12 +445,61 @@ export function useVoiceSession() {
     revealLoopRef.current = requestAnimationFrame(runRevealTick);
   }, [runRevealTick]);
 
+  const finalizeAssistantTurn = useCallback(() => {
+    clearTurnCompleteTimer();
+    if (assistantFullTextRef.current.trim()) {
+      setAssistantDisplayText(assistantFullTextRef.current.trim());
+    }
+    assistantFullTextRef.current = "";
+    assistantAudioStartedRef.current = false;
+    visionGreetingTextRef.current = false;
+    thumbsUpFiredForTurnRef.current = false;
+    talkingHandFiredForTurnRef.current = false;
+    markAssistantTurnBoundary();
+  }, [clearTurnCompleteTimer, markAssistantTurnBoundary, setAssistantDisplayText]);
+
+  const scheduleFinalizeAssistantTurn = useCallback(() => {
+    clearTurnCompleteTimer();
+    const startedAt = Date.now();
+    const settle = () => {
+      const timedOut = Date.now() - startedAt >= 8000;
+      if (!timedOut && (audioRef.current?.hasActivePlayback() ?? false)) {
+        turnCompleteTimerRef.current = setTimeout(settle, 180);
+        return;
+      }
+      turnCompleteTimerRef.current = setTimeout(() => {
+        turnCompleteTimerRef.current = null;
+        finalizeAssistantTurn();
+      }, 280);
+    };
+    settle();
+  }, [clearTurnCompleteTimer, finalizeAssistantTurn]);
+
   const bufferAssistantTranscript = useCallback(
     (incoming: string) => {
       const { transcript, forceNewAssistantBubble } = useSessionStore.getState();
-      const lastRole = transcript.at(-1)?.role;
-      if (lastRole !== "assistant" || forceNewAssistantBubble) {
-        assistantFullTextRef.current = incoming;
+      const last = transcript.at(-1);
+      const lastRole = last?.role;
+      const pendingFinalize = turnCompleteTimerRef.current !== null;
+
+      if (pendingFinalize) {
+        assistantFullTextRef.current = mergeTranscriptChunk(
+          assistantFullTextRef.current || last?.text || "",
+          incoming,
+        );
+        scheduleFinalizeAssistantTurn();
+      } else if (lastRole !== "assistant" || forceNewAssistantBubble) {
+        if (
+          last?.role === "assistant" &&
+          isAssistantTranscriptContinuation(last.text, incoming)
+        ) {
+          assistantFullTextRef.current = mergeTranscriptChunk(
+            assistantFullTextRef.current || last.text,
+            incoming,
+          );
+        } else {
+          assistantFullTextRef.current = incoming;
+        }
       } else {
         assistantFullTextRef.current = mergeTranscriptChunk(
           assistantFullTextRef.current,
@@ -446,7 +509,7 @@ export function useVoiceSession() {
       maybeTriggerThumbsUpFromText(assistantFullTextRef.current);
       startRevealLoop();
     },
-    [maybeTriggerThumbsUpFromText, startRevealLoop],
+    [maybeTriggerThumbsUpFromText, scheduleFinalizeAssistantTurn, startRevealLoop],
   );
 
   const deferChatReset = useCallback(() => {
@@ -588,12 +651,21 @@ export function useVoiceSession() {
     lastSpeechAtRef.current = Date.now();
     setTalking(true);
     setConversationPhase("active");
-    sendControl(wsRef.current, "audio.activity_start");
+    // Do not send activity_start until the first real audio chunk. Empty VAD
+    // starts used to pause the server silence clock with no activity_end.
 
     clearContinuousSilenceTimer();
     continuousSilenceTimerRef.current = setInterval(() => {
       if (!utteranceOpenRef.current || !continuousListenRef.current) return;
-      if (!sentAudioRef.current) return;
+      if (!sentAudioRef.current) {
+        // False VAD — drop locally so the server idle timer keeps running.
+        if (Date.now() - lastSpeechAtRef.current >= 1_500) {
+          utteranceOpenRef.current = false;
+          clearContinuousSilenceTimer();
+          setTalking(false);
+        }
+        return;
+      }
       if (Date.now() - lastSpeechAtRef.current >= CONTINUOUS_SILENCE_MS) {
         signalUtteranceEnd();
       }
@@ -614,8 +686,11 @@ export function useVoiceSession() {
           if (chunkRms(chunk) > CONTINUOUS_SPEECH_RMS) {
             lastSpeechAtRef.current = Date.now();
           }
-          sentAudioRef.current = true;
           if (wsRef.current?.readyState === WebSocket.OPEN) {
+            if (!sentAudioRef.current) {
+              sendControl(wsRef.current, "audio.activity_start");
+            }
+            sentAudioRef.current = true;
             wsRef.current.send(chunk);
           }
         }
@@ -627,6 +702,9 @@ export function useVoiceSession() {
       if (chunkRms(chunk) > CONTINUOUS_SPEECH_RMS) {
         signalUtteranceStartRef.current();
         if (utteranceOpenRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+          if (!sentAudioRef.current) {
+            sendControl(wsRef.current, "audio.activity_start");
+          }
           sentAudioRef.current = true;
           lastSpeechAtRef.current = Date.now();
           wsRef.current.send(chunk);
@@ -859,12 +937,11 @@ export function useVoiceSession() {
     const greetingResponseStarted = () =>
       assistantAudioStartedRef.current || visionGreetingTextRef.current;
 
-    // Open mic as soon as possible — uplink stays muted while visionGreetingPendingRef is set.
-    let opened = await openVisionMicrophone();
-    if (opened) {
-      return true;
-    }
+    const greetingPlaybackDone = () =>
+      greetingResponseStarted() && !(audioRef.current?.hasActivePlayback() ?? false);
 
+    // Wait for the spoken greeting to start (and preferably finish) before
+    // getUserMedia — opening the mic mid-greeting mutes PCM.
     while (Date.now() - started < timeoutMs) {
       if (continuousCaptureRunningRef.current) {
         return true;
@@ -883,11 +960,34 @@ export function useVoiceSession() {
         await flushPendingGreeting();
       }
 
+      if (
+        !visionGreetingPendingRef.current ||
+        greetingPlaybackDone() ||
+        (greetingResponseStarted() && Date.now() - started > 12_000)
+      ) {
+        break;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+
+    if (continuousCaptureRunningRef.current) {
+      return true;
+    }
+
+    let opened = await openVisionMicrophone();
+    if (opened) {
+      return true;
+    }
+
+    while (Date.now() - started < timeoutMs) {
+      if (continuousCaptureRunningRef.current) {
+        return true;
+      }
       opened = await openVisionMicrophone();
       if (opened) {
         return true;
       }
-
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
 
@@ -986,6 +1086,7 @@ export function useVoiceSession() {
     const isPrefetch = prefetchModeRef.current;
     if (requestGreeting) {
       greetingDispatchedRef.current = false;
+      greetingWaveUsedRef.current = false;
     }
 
     const promise = (async () => {
@@ -1085,6 +1186,9 @@ export function useVoiceSession() {
             break;
           case "transcript.user":
             if (payload.text) {
+              if (assistantFullTextRef.current.trim()) {
+                setAssistantDisplayText(assistantFullTextRef.current.trim());
+              }
               resetAssistantSync();
               addTranscript("user", payload.text);
             }
@@ -1142,17 +1246,9 @@ export function useVoiceSession() {
             if (continuousListenRef.current && !visionGreetingPendingRef.current) {
               signalReadyForUserTurn();
             }
-            // Finalize this assistant turn so the next turn starts a new bubble
-            // (prevents stacked goodbye scripts merging into one run-on message).
-            if (assistantFullTextRef.current.trim()) {
-              setAssistantDisplayText(assistantFullTextRef.current.trim());
-            }
-            assistantFullTextRef.current = "";
-            assistantAudioStartedRef.current = false;
-            visionGreetingTextRef.current = false;
-            thumbsUpFiredForTurnRef.current = false;
-            talkingHandFiredForTurnRef.current = false;
-            markAssistantTurnBoundary();
+            // Gemini often flags turn_complete mid-sentence (especially Indonesian).
+            // Wait until audio and trailing transcript fragments settle.
+            scheduleFinalizeAssistantTurn();
             break;
           case "order.updated":
             if (payload.order) {
@@ -1182,9 +1278,7 @@ export function useVoiceSession() {
           case "audio.interrupted":
           case "interrupted":
             audioRef.current?.stopPlayback();
-            if (assistantFullTextRef.current) {
-              setAssistantDisplayText(assistantFullTextRef.current);
-            }
+            finalizeAssistantTurn();
             if (revealLoopRef.current !== null) {
               cancelAnimationFrame(revealLoopRef.current);
               revealLoopRef.current = null;
@@ -1315,7 +1409,7 @@ export function useVoiceSession() {
     } finally {
       connectPromiseRef.current = null;
     }
-  }, [addTranscript, activateMicAfterVisionGreeting, bufferAssistantTranscript, businessSlug, clearContinuousSilenceTimer, clearTranscript, deferChatReset, dispatchGreeting, ensureAudioEngine, ensureContinuousCapture, faqMode, finishVisionGreeting, flushPendingGreeting, markAssistantTurnBoundary, markServerSessionReady, reset, resetAssistantSync, resetServerSessionReady, revealPaymentAfterNamePrompt, setAssistantDisplayText, setConversationPhase, setError, setGreetingPoseActiveBoth, setOrder, setPhotoSouvenirConsent, setStatus, setTalking, setTalkingHandPoseActiveBoth, setThumbsUpPoseActiveBoth, setVisionGreetingPendingBoth, signalReadyForUserTurn, startNewConversation, startRevealLoop, teardownContinuousCapture, teardownSocket, triggerGreetingWave]);
+  }, [addTranscript, activateMicAfterVisionGreeting, bufferAssistantTranscript, businessSlug, clearContinuousSilenceTimer, clearTranscript, deferChatReset, dispatchGreeting, ensureAudioEngine, ensureContinuousCapture, faqMode, finalizeAssistantTurn, finishVisionGreeting, flushPendingGreeting, markAssistantTurnBoundary, markServerSessionReady, reset, resetAssistantSync, resetServerSessionReady, revealPaymentAfterNamePrompt, scheduleFinalizeAssistantTurn, setAssistantDisplayText, setConversationPhase, setError, setGreetingPoseActiveBoth, setOrder, setPhotoSouvenirConsent, setStatus, setTalking, setTalkingHandPoseActiveBoth, setThumbsUpPoseActiveBoth, setVisionGreetingPendingBoth, signalReadyForUserTurn, startNewConversation, startRevealLoop, teardownContinuousCapture, teardownSocket, triggerGreetingWave]);
 
   const reconnectForLanguageChange = useCallback(async () => {
     intentionalDisconnectRef.current = true;
@@ -1474,14 +1568,22 @@ export function useVoiceSession() {
     );
   }, []);
 
+  const markAudioUnlockedIfRunning = useCallback(() => {
+    if (ensureAudioEngine().getAudioContextState() === "running") {
+      setAudioUnlocked(true);
+    }
+  }, [ensureAudioEngine]);
+
   const primeAudioOutput = useCallback(async () => {
     await ensureAudioEngine().unlockPlayback();
-  }, [ensureAudioEngine]);
+    markAudioUnlockedIfRunning();
+  }, [ensureAudioEngine, markAudioUnlockedIfRunning]);
 
   /** Call synchronously inside click/tap handlers before any await. */
   const unlockAudioSync = useCallback(() => {
     ensureAudioEngine().unlockPlaybackSync();
-  }, [ensureAudioEngine]);
+    markAudioUnlockedIfRunning();
+  }, [ensureAudioEngine, markAudioUnlockedIfRunning]);
 
   const primeMicrophone = useCallback(async () => {
     try {
@@ -1574,6 +1676,7 @@ export function useVoiceSession() {
     status,
     isTalking,
     micPrimed,
+    audioUnlocked,
     continuousListenActive,
     visionGreetingPending,
     greetingPoseActive,

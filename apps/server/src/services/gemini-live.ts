@@ -49,6 +49,7 @@ export interface GeminiLiveOptions {
   onPhotoConsent?: (consent: "yes" | "no") => void;
   photoMomentEnabled?: boolean;
   inputSampleRate?: number;
+  bookingStaff?: Array<{ id: string; name: string; specialty: string }>;
 }
 
 export async function* startGeminiSession(
@@ -65,6 +66,7 @@ export async function* startGeminiSession(
         businessId: options.businessId ?? "",
         products: options.products,
         voiceSessionId: options.voiceSessionId,
+        staff: options.bookingStaff,
       })
     : options.faqEnabled
       ? buildFaqToolMapping({})
@@ -122,6 +124,24 @@ async function* runSingleSession(
   let sessionClosed = false;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let liveSession: any = null;
+  let turnCompleteTimer: ReturnType<typeof setTimeout> | null = null;
+  let turnCompletePending = false;
+
+  const clearTurnCompleteTimer = () => {
+    if (turnCompleteTimer) {
+      clearTimeout(turnCompleteTimer);
+      turnCompleteTimer = null;
+    }
+  };
+
+  const armTurnComplete = () => {
+    clearTurnCompleteTimer();
+    turnCompleteTimer = setTimeout(() => {
+      turnCompleteTimer = null;
+      turnCompletePending = false;
+      if (!sessionClosed) pushEvent({ type: "turn_complete" });
+    }, 350);
+  };
 
   const pushEvent = (event: SessionEvent) => {
     eventQueue.push(event);
@@ -192,6 +212,7 @@ async function* runSingleSession(
           bookingEnabled: options.bookingEnabled ?? false,
           faqEnabled: options.faqEnabled ?? false,
           photoMomentEnabled: options.photoMomentEnabled ?? false,
+          bookingStaff: Boolean(options.bookingStaff?.length),
         }) as never,
       },
       callbacks: {
@@ -215,6 +236,7 @@ async function* runSingleSession(
             if (serverContent.modelTurn?.parts) {
               for (const part of serverContent.modelTurn.parts) {
                 if (part.inlineData?.data) {
+                  if (turnCompletePending) armTurnComplete();
                   const data = Buffer.from(part.inlineData.data, "base64");
                   await callbacks.audioOutput(data);
                 }
@@ -229,6 +251,7 @@ async function* runSingleSession(
             }
 
             if (serverContent.outputTranscription?.text?.trim()) {
+              if (turnCompletePending) armTurnComplete();
               pushEvent({
                 type: "transcript.assistant",
                 text: serverContent.outputTranscription.text.trimEnd(),
@@ -236,10 +259,13 @@ async function* runSingleSession(
             }
 
             if (serverContent.turnComplete) {
-              pushEvent({ type: "turn_complete" });
+              turnCompletePending = true;
+              armTurnComplete();
             }
 
             if (serverContent.interrupted) {
+              clearTurnCompleteTimer();
+              turnCompletePending = false;
               await callbacks.audioInterrupt?.();
               pushEvent({ type: "interrupted" });
             }
@@ -294,6 +320,8 @@ async function* runSingleSession(
           }
         },
         onclose: () => {
+          clearTurnCompleteTimer();
+          turnCompletePending = false;
           pushEvent(null);
         },
       },
@@ -316,6 +344,8 @@ async function* runSingleSession(
     }
   } finally {
     sessionClosed = true;
+    clearTurnCompleteTimer();
+    turnCompletePending = false;
     try {
       liveSession?.close();
     } catch {

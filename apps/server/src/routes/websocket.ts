@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import {
-  getBusinessCapabilities,
   getVoicePresetGeminiVoice,
   isCombinedCustomerNameAsk,
   isStandaloneCustomerNameAsk,
@@ -29,6 +28,8 @@ import {
   getSmartPhotoMomentPublicConfig,
 } from "../services/addon-entitlement.js";
 import { getOrCreateLuckySpinSettings } from "../services/lucky-spin.js";
+import { resolveCapabilities } from "../services/capabilities.js";
+import { getBookingPublicConfig } from "../services/booking.js";
 import { getOrCreateVisionSettings, ensureVisionHub, setKioskSessionActive, releaseKioskSession, getVisionHub } from "../services/vision-orchestrator.js";
 import { handleClientOrderMessage } from "../services/client-order.js";
 import {
@@ -51,11 +52,16 @@ import {
 import { OrderStore } from "../services/order-store.js";
 import type { ProductInfo } from "../services/tools.js";
 import { getBusinessBySlug } from "../services/tenant.js";
+import { resolveGeminiApiKeyForUser } from "../services/user-api-keys.js";
 import {
   getOwnerUserIdForBusiness,
   safeAssertCanStartVoiceSession,
   safeDebitEndedSession,
 } from "../services/voice-minutes.js";
+import {
+  registerActiveVoiceSession,
+  unregisterActiveVoiceSession,
+} from "../services/voice-session-runtime.js";
 
 const CONVERSATION_COMPLETION_GRACE_MS = 5_000;
 
@@ -107,22 +113,19 @@ function getGeminiModel(tenant: { geminiModel: string }): string {
 
 export async function registerWebSocketRoutes(app: FastifyInstance): Promise<void> {
   app.get("/ws/session", { websocket: true }, (socket, request) => {
-    void handleSession(socket, request.query as { business?: string; language?: string });
+    void handleSession(
+      socket,
+      request.query as { business?: string; language?: string; kiosk_id?: string; token?: string },
+    );
   });
 }
 
 async function handleSession(
   socket: WebSocket,
-  query: { business?: string; language?: string },
+  query: { business?: string; language?: string; kiosk_id?: string; token?: string },
 ): Promise<void> {
   const slug = query.business || env.DEFAULT_BUSINESS_SLUG;
   console.info(`Session websocket connected for business=${slug}`);
-
-  if (!env.GEMINI_API_KEY) {
-    safeSendJson(socket, { type: "error", error: "GEMINI_API_KEY is not configured." });
-    socket.close();
-    return;
-  }
 
   const tenant = await getBusinessBySlug(slug);
   if (!tenant) {
@@ -131,16 +134,39 @@ async function handleSession(
     return;
   }
 
-  const capabilities = getBusinessCapabilities(
-    tenant.primaryUseCase,
-    tenant.businessType,
-  );
+  try {
+    const { assertKioskSocketAccess } = await import("../services/kiosk-displays.js");
+    await assertKioskSocketAccess({
+      businessId: tenant.id,
+      kioskSlug: query.kiosk_id,
+      token: query.token,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Kiosk unlock required.";
+    safeSendJson(socket, { type: "error", error: message });
+    socket.close();
+    return;
+  }
+
+  const ownerUserId = await getOwnerUserIdForBusiness(tenant.id);
+  const geminiApiKey = await resolveGeminiApiKeyForUser(ownerUserId);
+  if (!geminiApiKey) {
+    safeSendJson(socket, { type: "error", error: "GEMINI_API_KEY is not configured." });
+    socket.close();
+    return;
+  }
+
+  const { capabilities, bookingAddonActive } = await resolveCapabilities(tenant);
+  const bookingConfig = bookingAddonActive
+    ? await getBookingPublicConfig(tenant.id)
+    : { active: false, staff: [], services: [] };
   const orderingEnabled = capabilities.ordering_enabled;
   const bookingEnabled = capabilities.booking_enabled;
   const faqEnabled = !orderingEnabled && !bookingEnabled;
   const idleTimeoutMs = resolveIdleTimeoutMs(tenant.aiRules);
+  let visionSettingsCache: Awaited<ReturnType<typeof getOrCreateVisionSettings>> | null =
+    await getOrCreateVisionSettings(tenant.id);
 
-  const ownerUserId = await getOwnerUserIdForBusiness(tenant.id);
   let minuteWalletSeconds: number | null = null;
   if (ownerUserId) {
     try {
@@ -161,20 +187,35 @@ async function handleSession(
     }
   }
 
-  const voiceSession = await createVoiceSession(tenant.id);
+  const { resolveKioskDisplayIdForSession } = await import("../services/kiosk-displays.js");
+  const kioskDisplayId = await resolveKioskDisplayIdForSession(tenant.id, query.kiosk_id);
+  const voiceSession = await createVoiceSession(tenant.id, kioskDisplayId);
   const voiceSessionId = voiceSession.id;
-  const productList: ProductInfo[] = capabilities.menu_enabled
-    ? getActiveProducts(tenant).map((p) => ({
-        id: p.productId,
-        name: p.name,
-        price: p.price,
-        discount_percent: p.discountPercent,
-        category: p.category,
-        description: p.description,
-        image_url: p.imageUrl,
-        duration_min: p.durationMin,
-      }))
-    : [];
+  const catalogProducts: ProductInfo[] =
+    bookingEnabled && bookingConfig.services.length > 0
+      ? bookingConfig.services.map((service) => ({
+          id: service.id,
+          name: service.name,
+          price: service.price,
+          discount_percent: 0,
+          category: "Service",
+          description: service.description,
+          image_url: "",
+          duration_min: service.duration_min,
+        }))
+      : capabilities.menu_enabled
+        ? getActiveProducts(tenant).map((p) => ({
+            id: p.productId,
+            name: p.name,
+            price: p.price,
+            discount_percent: p.discountPercent,
+            category: p.category,
+            description: p.description,
+            image_url: p.imageUrl,
+            duration_min: p.durationMin,
+          }))
+        : [];
+  const productList = catalogProducts;
 
   const orderStore = new OrderStore();
   const audioQueue = createAudioQueue();
@@ -188,7 +229,6 @@ async function handleSession(
   let lastNameCorrectionTurn = "";
   let visionMode = false;
   let visionSilenceStage: "none" | "follow_up" | "goodbye" = "none";
-  let visionSettingsCache: Awaited<ReturnType<typeof getOrCreateVisionSettings>> | null = null;
   const transcriptBuffer = createTranscriptTurnBuffer();
 
   const maybeCompleteAfterUserTurn = (userText: string) => {
@@ -212,6 +252,21 @@ async function handleSession(
     return snap.status === "confirmed" && !String(snap.customer_name ?? "").trim();
   };
 
+  const shouldUseVisionIdleTimeout = () =>
+    Boolean(visionSettingsCache) &&
+    (visionMode || visionSettingsCache!.cameraTriggerEnabled || !faqEnabled);
+
+  const speakVisionGoodbyeAndEnd = () => {
+    if (completionScheduled) return;
+    visionSilenceStage = "goodbye";
+    audioQueue.push(
+      new ClientTextEvent(
+        buildVisionGoodbyePrompt(resolvedLanguage, visionSettingsCache?.goodbyeScript),
+      ),
+    );
+    completeConversation("vision_silence_timeout");
+  };
+
   const scheduleIdleTimeout = () => {
     if (completionScheduled) return;
 
@@ -222,9 +277,10 @@ async function handleSession(
       return;
     }
 
-    if (visionMode && visionSettingsCache) {
+    if (shouldUseVisionIdleTimeout() && visionSettingsCache) {
       clearIdleTimer();
       const silenceMs = visionSettingsCache.silenceTimeoutSeconds * 1000;
+      const goodbyeMs = visionSettingsCache.autoGoodbyeTimeoutSeconds * 1000;
       if (visionSilenceStage === "none") {
         idleTimer = setTimeout(() => {
           if (completionScheduled) return;
@@ -233,31 +289,33 @@ async function handleSession(
             return;
           }
           visionSilenceStage = "follow_up";
+          console.info(
+            `Vision silence follow-up business=${slug} after=${visionSettingsCache!.silenceTimeoutSeconds}s`,
+          );
           audioQueue.push(
             new ClientTextEvent(buildVisionSilenceFollowUpPrompt(resolvedLanguage)),
           );
-          scheduleIdleTimeout();
+          // Auto-goodbye starts after the follow-up is spoken (turn_complete).
+          // If that turn never completes, still end after auto-goodbye plus a
+          // short pad so the follow-up line can finish.
+          idleTimer = setTimeout(() => {
+            if (completionScheduled || visionSilenceStage !== "follow_up") return;
+            speakVisionGoodbyeAndEnd();
+          }, goodbyeMs + 4_000);
         }, silenceMs);
         return;
       }
       if (visionSilenceStage === "follow_up") {
-        const goodbyeMs = visionSettingsCache.autoGoodbyeTimeoutSeconds * 1000;
         idleTimer = setTimeout(() => {
           if (completionScheduled) return;
           if (orderingEnabled && isAwaitingCheckoutName()) {
             visionSilenceStage = "none";
             return;
           }
-          visionSilenceStage = "goodbye";
-          audioQueue.push(
-            new ClientTextEvent(
-              buildVisionGoodbyePrompt(
-                resolvedLanguage,
-                visionSettingsCache?.goodbyeScript,
-              ),
-            ),
+          console.info(
+            `Vision auto-goodbye business=${slug} after=${visionSettingsCache!.autoGoodbyeTimeoutSeconds}s more silence`,
           );
-          completeConversation("vision_silence_timeout");
+          speakVisionGoodbyeAndEnd();
         }, goodbyeMs);
         return;
       }
@@ -293,7 +351,8 @@ async function handleSession(
     endReason = reason;
     safeSendJson(socket, { type: "conversation.complete", reason });
 
-    // After goodbye audio grace, free the vision hub if the kiosk never sent released.
+    // Staff-ended sessions stop immediately. Natural wrap-up keeps goodbye audio grace.
+    const graceMs = reason === "admin" ? 0 : CONVERSATION_COMPLETION_GRACE_MS;
     setTimeout(() => {
       audioQueue.push(SHUTDOWN);
       if (!visionMode) return;
@@ -310,8 +369,10 @@ async function handleSession(
           console.warn(`Vision release on conversation.complete failed business=${slug}`, err);
         }
       })();
-    }, CONVERSATION_COMPLETION_GRACE_MS);
+    }, graceMs);
   };
+
+  registerActiveVoiceSession(voiceSessionId, completeConversation);
 
   const resolvedLanguage = resolveLanguage(tenant.aiRules, query.language);
 
@@ -388,11 +449,16 @@ async function handleSession(
         return;
       }
       if (msgType === "audio.activity_start") {
+        // Pause the silence clock while the mic is open. Do not reset the
+        // follow-up/goodbye stage — kiosk VAD blips used to wipe the timer
+        // and never restart it, so sessions stayed active forever.
         clearIdleTimer();
-        visionSilenceStage = "none";
         audioQueue.push(ACTIVITY_START);
       } else if (msgType === "audio.activity_end") {
         audioQueue.push(ACTIVITY_END);
+        if (shouldUseVisionIdleTimeout()) {
+          scheduleIdleTimeout();
+        }
       } else if (msgType === "audio.stream_end") {
         audioQueue.push(AUDIO_STREAM_END);
       } else if (msgType === "input.text") {
@@ -425,9 +491,7 @@ async function handleSession(
         void (async () => {
           const source = greetingSource;
           visionMode = source === "vision";
-          if (visionMode) {
-            visionSettingsCache = await getOrCreateVisionSettings(tenant.id);
-          }
+          visionSettingsCache = await getOrCreateVisionSettings(tenant.id);
           const assistantName = resolveAssistantName(tenant.aiRules);
           const greetingPrompt = visionMode
             ? buildVisionGreetingPrompt(
@@ -444,6 +508,16 @@ async function handleSession(
                 orderingEnabled,
               );
           audioQueue.push(new ClientTextEvent(greetingPrompt));
+          // If Gemini never emits turn_complete, still start the silence /
+          // auto-goodbye clock so a raise-hand session cannot sit open forever.
+          if (shouldUseVisionIdleTimeout()) {
+            setTimeout(() => {
+              if (completionScheduled) return;
+              if (visionSilenceStage !== "none") return;
+              if (idleTimer) return;
+              scheduleIdleTimeout();
+            }, 12_000);
+          }
         })();
       } else if (msgType === "session.photo_offer") {
         // Legacy post-payment offer — kept for compatibility; preferred flow asks before name.
@@ -547,6 +621,9 @@ async function handleSession(
   let systemInstruction = buildSystemInstruction(tenant, query.language, {
     photoMomentEnabled: orderingEnabled && photoMomentEnabled,
     photoVoicePrompt,
+    bookingAddonActive,
+    bookingStaff: bookingConfig.staff,
+    bookingServices: bookingConfig.services,
   });
   if (transcript.length) {
     systemInstruction += buildTranscriptContext(transcript, resolvedLanguage);
@@ -561,7 +638,7 @@ async function handleSession(
     // inside startGeminiSession — do not claim ready before the live session exists.
     for await (const event of startGeminiSession(
       {
-        apiKey: env.GEMINI_API_KEY,
+        apiKey: geminiApiKey,
         model: getGeminiModel(tenant),
         systemInstruction,
         orderStore,
@@ -579,6 +656,11 @@ async function handleSession(
         onConfirm,
         onSetCustomerName,
         onPhotoConsent,
+        bookingStaff: bookingConfig.staff.map((person) => ({
+          id: person.id,
+          name: person.name,
+          specialty: person.specialty,
+        })),
       },
       audioQueue.iterable,
       {
@@ -695,8 +777,12 @@ async function handleSession(
           maybeCorrectCombinedNameAsk();
         }
 
-        if (role === "user" && maybeCompleteAfterUserTurn(transcriptBuffer.peek("user"))) {
-          continue;
+        if (role === "user") {
+          visionSilenceStage = "none";
+          clearIdleTimer();
+          if (maybeCompleteAfterUserTurn(transcriptBuffer.peek("user"))) {
+            continue;
+          }
         }
         continue;
       }
@@ -710,7 +796,7 @@ async function handleSession(
         if (maybeCompleteAfterUserTurn(transcriptBuffer.peek("user"))) {
           continue;
         }
-        if (faqEnabled || visionMode) {
+        if (faqEnabled || shouldUseVisionIdleTimeout()) {
           scheduleIdleTimeout();
         }
         maybeCorrectCombinedNameAsk();
@@ -735,6 +821,7 @@ async function handleSession(
     safeSendJson(socket, { type: "error", error: formatConnectionError(err) });
   }
   } finally {
+    unregisterActiveVoiceSession(voiceSessionId);
     clearIdleTimer();
     clearMinutesCutoff();
     audioQueue.push(SHUTDOWN);

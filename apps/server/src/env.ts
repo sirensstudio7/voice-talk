@@ -1,6 +1,10 @@
 import { config } from "dotenv";
+import { setDefaultResultOrder } from "node:dns";
 import { resolve } from "node:path";
 import { z } from "zod";
+
+// Prefer IPv4 so Supabase pooler connects instead of hanging on IPv6.
+setDefaultResultOrder("ipv4first");
 
 config({ path: resolve(process.cwd(), "../../.env") });
 config({ path: resolve(process.cwd(), "../../.env.local"), override: true });
@@ -33,10 +37,39 @@ const envSchema = z.object({
   /** Comma-separated production domains always allowed over HTTPS, e.g. lorescale.com */
   PRODUCTION_DOMAIN: z.string().default("lorescale.com"),
   /** Public origin for photo QR download links (marketing app hosts /p/[token]). */
-  PHOTO_DOWNLOAD_BASE_URL: z.string().default("http://localhost:6690"),
+  PHOTO_DOWNLOAD_BASE_URL: z.string().optional(),
+  /** Public API origin used in QR codes. Phones cannot reach localhost. */
+  PUBLIC_API_URL: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);
+
+function isLocalhostUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === "localhost" || host === "127.0.0.1";
+  } catch {
+    return true;
+  }
+}
+
+/** Public API phones can reach. Never localhost. */
+export function getPublicApiBaseUrl(): string {
+  const configured = env.PUBLIC_API_URL?.trim();
+  if (configured && !isLocalhostUrl(configured)) {
+    return configured.replace(/\/+$/, "");
+  }
+  return "https://voice-talk-api.onrender.com";
+}
+
+/** QR links are scanned on customer phones — never emit localhost. */
+export function getPhotoDownloadBaseUrl(): string {
+  const configured = env.PHOTO_DOWNLOAD_BASE_URL?.trim();
+  if (configured && !isLocalhostUrl(configured)) {
+    return configured.replace(/\/+$/, "");
+  }
+  return getPublicApiBaseUrl();
+}
 
 export function getAllowedOrigins(): string[] | true {
   const raw = env.ALLOWED_ORIGINS?.trim();

@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 
 import { BusinessProvider } from "@/context/business-context";
+import { KioskUnlockGate } from "@/components/kiosk-unlock-gate";
 import { VoiceExperience } from "@/components/voice-experience";
 
 export function BusinessVoicePage() {
@@ -11,7 +12,9 @@ export function BusinessVoicePage() {
 
   return (
     <BusinessProvider slug={slug}>
-      <VoiceExperience />
+      <KioskUnlockGate businessSlug={slug}>
+        <VoiceExperience />
+      </KioskUnlockGate>
     </BusinessProvider>
   );
 }

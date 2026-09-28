@@ -21,6 +21,7 @@ export type EntitlementSnapshot = {
   plan_name: string;
   workspace_limit: number;
   workspace_count: number;
+  kiosk_display_limit: number;
   trial_started_at: string | null;
   trial_ends_at: string | null;
   starts_at: string | null;
@@ -202,6 +203,7 @@ export async function getEntitlementSnapshot(userId: string): Promise<Entitlemen
     plan_name: plan?.name ?? "Unknown",
     workspace_limit: row.workspaceLimit,
     workspace_count: workspaceCount,
+    kiosk_display_limit: Math.max(1, plan?.kioskDisplayLimit ?? 1),
     trial_started_at: toIso(row.trialStartedAt),
     trial_ends_at: toIso(row.trialEndsAt),
     starts_at: toIso(row.startsAt),

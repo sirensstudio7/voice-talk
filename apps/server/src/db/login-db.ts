@@ -6,7 +6,7 @@ import * as schema from "./schema.js";
 
 type AppDb = PostgresJsDatabase<typeof schema>;
 
-const LOGIN_DB_TIMEOUT_MS = 12_000;
+const LOGIN_DB_TIMEOUT_MS = 30_000;
 
 /**
  * Run auth lookups on a disposable 1-connection client.
@@ -19,7 +19,7 @@ export async function withLoginDb<T>(fn: (db: AppDb) => Promise<T>): Promise<T> 
   const client = postgres(env.DATABASE_URL, {
     prepare: false,
     max: 1,
-    connect_timeout: 10,
+    connect_timeout: 25,
     idle_timeout: 5,
     max_lifetime: 30,
     connection: {

@@ -26,6 +26,39 @@ export const DEFAULT_VISION_SETTINGS = {
   goodbyeScript: "Thank you. Have a wonderful day.",
 } as const;
 
+export const DEFAULT_VISION_SCRIPTS_ID = {
+  greetingScript: "Halo, selamat datang. Ada yang bisa saya bantu?",
+  goodbyeScript: "Terima kasih. Semoga hari Anda menyenangkan.",
+} as const;
+
+const ENGLISH_VISION_SCRIPT_RE =
+  /\b(hello|welcome|thank you|thanks|how may|how can|assist you|wonderful day|good (morning|afternoon|evening))\b/i;
+const INDONESIAN_VISION_SCRIPT_RE =
+  /\b(halo|selamat|terima kasih|bisa saya|bantu|pagi|siang|sore|malam)\b/i;
+
+/** Pick a spoken script that matches the kiosk language (ignore leftover English defaults). */
+export function resolveSpokenVisionScript(
+  script: string | null | undefined,
+  language: string,
+  kind: "greeting" | "goodbye",
+): string {
+  const fallbackEn =
+    kind === "greeting"
+      ? DEFAULT_VISION_SETTINGS.greetingScript
+      : DEFAULT_VISION_SETTINGS.goodbyeScript;
+  const fallbackId =
+    kind === "greeting"
+      ? DEFAULT_VISION_SCRIPTS_ID.greetingScript
+      : DEFAULT_VISION_SCRIPTS_ID.goodbyeScript;
+  const text = String(script ?? "").trim();
+  if (language === "en") return text || fallbackEn;
+  if (!text || text === fallbackEn) return fallbackId;
+  if (ENGLISH_VISION_SCRIPT_RE.test(text) && !INDONESIAN_VISION_SCRIPT_RE.test(text)) {
+    return fallbackId;
+  }
+  return text;
+}
+
 export function normalizeGreetingTriggerMode(value: unknown): GreetingTriggerMode {
   const mode = String(value ?? "").trim().toLowerCase();
   if (mode === "gesture") return "gesture";

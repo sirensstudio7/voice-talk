@@ -20,6 +20,11 @@ import { useAuth } from "@/lib/auth";
 import { customerAppUrl } from "@/lib/customer-app";
 import { compressImageForUpload, formatFileSize } from "@/lib/compress-image";
 import {
+  DEFAULT_KIOSK_UI_MODE,
+  normalizeKioskUiMode,
+  type KioskUiMode,
+} from "@/lib/kiosk-ui-mode";
+import {
   normalizeDisplayOrientationSetting,
   useResolvedDisplayOrientation,
   type DisplayOrientation,
@@ -91,13 +96,16 @@ function VoicePagePreview({
   backgroundUrl,
   gradientColor,
   orientation,
+  uiMode,
 }: {
   backgroundUrl: string;
   gradientColor: string;
   orientation: DisplayOrientation;
+  uiMode: KioskUiMode;
 }) {
   const previewGradient = buildBottomGradient(gradientColor);
   const isLandscape = orientation === "landscape";
+  const isStudio = uiMode === "studio";
 
   return (
     <div
@@ -115,7 +123,32 @@ function VoicePagePreview({
           <Image src={backgroundUrl} alt="" fill unoptimized className="object-cover" />
         ) : null}
 
-        {isLandscape ? (
+        {isStudio ? (
+          isLandscape ? (
+            <div className="absolute inset-1.5 flex gap-1">
+              <div className="relative flex-1 overflow-hidden rounded-md bg-slate-200">
+                <div className="absolute inset-x-[22%] bottom-1 top-[18%] rounded-t-full bg-primary/25" />
+              </div>
+              <div className="flex w-[42%] flex-col gap-1 rounded-md bg-background p-1">
+                <div className="h-1.5 w-3/4 rounded-sm bg-muted" />
+                <div className="h-2 w-full rounded-sm bg-muted" />
+                <div className="ml-auto h-2 w-3/4 rounded-sm bg-primary/30" />
+                <div className="mt-auto h-2 w-full rounded-sm bg-muted" />
+              </div>
+            </div>
+          ) : (
+            <div className="absolute inset-1.5 flex flex-col gap-1">
+              <div className="relative h-[46%] overflow-hidden rounded-md bg-slate-200">
+                <div className="absolute inset-x-[28%] bottom-0 top-[18%] rounded-t-full bg-primary/25" />
+              </div>
+              <div className="flex flex-1 flex-col gap-1 rounded-md bg-background p-1">
+                <div className="h-1.5 w-2/3 rounded-sm bg-muted" />
+                <div className="h-2 w-full rounded-sm bg-muted" />
+                <div className="ml-auto h-2 w-3/4 rounded-sm bg-primary/30" />
+              </div>
+            </div>
+          )
+        ) : isLandscape ? (
           <>
             <div className="absolute inset-x-0 top-[12%] bottom-[38%] flex items-end justify-center">
               <div className="relative h-[58%] w-[44%]">
@@ -137,19 +170,65 @@ function VoicePagePreview({
           </>
         )}
 
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-x-0 bottom-0 z-10",
-            isLandscape ? "h-[54%]" : "h-[45%]",
-          )}
-          style={{ background: previewGradient }}
-        />
+        {!isStudio ? (
+          <>
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-x-0 bottom-0 z-10",
+                isLandscape ? "h-[54%]" : "h-[45%]",
+              )}
+              style={{ background: previewGradient }}
+            />
 
-        <div className="absolute inset-x-0 bottom-2.5 z-20 flex items-end justify-center gap-1.5 px-2.5">
-          <div className="h-5 flex-1 rounded-full bg-background/90 ring-1 ring-border/50" />
-          <div className="size-7 rounded-full bg-primary ring-2 ring-background/80" />
-        </div>
+            <div className="absolute inset-x-0 bottom-2.5 z-20 flex items-end justify-center gap-1.5 px-2.5">
+              <div className="h-5 flex-1 rounded-full bg-background/90 ring-1 ring-border/50" />
+              <div className="size-7 rounded-full bg-primary ring-2 ring-background/80" />
+            </div>
+          </>
+        ) : null}
       </div>
+    </div>
+  );
+}
+
+function ThemeSwitcher({
+  value,
+  onChange,
+}: {
+  value: KioskUiMode;
+  onChange: (mode: KioskUiMode) => void;
+}) {
+  const options: Array<{ value: KioskUiMode; label: string; description: string }> = [
+    { value: "classic", label: "Classic", description: "Full-screen avatar with overlay controls" },
+    { value: "studio", label: "Studio", description: "Avatar on the left, conversation on the right" },
+  ];
+
+  return (
+    <div className="flex flex-col items-center gap-2" role="group" aria-label="Switch theme">
+      <div className="inline-flex items-center rounded-lg border border-border bg-background p-1 shadow-sm">
+        {options.map((option) => {
+          const selected = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onChange(option.value)}
+              className={cn(
+                "rounded-md px-4 py-2 text-sm font-medium transition-colors",
+                selected
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-center text-xs text-muted-foreground">
+        {options.find((option) => option.value === value)?.description}
+      </p>
     </div>
   );
 }
@@ -375,6 +454,8 @@ export function AppearancePageClient() {
   const [gradientInput, setGradientInput] = useState(DEFAULT_GRADIENT_COLOR);
   const [savedOrientation, setSavedOrientation] = useState<DisplayOrientationSetting>("landscape");
   const [orientationInput, setOrientationInput] = useState<DisplayOrientationSetting>("landscape");
+  const [savedUiMode, setSavedUiMode] = useState<KioskUiMode>(DEFAULT_KIOSK_UI_MODE);
+  const [uiModeInput, setUiModeInput] = useState<KioskUiMode>(DEFAULT_KIOSK_UI_MODE);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [savingAppearance, setSavingAppearance] = useState(false);
@@ -393,6 +474,8 @@ export function AppearancePageClient() {
       setGradientInput(settings.gradient_color || DEFAULT_GRADIENT_COLOR);
       setSavedOrientation(normalizeDisplayOrientation(settings.display_orientation));
       setOrientationInput(normalizeDisplayOrientation(settings.display_orientation));
+      setSavedUiMode(normalizeKioskUiMode(settings.kiosk_ui_mode));
+      setUiModeInput(normalizeKioskUiMode(settings.kiosk_ui_mode));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load appearance settings.");
     } finally {
@@ -475,11 +558,14 @@ export function AppearancePageClient() {
       const settings = await api.updateAppearanceSettings(token, business.id, {
         gradient_color: normalized.toLowerCase() === DEFAULT_GRADIENT_COLOR ? "" : normalized,
         display_orientation: orientationInput,
+        kiosk_ui_mode: uiModeInput,
       });
       setSavedGradientColor(settings.gradient_color);
       setGradientInput(settings.gradient_color || DEFAULT_GRADIENT_COLOR);
       setSavedOrientation(normalizeDisplayOrientation(settings.display_orientation));
       setOrientationInput(normalizeDisplayOrientation(settings.display_orientation));
+      setSavedUiMode(normalizeKioskUiMode(settings.kiosk_ui_mode));
+      setUiModeInput(normalizeKioskUiMode(settings.kiosk_ui_mode));
       setMessage("Appearance settings saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save appearance settings.");
@@ -497,6 +583,7 @@ export function AppearancePageClient() {
   const handleDiscardChanges = () => {
     setGradientInput(savedGradientColor || DEFAULT_GRADIENT_COLOR);
     setOrientationInput(savedOrientation);
+    setUiModeInput(savedUiMode);
     setError(null);
     setMessage(null);
   };
@@ -508,7 +595,8 @@ export function AppearancePageClient() {
     normalizedGradient.toLowerCase() !==
     (savedGradientColor || DEFAULT_GRADIENT_COLOR).toLowerCase();
   const orientationDirty = orientationInput !== savedOrientation;
-  const appearanceDirty = gradientDirty || orientationDirty;
+  const uiModeDirty = uiModeInput !== savedUiMode;
+  const appearanceDirty = gradientDirty || orientationDirty || uiModeDirty;
 
   const footerStyle = {
     left: isMobile
@@ -534,7 +622,7 @@ export function AppearancePageClient() {
           action={
             business?.slug ? (
               <Button variant="outline" size="sm" asChild>
-                <Link href={customerAppUrl(business.slug)} target="_blank" rel="noreferrer">
+                <Link href={`${customerAppUrl(business.slug)}?ui=${uiModeInput}`} target="_blank" rel="noreferrer">
                   <ArrowTopRightOnSquareIcon />
                   Open voice page
                 </Link>
@@ -566,12 +654,14 @@ export function AppearancePageClient() {
                   {orientationInput === "auto" ? " Preview reflects your current screen size." : null}
                 </CardDescription>
               </CardHeader>
-              <div className="flex justify-center rounded-lg bg-muted/40 px-6 py-10">
+              <div className="flex flex-col items-center gap-6 rounded-lg bg-muted/40 px-6 py-10">
                 <VoicePagePreview
                   backgroundUrl={previewUrl}
                   gradientColor={gradientInput}
                   orientation={previewOrientation}
+                  uiMode={uiModeInput}
                 />
+                <ThemeSwitcher value={uiModeInput} onChange={setUiModeInput} />
               </div>
             </section>
 

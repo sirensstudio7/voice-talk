@@ -16,10 +16,17 @@ export class OrderValidationError extends Error {
   }
 }
 
-export async function createVoiceSession(businessId: string) {
+export async function createVoiceSession(
+  businessId: string,
+  kioskDisplayId?: string | null,
+) {
   const [session] = await db
     .insert(voiceSessions)
-    .values({ businessId, status: "active" })
+    .values({
+      businessId,
+      status: "active",
+      ...(kioskDisplayId ? { kioskDisplayId } : {}),
+    })
     .returning();
   return session!;
 }

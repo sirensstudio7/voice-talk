@@ -1,0 +1,2 @@
+ALTER TABLE booking_staff
+  ADD COLUMN IF NOT EXISTS photo_url TEXT NOT NULL DEFAULT '';

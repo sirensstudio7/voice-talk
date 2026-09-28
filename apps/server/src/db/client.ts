@@ -22,7 +22,7 @@ function createSqlClient(): Sql {
     // Transaction pooler cannot multiplex; session pooler can hold a few.
     prepare: false,
     max: usesTransactionPooler ? 1 : usesSupabasePooler ? 4 : 10,
-    connect_timeout: 10,
+    connect_timeout: 25,
     // Recycle idle / old sockets so a bad pooler connection cannot linger.
     idle_timeout: usesTransactionPooler ? 5 : 20,
     max_lifetime: usesTransactionPooler ? 60 : 60 * 5,

@@ -24,10 +24,12 @@ export function DateFilter({
   id,
   value,
   onChange,
+  allowFuture = false,
 }: {
   id: string;
   value: string | null;
   onChange: (value: string | null) => void;
+  allowFuture?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dayKeys, setDayKeys] = useState<{ today: string; yesterday: string } | null>(null);
@@ -91,7 +93,7 @@ export function DateFilter({
           type="date"
           tabIndex={-1}
           value={isCustom ? value : ""}
-          max={today ?? undefined}
+          max={allowFuture ? undefined : (today ?? undefined)}
           onChange={(event) => onChange(event.target.value || null)}
           className="absolute bottom-0 left-0 h-px w-px opacity-0"
           aria-hidden

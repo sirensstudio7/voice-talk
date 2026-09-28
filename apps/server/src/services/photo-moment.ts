@@ -9,7 +9,7 @@ import {
   type PhotoSession,
   type PhotoSettings,
 } from "../db/schema.js";
-import { env } from "../env.js";
+import { getPublicApiBaseUrl } from "../env.js";
 import {
   createSignedDownloadUrl,
   deleteStorageObject,
@@ -173,8 +173,8 @@ export async function uploadPhotoSessionImage(
 }
 
 export function buildDownloadPageUrl(token: string): string {
-  const base = env.PHOTO_DOWNLOAD_BASE_URL.replace(/\/+$/, "");
-  return `${base}/p/${token}`;
+  const base = getPublicApiBaseUrl().replace(/\/+$/, "");
+  return `${base}/public/photo/download/${encodeURIComponent(token)}?redirect=1`;
 }
 
 export async function completePhotoSession(sessionId: string): Promise<{

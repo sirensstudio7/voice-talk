@@ -10,6 +10,7 @@ import {
 } from "../db/schema.js";
 import { answerPresentationQuestion } from "./presentation-ai.js";
 import { moderateAudienceQuestion } from "./presentation-moderation.js";
+import { resolveGeminiApiKeyForBusiness } from "./user-api-keys.js";
 
 export const SESSION_STATUSES = [
   "initializing",
@@ -194,6 +195,9 @@ export async function submitSessionQuestion(sessionId: string, questionText: str
   const { answer, sources } = await answerPresentationQuestion({
     language: presentation?.language ?? "en",
     question: questionText,
+    apiKey: presentation?.businessId
+      ? await resolveGeminiApiKeyForBusiness(presentation.businessId)
+      : undefined,
     chunks: chunks.map((c) => ({
       sourceType: c.sourceType,
       sourceId: c.sourceId,

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { XMarkIcon } from "@heroicons/react/24/outline";
 
 import { PageHeader } from "@/components/ui-blocks";
 import { Button } from "@/components/ui/button";
@@ -123,15 +124,33 @@ export default function UsersPage() {
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <input
-          className="w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 sm:max-w-sm"
-          placeholder="Search name or email"
-          value={search}
-          onChange={(e) => {
-            setPage(1);
-            setSearch(e.target.value);
-          }}
-        />
+        <div className="relative w-full max-w-xs sm:max-w-sm">
+          <input
+            className={cn(
+              "w-full rounded-md border border-input bg-background py-2 pl-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20",
+              search ? "pr-10" : "pr-3",
+            )}
+            placeholder="Search name or email"
+            value={search}
+            onChange={(e) => {
+              setPage(1);
+              setSearch(e.target.value);
+            }}
+          />
+          {search ? (
+            <button
+              type="button"
+              className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setPage(1);
+                setSearch("");
+              }}
+              aria-label="Clear search"
+            >
+              <XMarkIcon className="size-4" />
+            </button>
+          ) : null}
+        </div>
         <UserStatusFilterSelect
           value={status}
           onChange={(next) => {

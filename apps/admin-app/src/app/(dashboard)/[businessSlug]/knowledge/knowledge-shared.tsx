@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import type { KnowledgeEntry } from "@/lib/api";
 
-export const CATEGORY_OPTIONS = ["General", "Hours", "Menu", "Policies", "Payment"] as const;
+export const CATEGORY_OPTIONS = ["General", "Hours", "Menu", "Policies", "Payment", "Prep"] as const;
 
 export const CATEGORY_HINTS: Record<
   (typeof CATEGORY_OPTIONS)[number],
@@ -40,6 +40,11 @@ export const CATEGORY_HINTS: Record<
     titleExample: "Accepted payments",
     example: "We accept cash, cards, and QRIS.",
   },
+  Prep: {
+    description: "What to bring or do before a visit.",
+    titleExample: "What to bring",
+    example: "Please arrive 15 minutes early and bring your ID.",
+  },
 };
 
 export const emptyForm = {
@@ -59,6 +64,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Menu: "border-emerald-200 bg-emerald-50 text-emerald-700",
   Policies: "border-violet-200 bg-violet-50 text-violet-700",
   Payment: "border-amber-200 bg-amber-50 text-amber-800",
+  Prep: "border-teal-200 bg-teal-50 text-teal-800",
 };
 
 const FALLBACK_CATEGORY_COLORS = [

@@ -22,3 +22,5 @@ services:
         sync: false
       - key: ALLOWED_ORIGINS
         sync: false
+      - key: PHOTO_DOWNLOAD_BASE_URL
+        value: https://lorescale.com

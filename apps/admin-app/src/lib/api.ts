@@ -39,12 +39,40 @@ export type Appointment = {
   id: string;
   product_id: string;
   treatment_name: string;
+  staff_id?: string | null;
+  staff_name?: string | null;
   customer_name: string;
   customer_phone: string;
   starts_at: string;
   ends_at: string;
   status: string;
   created_at: string;
+};
+
+export type BookingStaff = {
+  id: string;
+  name: string;
+  specialty: string;
+  photo_url: string;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+};
+
+export type BookingService = {
+  id: string;
+  name: string;
+  duration_min: number;
+  price: number;
+  description: string;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+};
+
+export type BookingSettings = {
+  enabled: boolean;
+  updated_at: string;
 };
 
 export type BusinessHour = {
@@ -128,6 +156,9 @@ export type VoiceSession = {
   message_count: number;
   order_id: string | null;
   order_total: number | null;
+  kiosk_display_id: string | null;
+  kiosk_display_name: string | null;
+  kiosk_display_slug: string | null;
 };
 
 export type VoiceSessionDetail = VoiceSession & {
@@ -162,6 +193,7 @@ export type AppearanceSettings = {
   background_url: string;
   gradient_color: string;
   display_orientation: "portrait" | "landscape" | "auto";
+  kiosk_ui_mode: "classic" | "studio";
 };
 
 export type GreetingTriggerMode = "presence" | "gesture" | "raise_hand";
@@ -196,10 +228,30 @@ export type SubscriptionPlan = {
   code: string;
   name: string;
   workspace_limit: number;
+  kiosk_display_limit?: number;
   monthly_price_idr?: number;
   yearly_price_idr?: number;
   yearly_discount_percent?: number;
   monthly_voice_minutes?: number;
+};
+
+export type KioskDisplay = {
+  id: string;
+  name: string;
+  slug: string;
+  is_default: boolean;
+  pin_set: boolean;
+  unlockable: boolean;
+  in_use: boolean;
+  lease_expires_at: string | null;
+  created_at: string;
+};
+
+export type KioskDisplayList = {
+  items: KioskDisplay[];
+  limit: number;
+  count: number;
+  can_create: boolean;
 };
 
 export type VoiceMinuteWallet = {
@@ -248,6 +300,7 @@ export type AccountSubscription = {
   plan_name: string;
   workspace_limit: number;
   workspace_count: number;
+  kiosk_display_limit?: number;
   trial_started_at: string | null;
   trial_ends_at: string | null;
   starts_at: string | null;
@@ -523,6 +576,37 @@ function parseErrorMessage(text: string, fallback: string): string {
   }
 }
 
+async function requestPublic<T>(path: string, init?: RequestInit): Promise<T> {
+  let response: Response;
+  try {
+    const hasJsonBody = init?.body != null && init.body !== "";
+    response = await fetchWithTimeout(
+      `${API_URL}${path}`,
+      {
+        ...init,
+        headers: {
+          ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
+          ...(init?.headers ?? {}),
+        },
+      },
+      45000,
+    );
+  } catch (error) {
+    throw new Error(apiFetchErrorMessage(error));
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiRequestError(parseErrorMessage(text, response.statusText), response.status);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json() as Promise<T>;
+}
+
 async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
@@ -646,6 +730,35 @@ export type SlugCheckResult =
   | { available: false; suggestions: string[] };
 
 export const api = {
+  listKiosks: (token: string, businessId: string) =>
+    request<KioskDisplayList>(`/admin/businesses/${businessId}/kiosks`, token),
+  createKiosk: (
+    token: string,
+    businessId: string,
+    body: { name: string; slug?: string; pin: string },
+  ) =>
+    request<KioskDisplay>(`/admin/businesses/${businessId}/kiosks`, token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateKiosk: (
+    token: string,
+    businessId: string,
+    displayId: string,
+    body: { name?: string; pin?: string },
+  ) =>
+    request<KioskDisplay>(`/admin/businesses/${businessId}/kiosks/${displayId}`, token, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteKiosk: (token: string, businessId: string, displayId: string) =>
+    request<void>(`/admin/businesses/${businessId}/kiosks/${displayId}`, token, {
+      method: "DELETE",
+    }),
+  releaseKiosk: (token: string, businessId: string, displayId: string) =>
+    request<KioskDisplay>(`/admin/businesses/${businessId}/kiosks/${displayId}/release`, token, {
+      method: "POST",
+    }),
   listBusinesses: (token: string) => request<Business[]>("/admin/businesses", token),
   checkSlug: (token: string, slug: string) =>
     request<SlugCheckResult>(`/admin/businesses/check-slug?slug=${encodeURIComponent(slug)}`, token),
@@ -735,22 +848,40 @@ export const api = {
     const query = params.size > 0 ? `?${params.toString()}` : "";
     return request<Order[]>(`/admin/businesses/${businessId}/orders${query}`, token);
   },
-  listConversations: (token: string, businessId: string, date?: string) => {
+  listConversations: (
+    token: string,
+    businessId: string,
+    opts?: { date?: string; kioskDisplayId?: string },
+  ) => {
     const params = new URLSearchParams();
-    if (date) {
-      params.set("date", date);
+    if (opts?.date) {
+      params.set("date", opts.date);
       params.set("tz_offset", String(new Date().getTimezoneOffset()));
+    }
+    if (opts?.kioskDisplayId) {
+      params.set("kiosk_display_id", opts.kioskDisplayId);
     }
     const query = params.size > 0 ? `?${params.toString()}` : "";
     return request<VoiceSession[]>(`/admin/businesses/${businessId}/conversations${query}`, token);
   },
   getConversation: (token: string, businessId: string, sessionId: string) =>
     request<VoiceSessionDetail>(`/admin/businesses/${businessId}/conversations/${sessionId}`, token),
-  exportConversations: (token: string, businessId: string, date?: string) => {
+  endConversation: (token: string, businessId: string, sessionId: string) =>
+    request<VoiceSession>(`/admin/businesses/${businessId}/conversations/${sessionId}/end`, token, {
+      method: "POST",
+    }),
+  exportConversations: (
+    token: string,
+    businessId: string,
+    opts?: { date?: string; kioskDisplayId?: string },
+  ) => {
     const params = new URLSearchParams();
-    if (date) {
-      params.set("date", date);
+    if (opts?.date) {
+      params.set("date", opts.date);
       params.set("tz_offset", String(new Date().getTimezoneOffset()));
+    }
+    if (opts?.kioskDisplayId) {
+      params.set("kiosk_display_id", opts.kioskDisplayId);
     }
     const query = params.size > 0 ? `?${params.toString()}` : "";
     return request<VoiceSessionDetail[]>(
@@ -779,7 +910,11 @@ export const api = {
   updateAppearanceSettings: (
     token: string,
     businessId: string,
-    body: { gradient_color?: string; display_orientation?: "portrait" | "landscape" | "auto" },
+    body: {
+      gradient_color?: string;
+      display_orientation?: "portrait" | "landscape" | "auto";
+      kiosk_ui_mode?: "classic" | "studio";
+    },
   ) =>
     request<AppearanceSettings>(`/admin/businesses/${businessId}/appearance`, token, {
       method: "PATCH",
@@ -812,6 +947,88 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ hours }),
     }),
+  getBookingSettings: (token: string, businessId: string) =>
+    request<BookingSettings>(`/admin/businesses/${businessId}/booking/settings`, token),
+  updateBookingSettings: (token: string, businessId: string, body: { enabled: boolean }) =>
+    request<BookingSettings>(`/admin/businesses/${businessId}/booking/settings`, token, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  listBookingStaff: (token: string, businessId: string) =>
+    request<BookingStaff[]>(`/admin/businesses/${businessId}/booking/staff`, token),
+  createBookingStaff: (
+    token: string,
+    businessId: string,
+    body: { name: string; specialty?: string; photo_url?: string; hours?: BusinessHour[] },
+  ) =>
+    request<BookingStaff>(`/admin/businesses/${businessId}/booking/staff`, token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateBookingStaff: (
+    token: string,
+    businessId: string,
+    staffId: string,
+    body: { name?: string; specialty?: string; photo_url?: string; is_active?: boolean },
+  ) =>
+    request<BookingStaff>(`/admin/businesses/${businessId}/booking/staff/${staffId}`, token, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteBookingStaff: (token: string, businessId: string, staffId: string) =>
+    request<{ ok: boolean }>(`/admin/businesses/${businessId}/booking/staff/${staffId}`, token, {
+      method: "DELETE",
+    }),
+  getBookingStaffHours: (token: string, businessId: string, staffId: string) =>
+    request<BusinessHour[]>(
+      `/admin/businesses/${businessId}/booking/staff/${staffId}/hours`,
+      token,
+    ),
+  saveBookingStaffHours: (
+    token: string,
+    businessId: string,
+    staffId: string,
+    hours: BusinessHour[],
+  ) =>
+    request<BusinessHour[]>(
+      `/admin/businesses/${businessId}/booking/staff/${staffId}/hours`,
+      token,
+      { method: "PUT", body: JSON.stringify({ hours }) },
+    ),
+  listBookingServices: (token: string, businessId: string) =>
+    request<BookingService[]>(`/admin/businesses/${businessId}/booking/services`, token),
+  createBookingService: (
+    token: string,
+    businessId: string,
+    body: { name: string; duration_min?: number; price?: number; description?: string },
+  ) =>
+    request<BookingService>(`/admin/businesses/${businessId}/booking/services`, token, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateBookingService: (
+    token: string,
+    businessId: string,
+    serviceId: string,
+    body: {
+      name?: string;
+      duration_min?: number;
+      price?: number;
+      description?: string;
+      is_active?: boolean;
+    },
+  ) =>
+    request<BookingService>(
+      `/admin/businesses/${businessId}/booking/services/${serviceId}`,
+      token,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  deleteBookingService: (token: string, businessId: string, serviceId: string) =>
+    request<{ ok: boolean }>(
+      `/admin/businesses/${businessId}/booking/services/${serviceId}`,
+      token,
+      { method: "DELETE" },
+    ),
   getVisionSettings: (token: string, businessId: string) =>
     request<VisionSettings>(`/admin/businesses/${businessId}/vision-settings`, token),
   updateVisionSettings: (token: string, businessId: string, body: Partial<VisionSettings>) =>
@@ -861,6 +1078,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ plan_code }),
     }),
+  listAddonStatuses: (token: string, businessId: string) =>
+    request<AddonStatus[]>(`/admin/businesses/${businessId}/addons`, token),
   getAddonStatus: (token: string, businessId: string, code = "smart_photo_moment") =>
     request<AddonStatus>(`/admin/businesses/${businessId}/addons/${code}`, token),
   requestAddon: (
@@ -1282,6 +1501,54 @@ export const api = {
       token,
       { method: "DELETE" },
     ),
+  sharePresentation: (token: string, businessId: string, presentationId: string) =>
+    request<{ share_token: string; share_url: string }>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}/share`,
+      token,
+      { method: "POST" },
+    ),
+  getSharedPresentation: (shareToken: string) =>
+    requestPublic<SharedPresentationLanding>(
+      `/public/presentations/share/${encodeURIComponent(shareToken)}`,
+    ),
+  startSharedPresentation: (shareToken: string) =>
+    requestPublic<PresentationSession>(
+      `/public/presentations/share/${encodeURIComponent(shareToken)}/start`,
+      { method: "POST" },
+    ),
+  getSharedPresentationSession: (shareToken: string, sessionId: string) =>
+    requestPublic<PresentationSessionDetail>(
+      `/public/presentations/share/${encodeURIComponent(shareToken)}/sessions/${sessionId}`,
+    ),
+  controlSharedPresentationSession: (shareToken: string, sessionId: string, action: string) =>
+    requestPublic<PresentationSession>(
+      `/public/presentations/share/${encodeURIComponent(shareToken)}/sessions/${sessionId}/control`,
+      { method: "POST", body: JSON.stringify({ action }) },
+    ),
+  askSharedPresentationQuestion: (
+    shareToken: string,
+    sessionId: string,
+    question: string,
+  ) =>
+    requestPublic<PresentationQuestion>(
+      `/public/presentations/share/${encodeURIComponent(shareToken)}/sessions/${sessionId}/questions`,
+      { method: "POST", body: JSON.stringify({ question }) },
+    ),
+  transcribeSharedPresentationQuestion: (
+    shareToken: string,
+    sessionId: string,
+    body: { audio_base64: string; mime_type: string },
+  ) =>
+    requestPublic<{ text: string }>(
+      `/public/presentations/share/${encodeURIComponent(shareToken)}/sessions/${sessionId}/transcribe`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  getSharedPresentationSessionAnalytics: (shareToken: string, sessionId: string) =>
+    requestPublic<PresentationSessionAnalytics>(
+      `/public/presentations/share/${encodeURIComponent(shareToken)}/sessions/${sessionId}/analytics`,
+    ),
+  sharedPresentationPptxUrl: (shareToken: string) =>
+    `${API_URL}/public/presentations/share/${encodeURIComponent(shareToken)}/pptx`,
   launchPresentationSession: (
     token: string,
     businessId: string,
@@ -1319,6 +1586,17 @@ export const api = {
       `/admin/businesses/${businessId}/sessions/${sessionId}/questions`,
       token,
       { method: "POST", body: JSON.stringify({ question }) },
+    ),
+  transcribePresentationQuestion: (
+    token: string,
+    businessId: string,
+    sessionId: string,
+    body: { audio_base64: string; mime_type: string },
+  ) =>
+    request<{ text: string }>(
+      `/admin/businesses/${businessId}/sessions/${sessionId}/transcribe`,
+      token,
+      { method: "POST", body: JSON.stringify(body) },
     ),
   getPresentationSessionAnalytics: (token: string, businessId: string, sessionId: string) =>
     request<PresentationSessionAnalytics>(
@@ -1443,6 +1721,15 @@ export const api = {
       `/admin/businesses/${businessId}/live/sessions/${sessionId}/orders`,
       token,
     ),
+};
+
+export type SharedPresentationLanding = {
+  title: string;
+  description: string;
+  language: string;
+  total_slides: number;
+  estimated_duration: number;
+  thumbnail_url: string;
 };
 
 export type Presentation = {

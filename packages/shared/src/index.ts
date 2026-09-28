@@ -18,12 +18,14 @@ export { CURRENCY_PREFIX, formatCurrency } from "./currency.js";
 export {
   getBusinessCapabilities,
   normalizePrimaryUseCase,
+  withBookingAddon,
   type BusinessCapabilities,
   type PrimaryUseCase,
 } from "./business-capabilities.js";
 export {
   mergeTranscriptChunk,
   mergeTranscriptMessages,
+  isAssistantTranscriptContinuation,
   type TranscriptMessageLike,
 } from "./transcript.js";
 export {

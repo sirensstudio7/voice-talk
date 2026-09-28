@@ -32,6 +32,32 @@ function groupByCategory(products: MenuProduct[]) {
   }, {});
 }
 
+function catalogFromMenu(menu: {
+  products: MenuProduct[];
+  capabilities?: { booking_enabled?: boolean };
+  booking?: {
+    services?: Array<{
+      id: string;
+      name: string;
+      duration_min: number;
+      price: number;
+      description: string;
+    }>;
+  };
+}): MenuProduct[] {
+  const bookingEnabled = menu.capabilities?.booking_enabled ?? false;
+  const services = (menu.booking?.services ?? []).map((service) => ({
+    id: service.id,
+    name: service.name,
+    price: service.price,
+    category: "Services",
+    description: service.description,
+    duration_min: service.duration_min,
+  }));
+  if (bookingEnabled && services.length > 0) return services;
+  return menu.products;
+}
+
 interface MenuProductCardProps {
   item: MenuProduct;
   bookingEnabled: boolean;
@@ -210,7 +236,9 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
   const closeMenuPanel = useSessionStore((s) => s.closeMenuPanel);
   const cachedMenu = menuCacheSlug === businessSlug ? menuCache : null;
   const [business, setBusiness] = useState(cachedMenu?.business ?? "Sunrise Coffee");
-  const [products, setProducts] = useState<MenuProduct[]>(cachedMenu?.products ?? []);
+  const [products, setProducts] = useState<MenuProduct[]>(
+    cachedMenu ? catalogFromMenu(cachedMenu) : [],
+  );
   const [loading, setLoading] = useState(!cachedMenu);
   const [error, setError] = useState<string | null>(null);
   const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
@@ -224,7 +252,7 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
   useEffect(() => {
     if (menuCacheSlug !== businessSlug || !menuCache) return;
     setBusiness(menuCache.business);
-    setProducts(menuCache.products);
+    setProducts(catalogFromMenu(menuCache));
   }, [businessSlug, menuCache, menuCacheSlug]);
 
   const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -237,7 +265,10 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
 
   const loadMenu = useCallback(async () => {
     const { menuCache: cached, menuCacheSlug: cachedSlug } = useSessionStore.getState();
-    const hasCache = cachedSlug === businessSlug && (cached?.products.length ?? 0) > 0;
+    const hasCache =
+      cachedSlug === businessSlug &&
+      Boolean(cached) &&
+      catalogFromMenu(cached!).length > 0;
     if (!hasCache) {
       setLoading(true);
     }
@@ -249,7 +280,7 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
       if (!visibleRef.current) return;
       setMenuCache(businessSlug, data);
       setBusiness(data.business);
-      setProducts(data.products);
+      setProducts(catalogFromMenu(data));
     } catch (err) {
       if (!visibleRef.current) return;
       const message = menuFetchErrorMessage(err);

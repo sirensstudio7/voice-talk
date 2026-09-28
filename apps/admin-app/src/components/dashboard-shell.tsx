@@ -11,6 +11,7 @@ import {
   BuildingOffice2Icon,
   CalendarDaysIcon,
   CameraIcon,
+  ComputerDesktopIcon,
   ChartBarIcon,
   ChatBubbleLeftRightIcon,
   CheckIcon,
@@ -64,6 +65,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { adminPath, matchAdminPath, stripBusinessSlug } from "@/lib/admin-path";
+import { rememberAddonStatuses } from "@/lib/addon-status-cache";
 import { api, getHealth, type Business } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { customerAppUrl } from "@/lib/customer-app";
@@ -103,6 +105,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/vision-settings": "Vision Settings",
   "/conversations": "Conversations",
   "/appearance": "Appearance",
+  "/kiosks": "Kiosks",
   "/billing": "Billing",
   "/transactions": "Transactions",
   "/workspaces": "Workspaces",
@@ -120,6 +123,8 @@ const ROUTE_LABELS: Record<string, string> = {
   "/add-ons/language-pack/payment": "Checkout",
   "/add-ons/live": "LORESCALE LIVE",
   "/add-ons/live/payment": "Checkout",
+  "/add-ons/booking": "Booking",
+  "/add-ons/booking/payment": "Checkout",
 };
 
 function breadcrumbLabel(pathname: string, businessSlug?: string | null) {
@@ -182,6 +187,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/conversations", label: "Conversations", icon: ChatBubbleLeftRightIcon },
       { href: "/appearance", label: "Appearance", icon: SwatchIcon },
+      { href: "/kiosks", label: "Kiosks", icon: ComputerDesktopIcon },
     ],
   },
   {
@@ -363,6 +369,13 @@ function userInitials(user: { name?: string; email: string }) {
   return user.email[0]?.toUpperCase() ?? "?";
 }
 
+function userDisplayName(user: { name?: string; email: string }) {
+  const name = user.name?.trim();
+  if (name) return name;
+  const local = user.email.split("@")[0]?.trim();
+  return local || "Account";
+}
+
 function UserMenu({
   user,
   onLogout,
@@ -400,15 +413,22 @@ function UserMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="hidden items-center gap-2.5 rounded-md px-1 py-1 outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring md:flex"
+          className="hidden items-center gap-2.5 rounded-md px-1 py-1 outline-none hover:bg-transparent focus:outline-none focus-visible:outline-none focus-visible:ring-0 md:flex"
         >
           <div className="flex min-w-0 flex-col items-end gap-0.5">
-            {planLabel ? (
-              <span className="inline-flex max-w-[12rem] truncate rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold leading-none text-foreground">
-                {planLabel}
+            <div className="flex min-w-0 max-w-[14rem] items-center gap-1.5">
+              {planLabel ? (
+                <span className="inline-flex shrink-0 truncate rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold leading-none text-foreground">
+                  {planLabel}
+                </span>
+              ) : null}
+              <span className="truncate text-sm font-medium leading-none text-foreground">
+                {userDisplayName(user)}
               </span>
+            </div>
+            {user.email ? (
+              <p className="max-w-[14rem] truncate text-xs text-muted-foreground">{user.email}</p>
             ) : null}
-            <p className="max-w-[12rem] truncate text-xs text-muted-foreground">{user.email}</p>
           </div>
           <div
             className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-orange-400 to-orange-500"
@@ -419,14 +439,21 @@ function UserMenu({
           <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="font-normal">
-          {planLabel ? (
-            <span className="mb-1 inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold leading-none text-foreground">
-              {planLabel}
-            </span>
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+              {userDisplayName(user)}
+            </p>
+            {planLabel ? (
+              <span className="inline-flex shrink-0 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold leading-none text-foreground">
+                {planLabel}
+              </span>
+            ) : null}
+          </div>
+          {user.email ? (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{user.email}</p>
           ) : null}
-          <p className="truncate text-xs text-muted-foreground">{user.email}</p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => router.push("/workspaces")}>
@@ -474,6 +501,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const { user, businesses, business, setBusinessId, logout, token } = useAuth();
   const aiStatus = useAiStatus();
   const [aiPresenterActive, setAiPresenterActive] = useState(false);
+  const [bookingAddonActive, setBookingAddonActive] = useState(false);
   const slug = business?.slug ?? "";
   const pathSuffix = stripBusinessSlug(pathname, slug || null);
   const orderingEnabled = business?.capabilities?.ordering_enabled ?? true;
@@ -487,15 +515,26 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     void (async () => {
       if (!token || !business?.id) {
         setAiPresenterActive(false);
+        setBookingAddonActive(false);
         return;
       }
       try {
-        const status = await api.getAddonStatus(token, business.id, "ai_presenter");
-        if (!cancelled) {
-          setAiPresenterActive(status.subscription_status === "active");
-        }
+        const statuses = await api.listAddonStatuses(token, business.id);
+        if (cancelled) return;
+        rememberAddonStatuses(business.id, statuses);
+        const presenter = statuses.find((item) => item.addon.code === "ai_presenter");
+        setAiPresenterActive(presenter?.subscription_status === "active");
+        const booking = statuses.find((item) => item.addon.code === "booking");
+        setBookingAddonActive(booking?.subscription_status === "active");
       } catch {
-        if (!cancelled) setAiPresenterActive(false);
+        try {
+          const status = await api.getAddonStatus(token, business.id, "ai_presenter");
+          if (!cancelled) {
+            setAiPresenterActive(status.subscription_status === "active");
+          }
+        } catch {
+          if (!cancelled) setAiPresenterActive(false);
+        }
       }
     })();
     return () => {
@@ -510,7 +549,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         items: group.items
           .filter((item) => {
             if (item.requiresOrdering && !orderingEnabled) return false;
-            if (item.requiresBooking && !bookingEnabled) return false;
+            if (item.requiresBooking && !bookingEnabled && !bookingAddonActive) return false;
             if (item.requiresMenu && !menuEnabled) return false;
             if (item.requiresAiPresenter && !aiPresenterActive) return false;
             return true;
@@ -523,7 +562,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             suffix: item.href,
           })),
       })).filter((group) => group.items.length > 0),
-    [orderingEnabled, menuEnabled, bookingEnabled, salonMode, slug, aiPresenterActive],
+    [orderingEnabled, menuEnabled, bookingEnabled, bookingAddonActive, salonMode, slug, aiPresenterActive],
   );
 
   const handleBusinessSelect = (id: string) => {

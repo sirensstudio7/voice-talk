@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useBrowserVision } from "@/hooks/use-browser-vision";
 import { useBusinessSlug } from "@/context/business-context";
+import { appendKioskAuth } from "@/lib/kiosk-access";
 import { useKioskStore } from "@/store/kiosk-store";
 import { useSessionStore } from "@/store/session-store";
 import type { BrowserVisionEventType } from "@/lib/browser-vision/types";
@@ -27,7 +28,7 @@ function buildKioskWsUrl(businessSlug: string): string {
   }
 
   url.searchParams.set("business", businessSlug);
-  url.searchParams.set("kiosk_id", "default");
+  appendKioskAuth(url, businessSlug);
   return url.toString();
 }
 
@@ -45,6 +46,7 @@ type VoiceSessionApi = {
   sendGoodbye: () => void;
   primeMicrophone: () => Promise<void>;
   primeAudioOutput: () => Promise<void>;
+  unlockAudioSync: () => void;
   ensureVisionGreetingDispatched: () => Promise<boolean>;
   waitForVisionMicReady: (timeoutMs?: number) => Promise<boolean>;
   beginVisionListening: () => Promise<boolean>;
@@ -256,8 +258,10 @@ export function useKioskOrchestrator(
     await new Promise((resolve) => setTimeout(resolve, 350));
 
     try {
-      await voiceRef.current.beginVisionListening().catch(() => false);
-
+      voiceRef.current.unlockAudioSync();
+      void voiceRef.current.primeAudioOutput();
+      // Do not open the mic before the greeting. getUserMedia rebuilds the
+      // playback graph and suspends AudioContext — wave pose still runs, voice does not.
       await voiceRef.current.connect({
         requestGreeting: true,
         source: "vision",
@@ -380,6 +384,14 @@ export function useKioskOrchestrator(
                   }>)
                 : [],
             });
+            return;
+          }
+
+          if (type === "booking.config") {
+            void useSessionStore.getState().refreshMenuCache(businessSlug);
+            if (payload.active !== true) {
+              useSessionStore.getState().closeBookingPanel();
+            }
             return;
           }
 

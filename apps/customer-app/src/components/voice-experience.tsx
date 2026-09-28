@@ -24,6 +24,7 @@ import { SmartPhotoMomentOverlay, shouldOfferPhotoMoment } from "@/components/ph
 import { StoreMenuPanelRoot } from "@/components/store-menu-panel";
 import { BottomControls, ExperienceHeader } from "@/components/voice-controls";
 import { TranscriptPanel } from "@/components/transcript-panel";
+import { StudioVoiceLayout } from "@/components/studio-voice-layout";
 import { useBusinessSlug } from "@/context/business-context";
 import { useKioskOrchestrator } from "@/hooks/use-kiosk-orchestrator";
 import { useResolvedDisplayOrientation } from "@/hooks/use-resolved-display-orientation";
@@ -37,6 +38,18 @@ import {
   resolveHeroEmbedFrameOrientation,
   type DisplayOrientationSetting,
 } from "@/lib/display-orientation";
+import {
+  getKioskSlugFromLocation,
+  getStoredKioskToken,
+  lockKioskAndReturnToPin,
+} from "@/lib/kiosk-access";
+import {
+  DEFAULT_KIOSK_UI_MODE,
+  normalizeKioskUiMode,
+  parseKioskUiSearchParam,
+  resolveKioskUiMode,
+  type KioskUiMode,
+} from "@/lib/kiosk-ui-mode";
 import { buildBottomGradient } from "@/lib/gradient-style";
 import { useVoiceSession } from "@/hooks/use-voice-session";
 import { useKioskStore } from "@/store/kiosk-store";
@@ -44,7 +57,9 @@ import { useSessionStore } from "@/store/session-store";
 import type { KioskPhase, GreetingTriggerMode } from "@/types/kiosk";
 
 function kioskPhaseToAvatarMode(phase: KioskPhase) {
-  if (phase === "greeting") return "greeting";
+  // Do not map phase "greeting" to the wave clip — that loops the pose for the
+  // whole greeting. The short wave is driven only by greetingPoseActive.
+  if (phase === "greeting") return "talking";
   if (phase === "listening") return "listening";
   if (phase === "thinking") return "thinking";
   if (phase === "talking") return "talking";
@@ -54,8 +69,14 @@ function kioskPhaseToAvatarMode(phase: KioskPhase) {
 
 function visionIdlePrompt(
   mode: GreetingTriggerMode,
-  phase: "waiting" | "ready" | "loading" | "starting_camera",
+  phase: "waiting" | "ready" | "loading" | "starting_camera" | "unlock_audio",
+  language: "en" | "id" | string = "en",
 ): string {
+  if (phase === "unlock_audio") {
+    return language === "id"
+      ? "Ketuk layar sekali agar asisten bisa berbicara, lalu angkat tangan."
+      : "Tap the screen once so the assistant can speak, then raise your hand.";
+  }
   if (phase === "loading") {
     return "Loading vision settings…";
   }
@@ -83,6 +104,8 @@ export function VoiceExperience() {
   const [gradientColor, setGradientColor] = useState("");
   const [displayOrientationSetting, setDisplayOrientationSetting] =
     useState<DisplayOrientationSetting>(DEFAULT_DISPLAY_ORIENTATION_SETTING);
+  const [businessUiDefault, setBusinessUiDefault] =
+    useState<KioskUiMode>(DEFAULT_KIOSK_UI_MODE);
   const [menuLoadError, setMenuLoadError] = useState<string | null>(null);
   const setMenuCache = useSessionStore((s) => s.setMenuCache);
   const setAssistantName = useSessionStore((s) => s.setAssistantName);
@@ -110,6 +133,7 @@ export function VoiceExperience() {
     status,
     isTalking,
     micPrimed,
+    audioUnlocked,
     continuousListenActive,
     visionGreetingPending,
     greetingPoseActive,
@@ -141,6 +165,11 @@ export function VoiceExperience() {
   const [startingConversation, setStartingConversation] = useState(false);
   const [awaitingGreetingAudio, setAwaitingGreetingAudio] = useState(false);
 
+  const handleLockKiosk = useCallback(() => {
+    disconnect();
+    void lockKioskAndReturnToPin(businessSlug);
+  }, [businessSlug, disconnect]);
+
   useKioskOrchestrator(
     {
       connect,
@@ -151,6 +180,7 @@ export function VoiceExperience() {
       sendGoodbye,
       primeMicrophone,
       primeAudioOutput,
+      unlockAudioSync,
       beginVisionListening,
       ensureVisionGreetingDispatched,
       waitForVisionMicReady,
@@ -310,18 +340,21 @@ export function VoiceExperience() {
     hydrateLanguageFromStorage();
   }, [hydrateLanguageFromStorage]);
 
-  // Vision kiosk: no talk button — prime mic silently on load (if already allowed) or first tap.
+  // Vision kiosk: browsers block greeting PCM until a tap unlocks AudioContext.
+  // Unlock on first pointerdown; do not open the mic until after the greeting.
   useEffect(() => {
-    if (!visionEnabled || micPrimed) return;
-
-    void primeMicrophone();
+    if (!visionEnabled) return;
 
     const primeOnInteraction = () => {
-      void primeMicrophone();
+      unlockAudioSync();
+      void primeAudioOutput();
+      if (!micPrimed) {
+        void primeMicrophone();
+      }
     };
-    window.addEventListener("pointerdown", primeOnInteraction, { once: true });
+    window.addEventListener("pointerdown", primeOnInteraction);
     return () => window.removeEventListener("pointerdown", primeOnInteraction);
-  }, [micPrimed, primeMicrophone, visionEnabled]);
+  }, [micPrimed, primeAudioOutput, primeMicrophone, unlockAudioSync, visionEnabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -362,6 +395,7 @@ export function VoiceExperience() {
         setBackgroundUrl(data.background_url ?? "");
         setGradientColor(data.gradient_color ?? "");
         setDisplayOrientationSetting(normalizeDisplayOrientationSetting(data.display_orientation));
+        setBusinessUiDefault(normalizeKioskUiMode(data.kiosk_ui_mode));
       } catch (error) {
         if (!cancelled) {
           setMenuLoadError(menuFetchErrorMessage(error));
@@ -403,6 +437,7 @@ export function VoiceExperience() {
       setBackgroundUrl(data.background_url ?? "");
       setGradientColor(data.gradient_color ?? "");
       setDisplayOrientationSetting(normalizeDisplayOrientationSetting(data.display_orientation));
+      setBusinessUiDefault(normalizeKioskUiMode(data.kiosk_ui_mode));
       // Let AvatarHero remount onto the RPM model before the greeting wave.
       await new Promise((resolve) => window.setTimeout(resolve, 150));
     } catch (error) {
@@ -413,6 +448,14 @@ export function VoiceExperience() {
   const handleStartTalking = () => {
     void startTalking();
   };
+
+  const handleSendText = useCallback(
+    (text: string) => {
+      unlockAudioSync();
+      void sendText(text);
+    },
+    [sendText, unlockAudioSync],
+  );
 
   const handleStartConversation = () => {
     setStartingConversation(true);
@@ -459,6 +502,15 @@ export function VoiceExperience() {
     return query ? `?${query}` : "";
   }, [searchParams]);
   const isHeroEmbed = isHeroEmbedSearchParam(search);
+  const queryUiMode = parseKioskUiSearchParam(search);
+
+  const kioskUiMode = isHeroEmbed
+    ? DEFAULT_KIOSK_UI_MODE
+    : resolveKioskUiMode({
+        queryMode: queryUiMode,
+        businessDefault: businessUiDefault,
+      });
+
   const heroEmbedFrameOrientation = isHeroEmbed ? resolveHeroEmbedFrameOrientation(search) : null;
   const effectiveDisplayOrientationSetting = resolveDisplayOrientationSettingForEmbed(
     displayOrientationSetting,
@@ -510,18 +562,223 @@ export function VoiceExperience() {
     </>
   );
 
+  const useStudio = kioskUiMode === "studio" && !isHeroEmbed;
+  const experienceHeader = (
+    <ExperienceHeader
+      onDisconnect={disconnect}
+      onLockKiosk={handleLockKiosk}
+      orderingEnabled={showOrdering}
+      bookingEnabled={showBooking}
+      compact={layout.compactUi}
+      position={useStudio ? "relative" : "absolute"}
+    />
+  );
+
+  const campaignOverlay = (() => {
+    if (!campaignBannerVisible || !campaignBannerConfig || checkoutPanelOpen) {
+      return null;
+    }
+    const bannerLayout = campaignBannerConfig.layout;
+    if (bannerLayout === "right" && (luckySpinVisible || !layout.isLandscape)) {
+      return null;
+    }
+    const paused =
+      conversationPhase === "active" ||
+      kioskPhase === "listening" ||
+      kioskPhase === "thinking" ||
+      kioskPhase === "talking";
+    const positionClass =
+      bannerLayout === "right"
+        ? "absolute right-3 top-20 bottom-28 z-[22] flex items-stretch"
+        : bannerLayout === "bottom"
+          ? "absolute inset-x-3 bottom-[6.5rem] z-[22] sm:bottom-[7.5rem]"
+          : "absolute inset-x-3 top-[4.5rem] z-[22]";
+    return (
+      <div className={positionClass}>
+        <CampaignSlider
+          businessSlug={businessSlug}
+          config={campaignBannerConfig}
+          layout={bannerLayout}
+          paused={paused}
+        />
+      </div>
+    );
+  })();
+
+  const luckySpinOverlay = (
+    <>
+      {luckySpinVisible && luckySpinConfig && !checkoutPanelOpen ? (
+        <div className="pointer-events-none absolute inset-0 z-[45] flex items-center justify-center px-4">
+          <LuckySpinWidget
+            businessSlug={businessSlug}
+            config={luckySpinConfig}
+            onSpinStart={handleLuckySpinStart}
+            onWin={handleLuckySpinWin}
+          />
+        </div>
+      ) : null}
+      {luckySpinVisible && luckySpinWin && !checkoutPanelOpen ? (
+        useStudio ? (
+          <div className="pointer-events-auto absolute inset-x-3 bottom-24 z-[46] flex justify-center">
+            <div className="w-[min(17.5rem,100%)]">
+              <LuckySpinWinCard result={luckySpinWin} />
+            </div>
+          </div>
+        ) : (
+          <div className={LUCKY_SPIN_WIN_CARD_FRAME_CLASS}>
+            <LuckySpinWinCard result={luckySpinWin} />
+          </div>
+        )
+      ) : null}
+    </>
+  );
+
+  const kioskPanels = (
+    <>
+      {showMenu ? <StoreMenuPanelRoot /> : null}
+      {showBooking ? <AppointmentBookingPanelRoot /> : null}
+      {showOrdering ? (
+        <>
+          <FlyToBasketLayer />
+          <CheckoutPanel />
+        </>
+      ) : null}
+    </>
+  );
+
+  const errorBanners =
+    !checkoutPanelOpen && (menuLoadError || (visionEnabled && browserVisionError)) ? (
+      <>
+        {menuLoadError ? (
+          <p className="max-w-md rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-center text-xs font-medium text-amber-800">
+            {menuLoadError} Vision kiosk settings may be unavailable until the menu loads.
+          </p>
+        ) : null}
+        {visionEnabled && browserVisionError ? (
+          <p className="max-w-md rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-center text-xs font-medium text-amber-800">
+            {browserVisionError}
+          </p>
+        ) : null}
+      </>
+    ) : null;
+
+  const joiningPill = (
+    <p className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 backdrop-blur">
+      {assistantName} is joining…
+    </p>
+  );
+
+  const statusInner = (
+    <>
+      {visionEnabled && isLive && !checkoutPanelOpen ? (
+        <p className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 backdrop-blur">
+          {visionMicLabel}
+        </p>
+      ) : null}
+      {visionEnabled && !isLive && error && !checkoutPanelOpen ? (
+        <p className="max-w-sm rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-center text-xs font-medium text-red-700">
+          {error}
+        </p>
+      ) : null}
+      {visionEnabled && !isLive && conversationPhase !== "wrapping_up" && !checkoutPanelOpen ? (
+        <p className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 backdrop-blur">
+          {kioskPhase === "waiting"
+            ? visionIdlePrompt(greetingTriggerMode, "waiting", language)
+            : !kioskConnected
+              ? "Connecting to vision hub…"
+              : !visionConfigSynced
+                ? visionIdlePrompt(greetingTriggerMode, "loading", language)
+                : expectBrowserVision && !browserVisionReady
+                  ? visionIdlePrompt(greetingTriggerMode, "starting_camera", language)
+                  : !audioUnlocked
+                    ? visionIdlePrompt(greetingTriggerMode, "unlock_audio", language)
+                    : visionIdlePrompt(greetingTriggerMode, "ready", language)}
+        </p>
+      ) : null}
+      {visionEnabled && isLive && error && !checkoutPanelOpen ? (
+        <p className="max-w-sm rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-center text-xs font-medium text-red-700">
+          {error}
+        </p>
+      ) : null}
+      {!visionEnabled &&
+      (startingConversation || awaitingGreetingAudio) &&
+      conversationPhase !== "wrapping_up" &&
+      !checkoutPanelOpen &&
+      (useStudio || layout.isLandscape)
+        ? joiningPill
+        : null}
+      {!visionEnabled && !checkoutPanelOpen && !layout.isLandscape && !useStudio ? (
+        showStartButton ? startButton : startingConversation || awaitingGreetingAudio ? joiningPill : null
+      ) : null}
+      {showStartButton && (useStudio || layout.isLandscape) ? startButton : null}
+    </>
+  );
+
+  const photoOverlay =
+    photoEnabled && photoConfig ? (
+      <SmartPhotoMomentOverlay
+        businessSlug={businessSlug}
+        config={photoConfig}
+        orderId={null}
+        paymentCompleteRequest={paymentCompleteRequest}
+        assistantSpeaking={assistantSpeaking}
+        onRequestPhotoReady={handlePhotoReady}
+        onFinishOfferKeepAlive={handlePhotoFinish}
+        disconnectVoice={disconnect}
+      />
+    ) : null;
+
+  const shellProps = {
+    className: layout.shellClassName,
+    "data-display": resolvedDisplayOrientation,
+    "data-display-setting": orientationSettingForLayout,
+    "data-embed": isHeroEmbed ? "hero" : undefined,
+    "data-kiosk-ui": useStudio ? "studio" : "classic",
+    "data-avatar-mode": avatarMode,
+    "data-greeting-pose": greetingPoseActive ? "1" : "0",
+    "data-thumbs-up-pose": thumbsUpPoseActive ? "1" : "0",
+    "data-talking-hand-pose": talkingHandPoseActive ? "1" : "0",
+    "data-avatar-model": avatarModelPath || "default",
+  } as const;
+
+  if (useStudio) {
+    return (
+      <main {...shellProps}>
+        <StudioVoiceLayout
+          isLandscape={layout.isLandscape}
+          compact={layout.compactUi}
+          backgroundUrl={backgroundUrl}
+          gradientColor={gradientColor}
+          header={experienceHeader}
+          isTalking={isTalking}
+          avatarMode={avatarMode}
+          mouthOpen={mouthOpen}
+          isLive={isLive}
+          showMic={!luckySpinVisible && !checkoutPanelOpen && !visionEnabled}
+          canTalk={canTalk}
+          menuEnabled={showMenu}
+          onStartTalking={handleStartTalking}
+          onStopTalking={stopTalking}
+          onDisconnect={disconnect}
+          onSendText={handleSendText}
+          onLanguageChange={handleLanguageChange}
+          statusSlot={!checkoutPanelOpen ? statusInner : null}
+          overlaySlot={
+            <>
+              {campaignOverlay}
+              {luckySpinOverlay}
+            </>
+          }
+          errorBanner={errorBanners}
+        />
+        {kioskPanels}
+        {photoOverlay}
+      </main>
+    );
+  }
+
   return (
-    <main
-      className={layout.shellClassName}
-      data-display={resolvedDisplayOrientation}
-      data-display-setting={orientationSettingForLayout}
-      data-embed={isHeroEmbed ? "hero" : undefined}
-      data-avatar-mode={avatarMode}
-      data-greeting-pose={greetingPoseActive ? "1" : "0"}
-      data-thumbs-up-pose={thumbsUpPoseActive ? "1" : "0"}
-      data-talking-hand-pose={talkingHandPoseActive ? "1" : "0"}
-      data-avatar-model={avatarModelPath || "default"}
-    >
+    <main {...shellProps}>
       <div className={layout.frameClassName}>
         <ExperienceBackground backgroundUrl={backgroundUrl} />
 
@@ -553,69 +810,11 @@ export function VoiceExperience() {
           }}
         />
 
-        <ExperienceHeader
-          onDisconnect={disconnect}
-          orderingEnabled={showOrdering}
-          bookingEnabled={showBooking}
-          compact={layout.compactUi}
-        />
+        {experienceHeader}
 
-        {(() => {
-          if (!campaignBannerVisible || !campaignBannerConfig || checkoutPanelOpen) {
-            return null;
-          }
-          const bannerLayout = campaignBannerConfig.layout;
-          if (bannerLayout === "right" && (luckySpinVisible || !layout.isLandscape)) {
-            return null;
-          }
-          const paused =
-            conversationPhase === "active" ||
-            kioskPhase === "listening" ||
-            kioskPhase === "thinking" ||
-            kioskPhase === "talking";
-          const positionClass =
-            bannerLayout === "right"
-              ? "absolute right-3 top-20 bottom-28 z-[22] flex items-stretch"
-              : bannerLayout === "bottom"
-                ? "absolute inset-x-3 bottom-[6.5rem] z-[22] sm:bottom-[7.5rem]"
-                : "absolute inset-x-3 top-[4.5rem] z-[22]";
-          return (
-            <div className={positionClass}>
-              <CampaignSlider
-                businessSlug={businessSlug}
-                config={campaignBannerConfig}
-                layout={bannerLayout}
-                paused={paused}
-              />
-            </div>
-          );
-        })()}
-
-        {luckySpinVisible && luckySpinConfig && !checkoutPanelOpen ? (
-          <div className="pointer-events-none absolute inset-0 z-[45] flex items-center justify-center px-4">
-            <LuckySpinWidget
-              businessSlug={businessSlug}
-              config={luckySpinConfig}
-              onSpinStart={handleLuckySpinStart}
-              onWin={handleLuckySpinWin}
-            />
-          </div>
-        ) : null}
-
-        {luckySpinVisible && luckySpinWin && !checkoutPanelOpen ? (
-          <div className={LUCKY_SPIN_WIN_CARD_FRAME_CLASS}>
-            <LuckySpinWinCard result={luckySpinWin} />
-          </div>
-        ) : null}
-
-        {showMenu ? <StoreMenuPanelRoot /> : null}
-        {showBooking ? <AppointmentBookingPanelRoot /> : null}
-        {showOrdering ? (
-          <>
-            <FlyToBasketLayer />
-            <CheckoutPanel />
-          </>
-        ) : null}
+        {campaignOverlay}
+        {luckySpinOverlay}
+        {kioskPanels}
 
         {!checkoutPanelOpen ? (
           <div className={layout.transcriptWrapperClass}>
@@ -628,88 +827,24 @@ export function VoiceExperience() {
           </div>
         ) : null}
 
-        {menuLoadError && !checkoutPanelOpen ? (
+        {errorBanners ? (
           <div className="absolute inset-x-0 top-[4.5rem] z-20 flex justify-center px-6">
-            <p className="max-w-md rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-center text-xs font-medium text-amber-800">
-              {menuLoadError} Vision kiosk settings may be unavailable until the menu loads.
-            </p>
+            {errorBanners}
           </div>
         ) : null}
 
-        {visionEnabled && browserVisionError && !checkoutPanelOpen ? (
-          <div className="absolute inset-x-0 top-[4.5rem] z-20 flex justify-center px-6">
-            <p className="max-w-md rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-center text-xs font-medium text-amber-800">
-              {browserVisionError}
-            </p>
+        {!checkoutPanelOpen &&
+        (visionEnabled ||
+          showStartButton ||
+          startingConversation ||
+          awaitingGreetingAudio ||
+          !layout.isLandscape) ? (
+          <div
+            className={statusOverlayClass}
+            aria-hidden={!layout.isLandscape && !showStartButton && !startingConversation && !awaitingGreetingAudio && !visionEnabled}
+          >
+            {statusInner}
           </div>
-        ) : null}
-
-        {visionEnabled && isLive && !checkoutPanelOpen ? (
-          <div className={statusOverlayClass}>
-            <p className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 backdrop-blur">
-              {visionMicLabel}
-            </p>
-          </div>
-        ) : null}
-
-        {visionEnabled && !isLive && error && !checkoutPanelOpen ? (
-          <div className={statusOverlayClass}>
-            <p className="max-w-sm rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-center text-xs font-medium text-red-700">
-              {error}
-            </p>
-          </div>
-        ) : null}
-
-        {visionEnabled && !isLive && conversationPhase !== "wrapping_up" && !checkoutPanelOpen ? (
-          <div className={statusOverlayClass}>
-            <p className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 backdrop-blur">
-              {kioskPhase === "waiting"
-                ? visionIdlePrompt(greetingTriggerMode, "waiting")
-                : !kioskConnected
-                  ? "Connecting to vision hub…"
-                  : !visionConfigSynced
-                    ? visionIdlePrompt(greetingTriggerMode, "loading")
-                    : expectBrowserVision && !browserVisionReady
-                      ? visionIdlePrompt(greetingTriggerMode, "starting_camera")
-                      : visionIdlePrompt(greetingTriggerMode, "ready")}
-            </p>
-          </div>
-        ) : null}
-
-        {visionEnabled && isLive && error && !checkoutPanelOpen ? (
-          <div className={statusOverlayClass}>
-            <p className="max-w-sm rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-center text-xs font-medium text-red-700">
-              {error}
-            </p>
-          </div>
-        ) : null}
-
-        {!visionEnabled &&
-        (startingConversation || awaitingGreetingAudio) &&
-        conversationPhase !== "wrapping_up" &&
-        !checkoutPanelOpen &&
-        layout.isLandscape ? (
-          <div className={statusOverlayClass}>
-            <p className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 backdrop-blur">
-              {assistantName} is joining…
-            </p>
-          </div>
-        ) : null}
-
-        {!visionEnabled && !checkoutPanelOpen && !layout.isLandscape ? (
-          <div className={statusOverlayClass} aria-hidden={!showStartButton}>
-            {showStartButton ? (
-              startButton
-            ) : startingConversation || awaitingGreetingAudio ? (
-              <p className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 backdrop-blur">
-                {assistantName} is joining…
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        {showStartButton && layout.isLandscape ? (
-          <div className={statusOverlayClass}>{startButton}</div>
         ) : null}
 
         {!luckySpinVisible && !checkoutPanelOpen && !visionEnabled ? (
@@ -718,7 +853,7 @@ export function VoiceExperience() {
             isTalking={isTalking}
             onStart={handleStartTalking}
             onStop={stopTalking}
-            onSendText={sendText}
+            onSendText={handleSendText}
             menuEnabled={showMenu}
             footerClassName={layout.bottomControlsClassName ?? undefined}
             compact={layout.compactUi}
@@ -726,18 +861,7 @@ export function VoiceExperience() {
         ) : null}
       </div>
 
-      {photoEnabled && photoConfig ? (
-        <SmartPhotoMomentOverlay
-          businessSlug={businessSlug}
-          config={photoConfig}
-          orderId={null}
-          paymentCompleteRequest={paymentCompleteRequest}
-          assistantSpeaking={assistantSpeaking}
-          onRequestPhotoReady={handlePhotoReady}
-          onFinishOfferKeepAlive={handlePhotoFinish}
-          disconnectVoice={disconnect}
-        />
-      ) : null}
+      {photoOverlay}
     </main>
   );
 }

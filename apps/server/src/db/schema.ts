@@ -26,6 +26,26 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Super-admin assigned provider keys for a customer account. */
+export const userApiKeys = pgTable(
+  "user_api_keys",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    userId: varchar("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: varchar("provider", { length: 50 }).notNull(),
+    label: varchar("label", { length: 100 }).notNull().default(""),
+    apiKey: text("api_key").notNull().default(""),
+    sourceId: varchar("source_id", { length: 36 }).notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique("uq_user_api_keys_user_provider").on(table.userId, table.provider)],
+);
+
 export const platformAdmins = pgTable("platform_admins", {
   id: varchar("id", { length: 36 })
     .primaryKey()
@@ -79,6 +99,7 @@ export const plans = pgTable("plans", {
   yearlyPriceIdr: integer("yearly_price_idr").notNull().default(0),
   yearlyDiscountPercent: integer("yearly_discount_percent").notNull().default(0),
   monthlyVoiceSeconds: integer("monthly_voice_seconds").notNull().default(0),
+  kioskDisplayLimit: integer("kiosk_display_limit").notNull().default(1),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -176,12 +197,34 @@ export const businesses = pgTable("businesses", {
   backgroundUrl: text("background_url").notNull().default(""),
   gradientColor: varchar("gradient_color", { length: 7 }).notNull().default(""),
   displayOrientation: varchar("display_orientation", { length: 10 }).notNull().default("landscape"),
+  kioskUiMode: varchar("kiosk_ui_mode", { length: 20 }).notNull().default("classic"),
   businessType: varchar("business_type", { length: 50 }).notNull().default(""),
   primaryUseCase: varchar("primary_use_case", { length: 20 }).notNull().default("both"),
   onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const kioskDisplays = pgTable(
+  "kiosk_displays",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    businessId: varchar("business_id", { length: 36 })
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 120 }).notNull(),
+    slug: varchar("slug", { length: 50 }).notNull(),
+    passwordHash: varchar("password_hash", { length: 255 }).notNull().default(""),
+    isDefault: boolean("is_default").notNull().default(false),
+    unlockSessionId: varchar("unlock_session_id", { length: 36 }),
+    unlockLeasedAt: timestamp("unlock_leased_at", { withTimezone: true }),
+    unlockLeaseExpiresAt: timestamp("unlock_lease_expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique("uq_kiosk_displays_business_slug").on(table.businessId, table.slug)],
+);
 
 export const businessMembers = pgTable(
   "business_members",
@@ -256,7 +299,64 @@ export const appointments = pgTable("appointments", {
   endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
   status: varchar("status", { length: 20 }).notNull().default("scheduled"),
   voiceSessionId: varchar("voice_session_id", { length: 36 }).references(() => voiceSessions.id),
+  staffId: varchar("staff_id", { length: 36 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const bookingStaff = pgTable("booking_staff", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  businessId: varchar("business_id", { length: 36 })
+    .notNull()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  specialty: varchar("specialty", { length: 255 }).notNull().default(""),
+  photoUrl: text("photo_url").notNull().default(""),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const bookingStaffHours = pgTable(
+  "booking_staff_hours",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    staffId: varchar("staff_id", { length: 36 })
+      .notNull()
+      .references(() => bookingStaff.id, { onDelete: "cascade" }),
+    dayOfWeek: integer("day_of_week").notNull(),
+    openTime: varchar("open_time", { length: 5 }).notNull().default("09:00"),
+    closeTime: varchar("close_time", { length: 5 }).notNull().default("18:00"),
+    isClosed: boolean("is_closed").notNull().default(false),
+  },
+  (table) => [unique("uq_booking_staff_hours_day").on(table.staffId, table.dayOfWeek)],
+);
+
+export const bookingServices = pgTable("booking_services", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  businessId: varchar("business_id", { length: 36 })
+    .notNull()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  durationMin: integer("duration_min").notNull().default(30),
+  price: doublePrecision("price").notNull().default(0),
+  description: text("description").notNull().default(""),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const bookingSettings = pgTable("booking_settings", {
+  businessId: varchar("business_id", { length: 36 })
+    .primaryKey()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(true),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const knowledgeEntries = pgTable("knowledge_entries", {
@@ -344,6 +444,9 @@ export const voiceSessions = pgTable("voice_sessions", {
   businessId: varchar("business_id", { length: 36 })
     .notNull()
     .references(() => businesses.id),
+  kioskDisplayId: varchar("kiosk_display_id", { length: 36 }).references(() => kioskDisplays.id, {
+    onDelete: "set null",
+  }),
   status: varchar("status", { length: 50 }).notNull().default("active"),
   endReason: varchar("end_reason", { length: 50 }),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
@@ -395,6 +498,7 @@ export const orderItems = pgTable("order_items", {
 });
 
 export type User = typeof users.$inferSelect;
+export type UserApiKey = typeof userApiKeys.$inferSelect;
 export type PlatformAdmin = typeof platformAdmins.$inferSelect;
 export type PlatformSetting = typeof platformSettings.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
@@ -415,6 +519,10 @@ export type VoiceSession = typeof voiceSessions.$inferSelect;
 export type TranscriptMessage = typeof transcriptMessages.$inferSelect;
 export type BusinessHours = typeof businessHours.$inferSelect;
 export type Appointment = typeof appointments.$inferSelect;
+export type BookingStaff = typeof bookingStaff.$inferSelect;
+export type BookingStaffHours = typeof bookingStaffHours.$inferSelect;
+export type BookingService = typeof bookingServices.$inferSelect;
+export type BookingSettings = typeof bookingSettings.$inferSelect;
 
 export const addons = pgTable("addons", {
   id: varchar("id", { length: 36 })
@@ -759,6 +867,7 @@ export const presentations = pgTable("presentations", {
   greetingScript: text("greeting_script").notNull().default(""),
   closingScript: text("closing_script").notNull().default(""),
   thumbnailUrl: text("thumbnail_url").notNull().default(""),
+  shareToken: varchar("share_token", { length: 64 }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -963,6 +1072,8 @@ export type LiveSession = typeof liveSessions.$inferSelect;
 export type LiveSessionProduct = typeof liveSessionProducts.$inferSelect;
 export type LiveKnowledgeEntry = typeof liveKnowledgeEntries.$inferSelect;
 export type LiveMessage = typeof liveMessages.$inferSelect;
+
+export type KioskDisplay = typeof kioskDisplays.$inferSelect;
 
 export type MinuteGrant = typeof minuteGrants.$inferSelect;
 export type MinuteLedger = typeof minuteLedger.$inferSelect;

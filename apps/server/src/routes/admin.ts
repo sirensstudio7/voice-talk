@@ -40,6 +40,7 @@ import {
   voiceSessions,
   visionSettings,
   topupOrders,
+  kioskDisplays,
 } from "../db/schema.js";
 import { deleteBusinessAsOwner } from "../services/delete-business.js";
 import {
@@ -49,6 +50,7 @@ import {
   listPaidPlans,
   assertCanCreateWorkspace,
 } from "../services/entitlement.js";
+import { endVoiceSession } from "../services/order-persistence.js";
 import {
   createTopupOrder,
   getVoiceMinuteWallet,
@@ -56,7 +58,9 @@ import {
   listUserTopupOrders,
   orderOut,
   packageOut,
+  safeDebitEndedSession,
 } from "../services/voice-minutes.js";
+import { forceCompleteVoiceSession } from "../services/voice-session-runtime.js";
 import { buildSystemInstruction, normalizeIdleTimeoutSeconds } from "../services/config-builder.js";
 import {
   buildOnboardingAiRules,
@@ -78,6 +82,22 @@ import {
   saveBusinessHours,
   type BusinessHourInput,
 } from "../services/appointments.js";
+import {
+  assertBookingAddon,
+  bookingSettingsOut,
+  createService,
+  createStaff,
+  deleteService,
+  deleteStaff,
+  getOrCreateBookingSettings,
+  listServices,
+  listStaff,
+  listStaffHours,
+  saveStaffHours,
+  updateBookingSettings,
+  updateService,
+  updateStaff,
+} from "../services/booking.js";
 import {
   fetchBusinessStatsSummary,
   fetchStatsDaily,
@@ -120,6 +140,7 @@ import {
   createAddonRequest,
   getAddonStatusForBusiness,
   getOrCreatePhotoSettings,
+  listAddonStatusesForBusiness,
   listAddons,
   photoSettingsOut,
   SMART_PHOTO_MOMENT_CODE,
@@ -134,6 +155,7 @@ import { orderToOut } from "./public.js";
 
 const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const DISPLAY_ORIENTATIONS = new Set(["portrait", "landscape", "auto"]);
+const KIOSK_UI_MODES = new Set(["classic", "studio"]);
 
 const ADDON_MONTHLY_IDR = 199_000;
 const ADDON_DURATION_DISCOUNTS: Record<number, number> = {
@@ -185,6 +207,31 @@ function normalizeDisplayOrientation(value: string | undefined | null): string {
     throw err;
   }
   return cleaned;
+}
+
+function normalizeKioskUiMode(value: string | undefined | null): "classic" | "studio" {
+  const cleaned = value?.trim().toLowerCase();
+  return cleaned === "studio" ? "studio" : "classic";
+}
+
+function parseKioskUiMode(value: string | undefined | null): "classic" | "studio" {
+  if (value == null || !value.trim()) return "classic";
+  const cleaned = value.trim().toLowerCase();
+  if (!KIOSK_UI_MODES.has(cleaned)) {
+    const err = new Error("Kiosk UI must be classic or studio.") as Error & { statusCode: number };
+    err.statusCode = 400;
+    throw err;
+  }
+  return cleaned as "classic" | "studio";
+}
+
+function appearanceOut(business: typeof businesses.$inferSelect) {
+  return {
+    background_url: business.backgroundUrl || "",
+    gradient_color: business.gradientColor || "",
+    display_orientation: business.displayOrientation || "landscape",
+    kiosk_ui_mode: normalizeKioskUiMode(business.kioskUiMode),
+  };
 }
 
 function productOut(p: typeof products.$inferSelect) {
@@ -255,16 +302,87 @@ type ConversationSessionRow = typeof voiceSessions.$inferSelect;
 type ConversationMessageRow = typeof transcriptMessages.$inferSelect;
 type ConversationOrderRow = typeof orders.$inferSelect;
 
-function buildConversationDetail(
+type ConversationKioskOut = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+function conversationSummaryOut(
   session: ConversationSessionRow,
-  messages: ConversationMessageRow[],
-  order: ConversationOrderRow | undefined,
+  extras: {
+    messageCount: number;
+    orderId: string | null;
+    orderTotal: number | null;
+    kiosk?: ConversationKioskOut | null;
+  },
 ) {
   const duration =
     session.endedAt != null
       ? Math.floor((session.endedAt.getTime() - session.startedAt.getTime()) / 1000)
       : null;
 
+  return {
+    id: session.id,
+    status: session.status,
+    started_at: serializeUtcDatetime(session.startedAt),
+    ended_at: session.endedAt ? serializeUtcDatetime(session.endedAt) : null,
+    end_reason: session.endReason ?? null,
+    duration_seconds: duration,
+    message_count: extras.messageCount,
+    order_id: extras.orderId,
+    order_total: extras.orderTotal,
+    kiosk_display_id: extras.kiosk?.id ?? session.kioskDisplayId ?? null,
+    kiosk_display_name: extras.kiosk?.name ?? null,
+    kiosk_display_slug: extras.kiosk?.slug ?? null,
+  };
+}
+
+function voiceSessionsListWhere(
+  businessId: string,
+  filterStart: Date | null,
+  filterEnd: Date | null,
+  kioskDisplayId: string | null,
+) {
+  const conditions = [eq(voiceSessions.businessId, businessId)];
+  if (filterStart && filterEnd) {
+    conditions.push(gte(voiceSessions.startedAt, filterStart));
+    conditions.push(lt(voiceSessions.startedAt, filterEnd));
+  }
+  if (kioskDisplayId) {
+    conditions.push(eq(voiceSessions.kioskDisplayId, kioskDisplayId));
+  }
+  return and(...conditions);
+}
+
+async function loadKioskDisplayMapForSessions(
+  sessions: ConversationSessionRow[],
+): Promise<Map<string, ConversationKioskOut>> {
+  const displayIds = [
+    ...new Set(
+      sessions.map((session) => session.kioskDisplayId).filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  if (displayIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      id: kioskDisplays.id,
+      name: kioskDisplays.name,
+      slug: kioskDisplays.slug,
+    })
+    .from(kioskDisplays)
+    .where(inArray(kioskDisplays.id, displayIds));
+
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
+function buildConversationDetail(
+  session: ConversationSessionRow,
+  messages: ConversationMessageRow[],
+  order: ConversationOrderRow | undefined,
+  kiosk?: ConversationKioskOut | null,
+) {
   const mappedMessages = messages.map((m) => ({
     id: m.id,
     role: m.role,
@@ -274,17 +392,22 @@ function buildConversationDetail(
   const mergedMessages = mergeTranscriptMessages(mappedMessages);
 
   return {
-    id: session.id,
-    status: session.status,
-    started_at: serializeUtcDatetime(session.startedAt),
-    ended_at: session.endedAt ? serializeUtcDatetime(session.endedAt) : null,
-    end_reason: session.endReason ?? null,
-    duration_seconds: duration,
-    message_count: mergedMessages.length,
-    order_id: order?.id ?? null,
-    order_total: order?.total ?? null,
+    ...conversationSummaryOut(session, {
+      messageCount: mergedMessages.length,
+      orderId: order?.id ?? null,
+      orderTotal: order?.total ?? null,
+      kiosk,
+    }),
     messages: mergedMessages,
   };
+}
+
+async function loadKioskForSession(
+  session: ConversationSessionRow,
+): Promise<ConversationKioskOut | null> {
+  if (!session.kioskDisplayId) return null;
+  const map = await loadKioskDisplayMapForSessions([session]);
+  return map.get(session.kioskDisplayId) ?? null;
 }
 
 export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
@@ -310,14 +433,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       if (user.status === "pending") {
         return reply.status(403).send({ detail: "Your account is awaiting admin approval." });
       }
-      await withLoginDb((loginDb) =>
-        loginDb.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id)),
-      );
+      const businesses = await withLoginDb(async (loginDb) => {
+        await loginDb.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
+        return listBusinessesForUser(user.id, loginDb);
+      });
       return {
         access_token: createAccessToken(user.id),
         token_type: "bearer",
         user: userOut(user),
-        businesses: await listBusinessesForUser(user.id),
+        businesses,
       };
     } catch (err) {
       return sendAuthError(reply, err);
@@ -494,6 +618,8 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           businessType: "other",
         }),
       );
+      const { ensureDefaultKioskDisplay } = await import("../services/kiosk-displays.js");
+      await ensureDefaultKioskDisplay(business!.id);
 
       return reply.status(201).send(businessOut(business!));
     } catch (err) {
@@ -678,11 +804,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      return {
-        background_url: business.backgroundUrl || "",
-        gradient_color: business.gradientColor || "",
-        display_orientation: business.displayOrientation || "landscape",
-      };
+      return appearanceOut(business);
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -695,25 +817,26 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as {
         gradient_color?: string | null;
         display_orientation?: string | null;
+        kiosk_ui_mode?: string | null;
       };
       let gradientColor = business.gradientColor;
       let displayOrientation = business.displayOrientation;
+      let kioskUiMode = business.kioskUiMode || "classic";
       if (body.gradient_color !== undefined) {
         gradientColor = normalizeGradientColor(body.gradient_color);
       }
       if (body.display_orientation !== undefined) {
         displayOrientation = normalizeDisplayOrientation(body.display_orientation);
       }
+      if (body.kiosk_ui_mode !== undefined) {
+        kioskUiMode = parseKioskUiMode(body.kiosk_ui_mode);
+      }
       const [updated] = await db
         .update(businesses)
-        .set({ gradientColor, displayOrientation })
+        .set({ gradientColor, displayOrientation, kioskUiMode })
         .where(eq(businesses.id, business.id))
         .returning();
-      return {
-        background_url: updated!.backgroundUrl || "",
-        gradient_color: updated!.gradientColor || "",
-        display_orientation: updated!.displayOrientation || "landscape",
-      };
+      return appearanceOut(updated!);
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
         return reply.status((err as Error & { statusCode: number }).statusCode).send({
@@ -758,11 +881,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .set({ backgroundUrl: url })
         .where(eq(businesses.id, business.id))
         .returning();
-      return {
-        background_url: updated!.backgroundUrl || "",
-        gradient_color: updated!.gradientColor || "",
-        display_orientation: updated!.displayOrientation || "landscape",
-      };
+      return appearanceOut(updated!);
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -788,11 +907,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .where(eq(businesses.id, business.id))
         .returning();
 
-      return {
-        background_url: updated!.backgroundUrl || "",
-        gradient_color: updated!.gradientColor || "",
-        display_orientation: updated!.displayOrientation || "landscape",
-      };
+      return appearanceOut(updated!);
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -1243,7 +1358,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const query = request.query as { date?: string; tz_offset?: string };
+      const query = request.query as {
+        date?: string;
+        tz_offset?: string;
+        kiosk_display_id?: string;
+      };
       let filterStart: Date | null = null;
       let filterEnd: Date | null = null;
       if (query.date) {
@@ -1251,22 +1370,19 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         filterStart = start;
         filterEnd = end;
       }
+      const kioskDisplayId =
+        typeof query.kiosk_display_id === "string" && query.kiosk_display_id.trim()
+          ? query.kiosk_display_id.trim()
+          : null;
 
       let sessions = await db
         .select()
         .from(voiceSessions)
-        .where(
-          filterStart && filterEnd
-            ? and(
-                eq(voiceSessions.businessId, businessId),
-                gte(voiceSessions.startedAt, filterStart),
-                lt(voiceSessions.startedAt, filterEnd),
-              )
-            : eq(voiceSessions.businessId, businessId),
-        )
+        .where(voiceSessionsListWhere(businessId, filterStart, filterEnd, kioskDisplayId))
         .orderBy(desc(voiceSessions.startedAt))
         .limit(200);
 
+      const kioskById = await loadKioskDisplayMapForSessions(sessions);
       const sessionIds = sessions.map((s) => s.id);
       const messageCounts = new Map<string, number>();
       const orderBySessionId = new Map<string, (typeof orders.$inferSelect)>();
@@ -1299,21 +1415,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
 
       return sessions.map((session) => {
         const order = orderBySessionId.get(session.id);
-        const duration =
-          session.endedAt != null
-            ? Math.floor((session.endedAt.getTime() - session.startedAt.getTime()) / 1000)
-            : null;
-        return {
-          id: session.id,
-          status: session.status,
-          started_at: serializeUtcDatetime(session.startedAt),
-          ended_at: session.endedAt ? serializeUtcDatetime(session.endedAt) : null,
-          end_reason: session.endReason ?? null,
-          duration_seconds: duration,
-          message_count: messageCounts.get(session.id) ?? 0,
-          order_id: order?.id ?? null,
-          order_total: order?.total ?? null,
-        };
+        const kiosk = session.kioskDisplayId
+          ? (kioskById.get(session.kioskDisplayId) ?? null)
+          : null;
+        return conversationSummaryOut(session, {
+          messageCount: messageCounts.get(session.id) ?? 0,
+          orderId: order?.id ?? null,
+          orderTotal: order?.total ?? null,
+          kiosk,
+        });
       });
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
@@ -1329,7 +1439,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const query = request.query as { date?: string; tz_offset?: string };
+      const query = request.query as {
+        date?: string;
+        tz_offset?: string;
+        kiosk_display_id?: string;
+      };
       let filterStart: Date | null = null;
       let filterEnd: Date | null = null;
       if (query.date) {
@@ -1337,22 +1451,19 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         filterStart = start;
         filterEnd = end;
       }
+      const kioskDisplayId =
+        typeof query.kiosk_display_id === "string" && query.kiosk_display_id.trim()
+          ? query.kiosk_display_id.trim()
+          : null;
 
       const sessions = await db
         .select()
         .from(voiceSessions)
-        .where(
-          filterStart && filterEnd
-            ? and(
-                eq(voiceSessions.businessId, businessId),
-                gte(voiceSessions.startedAt, filterStart),
-                lt(voiceSessions.startedAt, filterEnd),
-              )
-            : eq(voiceSessions.businessId, businessId),
-        )
+        .where(voiceSessionsListWhere(businessId, filterStart, filterEnd, kioskDisplayId))
         .orderBy(desc(voiceSessions.startedAt))
         .limit(200);
 
+      const kioskById = await loadKioskDisplayMapForSessions(sessions);
       const sessionIds = sessions.map((session) => session.id);
       if (sessionIds.length === 0) return [];
 
@@ -1379,13 +1490,17 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
-      return sessions.map((session) =>
-        buildConversationDetail(
+      return sessions.map((session) => {
+        const kiosk = session.kioskDisplayId
+          ? (kioskById.get(session.kioskDisplayId) ?? null)
+          : null;
+        return buildConversationDetail(
           session,
           messagesBySessionId.get(session.id) ?? [],
           orderBySessionId.get(session.id),
-        ),
-      );
+          kiosk,
+        );
+      });
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
         return reply.status((err as Error & { statusCode: number }).statusCode).send({
@@ -1420,8 +1535,58 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         .where(eq(orders.voiceSessionId, sessionId))
         .limit(1);
 
-      return buildConversationDetail(session, messages, sessionOrders[0]);
+      const kiosk = await loadKioskForSession(session);
+      return buildConversationDetail(session, messages, sessionOrders[0], kiosk);
     } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/admin/businesses/:businessId/conversations/:sessionId/end", async (request, reply) => {
+    try {
+      const { businessId, sessionId } = request.params as {
+        businessId: string;
+        sessionId: string;
+      };
+      await requireBusinessAccess(request, businessId);
+      const session = await db.query.voiceSessions.findFirst({
+        where: and(eq(voiceSessions.id, sessionId), eq(voiceSessions.businessId, businessId)),
+      });
+      if (!session) return reply.status(404).send({ detail: "Conversation not found" });
+
+      if (!session.endedAt) {
+        const live = forceCompleteVoiceSession(sessionId, "admin");
+        await endVoiceSession(sessionId, "admin");
+        // Live sockets debit in websocket teardown. Debit here only for orphan rows.
+        if (!live) await safeDebitEndedSession(sessionId);
+      }
+
+      const ended = await db.query.voiceSessions.findFirst({
+        where: and(eq(voiceSessions.id, sessionId), eq(voiceSessions.businessId, businessId)),
+      });
+      if (!ended) return reply.status(404).send({ detail: "Conversation not found" });
+
+      const [counts, sessionOrders] = await Promise.all([
+        db
+          .select({ count: count() })
+          .from(transcriptMessages)
+          .where(eq(transcriptMessages.voiceSessionId, sessionId)),
+        db.select().from(orders).where(eq(orders.voiceSessionId, sessionId)).limit(1),
+      ]);
+      const order = sessionOrders[0];
+      const kiosk = await loadKioskForSession(ended);
+      return conversationSummaryOut(ended, {
+        messageCount: Number(counts[0]?.count ?? 0),
+        orderId: order?.id ?? null,
+        orderTotal: order?.total ?? null,
+        kiosk,
+      });
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
       return sendAuthError(reply, err);
     }
   });
@@ -1529,6 +1694,189 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       await requireBusinessAccess(request, businessId);
       const body = request.body as { hours: BusinessHourInput[] };
       return saveBusinessHours(businessId, body.hours ?? []);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/booking/settings", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      await assertBookingAddon(businessId);
+      const settings = await getOrCreateBookingSettings(businessId);
+      return bookingSettingsOut(settings);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.patch("/admin/businesses/:businessId/booking/settings", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      const business = await requireBusinessAccess(request, businessId);
+      await assertBookingAddon(businessId);
+      const body = request.body as { enabled?: boolean };
+      if (typeof body.enabled !== "boolean") {
+        return reply.status(400).send({ detail: "enabled boolean is required" });
+      }
+      const settings = await updateBookingSettings(businessId, { enabled: body.enabled }, business.slug);
+      return bookingSettingsOut(settings);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/booking/staff", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      await assertBookingAddon(businessId);
+      return listStaff(businessId);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/admin/businesses/:businessId/booking/staff", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      await assertBookingAddon(businessId);
+      const body = request.body as {
+        name?: string;
+        specialty?: string;
+        photo_url?: string;
+        hours?: BusinessHourInput[];
+      };
+      const staff = await createStaff(businessId, {
+        name: String(body.name ?? ""),
+        specialty: body.specialty,
+        photo_url: body.photo_url,
+        hours: body.hours,
+      });
+      return reply.status(201).send(staff);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.patch("/admin/businesses/:businessId/booking/staff/:staffId", async (request, reply) => {
+    try {
+      const { businessId, staffId } = request.params as { businessId: string; staffId: string };
+      await requireBusinessAccess(request, businessId);
+      await assertBookingAddon(businessId);
+      const body = request.body as {
+        name?: string;
+        specialty?: string;
+        photo_url?: string;
+        is_active?: boolean;
+        sort_order?: number;
+      };
+      return updateStaff(businessId, staffId, body);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.delete("/admin/businesses/:businessId/booking/staff/:staffId", async (request, reply) => {
+    try {
+      const { businessId, staffId } = request.params as { businessId: string; staffId: string };
+      await requireBusinessAccess(request, businessId);
+      await assertBookingAddon(businessId);
+      return deleteStaff(businessId, staffId);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/booking/staff/:staffId/hours", async (request, reply) => {
+    try {
+      const { businessId, staffId } = request.params as { businessId: string; staffId: string };
+      await requireBusinessAccess(request, businessId);
+      await assertBookingAddon(businessId);
+      return listStaffHours(businessId, staffId);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.put("/admin/businesses/:businessId/booking/staff/:staffId/hours", async (request, reply) => {
+    try {
+      const { businessId, staffId } = request.params as { businessId: string; staffId: string };
+      await requireBusinessAccess(request, businessId);
+      await assertBookingAddon(businessId);
+      const body = request.body as { hours: BusinessHourInput[] };
+      return saveStaffHours(businessId, staffId, body.hours ?? []);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/booking/services", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      await assertBookingAddon(businessId);
+      return listServices(businessId);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/admin/businesses/:businessId/booking/services", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      await assertBookingAddon(businessId);
+      const body = request.body as {
+        name?: string;
+        duration_min?: number;
+        price?: number;
+        description?: string;
+      };
+      const service = await createService(businessId, {
+        name: String(body.name ?? ""),
+        duration_min: body.duration_min,
+        price: body.price,
+        description: body.description,
+      });
+      return reply.status(201).send(service);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.patch("/admin/businesses/:businessId/booking/services/:serviceId", async (request, reply) => {
+    try {
+      const { businessId, serviceId } = request.params as {
+        businessId: string;
+        serviceId: string;
+      };
+      await requireBusinessAccess(request, businessId);
+      await assertBookingAddon(businessId);
+      const body = request.body as {
+        name?: string;
+        duration_min?: number;
+        price?: number;
+        description?: string;
+        is_active?: boolean;
+      };
+      return updateService(businessId, serviceId, body);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.delete("/admin/businesses/:businessId/booking/services/:serviceId", async (request, reply) => {
+    try {
+      const { businessId, serviceId } = request.params as {
+        businessId: string;
+        serviceId: string;
+      };
+      await requireBusinessAccess(request, businessId);
+      await assertBookingAddon(businessId);
+      return deleteService(businessId, serviceId);
     } catch (err) {
       return sendAuthError(reply, err);
     }
@@ -1752,6 +2100,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         code: p.code,
         name: p.name,
         workspace_limit: p.workspaceLimit,
+        kiosk_display_limit: p.kioskDisplayLimit,
         monthly_price_idr: p.monthlyPriceIdr,
         yearly_price_idr: p.yearlyPriceIdr,
         yearly_discount_percent: p.yearlyDiscountPercent,
@@ -1776,7 +2125,12 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         const entitlement = await getEntitlementSnapshot(user.id);
         return reply.status(201).send({
           id: requestId,
-          requested_plan: { code: plan.code, name: plan.name, workspace_limit: plan.workspaceLimit },
+          requested_plan: {
+            code: plan.code,
+            name: plan.name,
+            workspace_limit: plan.workspaceLimit,
+            kiosk_display_limit: plan.kioskDisplayLimit,
+          },
           status: "pending",
           entitlement,
         });
@@ -1805,6 +2159,21 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         monthly_price_idr: a.monthlyPriceIdr,
       }));
     } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/addons", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      return listAddonStatusesForBusiness(businessId);
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
       return sendAuthError(reply, err);
     }
   });
@@ -2166,6 +2535,93 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         notes: body.notes,
       });
       return reply.status(201).send(orderOut(order));
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.get("/admin/businesses/:businessId/kiosks", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      const { listKioskDisplays } = await import("../services/kiosk-displays.js");
+      return listKioskDisplays(businessId);
+    } catch (err) {
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/admin/businesses/:businessId/kiosks", async (request, reply) => {
+    try {
+      const { businessId } = request.params as { businessId: string };
+      await requireBusinessAccess(request, businessId);
+      const body = (request.body ?? {}) as { name?: string; slug?: string; pin?: string };
+      if (!body.pin) {
+        return reply.status(400).send({ detail: "PIN is required." });
+      }
+      const { createKioskDisplay } = await import("../services/kiosk-displays.js");
+      const created = await createKioskDisplay(businessId, {
+        name: body.name,
+        slug: body.slug,
+        pin: body.pin,
+      });
+      return reply.status(201).send(created);
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.patch("/admin/businesses/:businessId/kiosks/:displayId", async (request, reply) => {
+    try {
+      const { businessId, displayId } = request.params as { businessId: string; displayId: string };
+      await requireBusinessAccess(request, businessId);
+      const body = (request.body ?? {}) as { name?: string; pin?: string };
+      const { updateKioskDisplay } = await import("../services/kiosk-displays.js");
+      return updateKioskDisplay(businessId, displayId, body);
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.delete("/admin/businesses/:businessId/kiosks/:displayId", async (request, reply) => {
+    try {
+      const { businessId, displayId } = request.params as { businessId: string; displayId: string };
+      await requireBusinessAccess(request, businessId);
+      const { deleteKioskDisplay } = await import("../services/kiosk-displays.js");
+      await deleteKioskDisplay(businessId, displayId);
+      return reply.status(204).send();
+    } catch (err) {
+      if (err instanceof Error && "statusCode" in err) {
+        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+          detail: err.message,
+        });
+      }
+      return sendAuthError(reply, err);
+    }
+  });
+
+  app.post("/admin/businesses/:businessId/kiosks/:displayId/release", async (request, reply) => {
+    try {
+      const { businessId, displayId } = request.params as { businessId: string; displayId: string };
+      await requireBusinessAccess(request, businessId);
+      const { forceReleaseKioskDisplay } = await import("../services/kiosk-displays.js");
+      const updated = await forceReleaseKioskDisplay(businessId, displayId);
+      return updated;
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
         return reply.status((err as Error & { statusCode: number }).statusCode).send({

@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import {
-  getBusinessCapabilities,
   normalizeVoiceGender,
   normalizeVoicePreset,
 } from "@voicetalk/shared";
@@ -33,6 +32,8 @@ import {
 } from "../services/addon-entitlement.js";
 import { getLuckySpinPublicConfig } from "../services/lucky-spin.js";
 import { getCampaignBannerPublicConfig } from "../services/campaign-banner.js";
+import { resolveCapabilities } from "../services/capabilities.js";
+import { getBookingPublicConfig } from "../services/booking.js";
 import {
   completePhotoSession,
   markPhotoOfferResponse,
@@ -83,6 +84,65 @@ function orderToOut(order: {
 export { orderToOut };
 
 export async function registerPublicRoutes(app: FastifyInstance): Promise<void> {
+  app.post("/public/kiosks/unlock", async (request, reply) => {
+    const body = (request.body ?? {}) as { business?: string; kiosk?: string; pin?: string };
+    const business = body.business?.trim() ?? "";
+    const pin = body.pin ?? "";
+    if (!business || !pin) {
+      return reply.status(400).send({ detail: "business and pin are required." });
+    }
+    const { checkKioskUnlockRateLimit, unlockKioskDisplay } = await import(
+      "../services/kiosk-displays.js"
+    );
+    const key = `${request.ip}:${business}`;
+    if (!checkKioskUnlockRateLimit(key)) {
+      return reply.status(429).send({ detail: "Too many PIN attempts. Try again later." });
+    }
+    try {
+      return await unlockKioskDisplay({
+        businessSlug: business,
+        kioskSlug: body.kiosk,
+        pin,
+      });
+    } catch (err) {
+      const status =
+        err instanceof Error && "statusCode" in err
+          ? (err as Error & { statusCode: number }).statusCode
+          : 500;
+      return reply.status(status).send({
+        detail: err instanceof Error ? err.message : "Unlock failed.",
+      });
+    }
+  });
+
+  app.post("/public/kiosks/release", async (request, reply) => {
+    const body = (request.body ?? {}) as { business?: string; kiosk?: string; token?: string };
+    const business = body.business?.trim() ?? "";
+    const authHeader = request.headers.authorization ?? "";
+    const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    const token = (body.token ?? bearer).trim();
+    if (!business || !token) {
+      return reply.status(400).send({ detail: "business and token are required." });
+    }
+    const { releaseKioskDisplayByToken } = await import("../services/kiosk-displays.js");
+    try {
+      await releaseKioskDisplayByToken({
+        businessSlug: business,
+        kioskSlug: body.kiosk,
+        token,
+      });
+      return reply.status(204).send();
+    } catch (err) {
+      const status =
+        err instanceof Error && "statusCode" in err
+          ? (err as Error & { statusCode: number }).statusCode
+          : 500;
+      return reply.status(status).send({
+        detail: err instanceof Error ? err.message : "Release failed.",
+      });
+    }
+  });
+
   app.get("/businesses/:slug", async (request, reply) => {
     const { slug } = request.params as { slug: string };
     const business = await getBusinessBySlug(slug);
@@ -103,7 +163,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
     const business = await getBusinessBySlug(slug);
     if (!business) return reply.status(404).send({ detail: "Business not found" });
 
-    const capabilities = getBusinessCapabilities(business.primaryUseCase, business.businessType);
+    const { capabilities } = await resolveCapabilities(business);
     if (!capabilities.ordering_enabled) {
       return reply.status(403).send({ detail: "Ordering is not enabled for this business." });
     }
@@ -130,13 +190,14 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
     const tenant = await getBusinessBySlug(slug);
     if (!tenant) return reply.status(404).send({ detail: "Business not found" });
 
-    const capabilities = getBusinessCapabilities(tenant.primaryUseCase, tenant.businessType);
+    const { capabilities } = await resolveCapabilities(tenant);
     const productList = capabilities.menu_enabled ? getActiveProducts(tenant) : [];
     const vision = await getOrCreateVisionSettings(tenant.id);
     const smartPhotoMoment = await getSmartPhotoMomentPublicConfig(tenant.id);
     const luckySpin = await getLuckySpinPublicConfig(tenant.id);
     const campaignBanner = await getCampaignBannerPublicConfig(tenant.id);
     const languagePack = await getLanguagePackPublicConfig(tenant.id);
+    const booking = await getBookingPublicConfig(tenant.id);
     return {
       business: tenant.name,
       slug: tenant.slug,
@@ -148,6 +209,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       background_url: tenant.backgroundUrl || "",
       gradient_color: tenant.gradientColor || "",
       display_orientation: tenant.displayOrientation || "landscape",
+      kiosk_ui_mode: tenant.kioskUiMode === "studio" ? "studio" : "classic",
       voice_preset: normalizeVoicePreset(tenant.aiRules?.voicePreset),
       voice_gender: normalizeVoiceGender(tenant.aiRules?.voiceGender),
       capabilities,
@@ -156,6 +218,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       lucky_spin: luckySpin,
       campaign_banner: campaignBanner,
       languages: languagePack,
+      booking,
       products: productList.map((p) => ({
         id: p.productId,
         name: p.name,
@@ -172,9 +235,10 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
 
   app.get("/businesses/:slug/availability", async (request, reply) => {
     const { slug } = request.params as { slug: string };
-    const { product_id: productId, date } = request.query as {
+    const { product_id: productId, date, staff_id: staffId } = request.query as {
       product_id?: string;
       date?: string;
+      staff_id?: string;
     };
     const business = await getBusinessBySlug(slug);
     if (!business) return reply.status(404).send({ detail: "Business not found" });
@@ -182,11 +246,17 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       return reply.status(400).send({ detail: "product_id and date are required." });
     }
 
+    const { capabilities } = await resolveCapabilities(business);
+    if (!capabilities.booking_enabled) {
+      return reply.status(403).send({ detail: "Booking is not enabled for this business." });
+    }
+
     try {
       const slots = await getAvailableSlots({
         businessId: business.id,
         productId,
         date,
+        staffId,
       });
       return { slots };
     } catch (error) {
@@ -203,11 +273,12 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       customer_name?: string;
       customer_phone?: string;
       starts_at?: string;
+      staff_id?: string;
     };
     const business = await getBusinessBySlug(slug);
     if (!business) return reply.status(404).send({ detail: "Business not found" });
 
-    const capabilities = getBusinessCapabilities(business.primaryUseCase, business.businessType);
+    const { capabilities } = await resolveCapabilities(business);
     if (!capabilities.booking_enabled) {
       return reply.status(403).send({ detail: "Booking is not enabled for this business." });
     }
@@ -219,6 +290,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
         customerName: String(body.customer_name ?? ""),
         customerPhone: String(body.customer_phone ?? ""),
         startsAt: String(body.starts_at ?? ""),
+        staffId: body.staff_id ? String(body.staff_id) : null,
       });
       return reply.status(201).send(appointment);
     } catch (error) {

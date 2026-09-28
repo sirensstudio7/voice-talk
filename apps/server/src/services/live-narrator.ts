@@ -25,16 +25,18 @@ export function stopLiveHostVoice(sessionId: string) {
 
 export async function speakWithGeminiLive(input: {
   sessionId: string;
+  apiKey?: string | null;
   text: string;
   voiceName: string;
   assistantName: string;
   onPcm: (pcm: Buffer) => void;
 }): Promise<boolean> {
   const line = input.text.trim();
-  if (!line || !env.GEMINI_API_KEY) return false;
+  const apiKey = input.apiKey?.trim();
+  if (!line || !apiKey) return false;
   let host = hosts.get(input.sessionId);
   if (!host) {
-    host = startHost(input);
+    host = startHost({ ...input, apiKey });
     hosts.set(input.sessionId, host);
   }
   const ok = await Promise.race([
@@ -54,6 +56,7 @@ export async function speakWithGeminiLive(input: {
 
 function startHost(input: {
   sessionId: string;
+  apiKey: string;
   voiceName: string;
   assistantName: string;
   onPcm: (pcm: Buffer) => void;
@@ -72,7 +75,7 @@ function startHost(input: {
   };
 
   void withDirectConnectionAsync(async () => {
-    const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY! });
+    const ai = new GoogleGenAI({ apiKey: input.apiKey });
     const session = await ai.live.connect({
       model: env.GEMINI_MODEL,
       config: {
@@ -128,7 +131,7 @@ Do not add a welcome. Do not invent products. Do not ask questions. Speak only t
     try {
       for await (const item of queue.iterable) {
         if (item === PRESENTER_SHUTDOWN || closed) break;
-        const text = String(item).trim();
+        const text = (typeof item === "string" ? item : item.text).trim();
         if (!text) continue;
         const finished = new Promise<void>((resolve) => {
           turnDone = resolve;
