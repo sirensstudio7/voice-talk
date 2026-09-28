@@ -116,6 +116,9 @@ in code but is not mounted. Privacy/Terms/Contact links are placeholders.
 
 ## Known gaps (technical)
 
+> Each gap below has a proposal ticket in [`docs/tickets/`](tickets/README.md).
+> That directory is the working backlog; this table is the summary.
+
 | Area | Gap |
 |---|---|
 | Voice minutes | Debit loops lot updates without a transaction — concurrent sessions can overspend |
