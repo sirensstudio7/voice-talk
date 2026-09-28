@@ -24,10 +24,10 @@ Copy credentials into a secure note for Render env vars.
 ## 2. Render — Elysia API
 
 1. Connect GitHub repo to Render
-2. Use [`render.yaml`](../render.yaml) (Blueprint) or create a **Web Service**:
-   - **Root directory:** `apps/server`
-   - **Build:** `npm install && npm run build`
-   - **Start:** `node dist/src/index.js`
+2. Use [`render.yaml`](../render.yaml) (Blueprint): the API deploys as a Docker
+   service from [`apps/server/Dockerfile`](../apps/server/Dockerfile), on the
+   `oven/bun` image. There is no build step — `bun src/index.ts` runs the
+   TypeScript entrypoint directly.
    - **Health check:** `/health`
 
 3. Set environment variables:
@@ -46,7 +46,7 @@ Copy credentials into a secure note for Render env vars.
 5. Run seed once (from your machine):
 
 ```bash
-DATABASE_URL="your-supabase-pooler-url" npm run seed --workspace=server
+DATABASE_URL="your-supabase-pooler-url" bun run --filter server seed
 ```
 
 > Free tier sleeps after inactivity. Voice WebSocket demos may disconnect — use a paid instance for reliable demos.
@@ -73,7 +73,7 @@ Redeploy after setting env vars.
 ## 4. Quick local demo (no Render)
 
 ```bash
-npm run demo:cloudflare
+bun run demo:cloudflare
 ```
 
 Shares a temporary public URL via Cloudflare Tunnel while running locally.

@@ -70,7 +70,7 @@ Never put `service_role` in frontend code or Vercel — server only.
 From your repo root (with Supabase `DATABASE_URL` in `.env`):
 
 ```bash
-npm run seed:db
+bun run seed:db
 ```
 
 Creates:
@@ -82,7 +82,7 @@ Change the admin password in production after first login (or set `ADMIN_PASSWOR
 ## 5. Verify connection
 
 ```bash
-npm run dev:api
+bun run dev:api
 curl http://localhost:8000/health
 curl "http://localhost:8000/menu?business=sunrise-coffee"
 ```

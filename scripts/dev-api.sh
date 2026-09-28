@@ -53,28 +53,28 @@ clear_proxy_env() {
 }
 
 start_api_daemon() {
-  if [ ! -d "$SERVER_DIR/node_modules" ]; then
-    echo "Missing node_modules at apps/server — run npm install from repo root" >&2
+  if [ ! -d "$ROOT/node_modules" ]; then
+    echo "Missing node_modules at repo root — run bun install" >&2
     exit 1
   fi
 
   kill_port
   clear_proxy_env
   cd "$SERVER_DIR"
-  nohup npm run dev >>"$API_LOG" 2>&1 &
+  nohup bun run dev >>"$API_LOG" 2>&1 &
   disown
 }
 
 start_api() {
-  if [ ! -d "$SERVER_DIR/node_modules" ]; then
-    echo "Missing node_modules at apps/server — run npm install from repo root" >&2
+  if [ ! -d "$ROOT/node_modules" ]; then
+    echo "Missing node_modules at repo root — run bun install" >&2
     exit 1
   fi
 
   kill_port
   clear_proxy_env
   cd "$SERVER_DIR"
-  exec npm run dev
+  exec bun run dev
 }
 
 ensure_vision_sidecar() {

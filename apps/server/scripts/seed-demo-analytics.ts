@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { config } from "dotenv";
 import { eq, inArray, sql } from "drizzle-orm";
-import { resolve } from "node:path";
 import { db, closeDb } from "../src/db/client.js";
 import {
   businesses,
@@ -12,10 +10,6 @@ import {
   voiceSessions,
 } from "../src/db/schema.js";
 import { PRODUCTS } from "../src/seed-data.js";
-
-config({ path: resolve(process.cwd(), "../../.env") });
-config({ path: resolve(process.cwd(), "../../.env.local"), override: true });
-config();
 
 const CUSTOMER_NAMES = [
   "Rina",

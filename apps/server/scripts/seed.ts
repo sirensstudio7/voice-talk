@@ -1,6 +1,4 @@
-import { config } from "dotenv";
 import { and, eq } from "drizzle-orm";
-import { resolve } from "node:path";
 import { hashPassword } from "../src/auth/jwt.js";
 import { ensurePlatformAdminSeed } from "../src/auth/platform-auth.js";
 import { db, closeDb } from "../src/db/client.js";
@@ -34,10 +32,6 @@ import {
   LORESCALE_TAGLINE,
   LORESCALE_TOOL_INSTRUCTIONS,
 } from "../src/lorescale-seed-data.js";
-
-config({ path: resolve(process.cwd(), "../../.env") });
-config({ path: resolve(process.cwd(), "../../.env.local"), override: true });
-config();
 
 async function ensureUser(email: string, password: string, name: string) {
   let user = await db.query.users.findFirst({ where: eq(users.email, email) });

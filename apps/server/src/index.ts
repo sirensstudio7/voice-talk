@@ -23,7 +23,9 @@ import { startPhotoMomentJobs } from "./services/photo-jobs.js";
 import { registerVoiceMinuteJobs } from "./services/voice-minute-jobs.js";
 import { getUploadRoot, MAX_PRESENTATION_UPLOAD_BYTES } from "./storage/index.js";
 
-export const app = new Elysia();
+// Elysia recommends precompile for production: route handlers are compiled
+// ahead of time at boot instead of on first request.
+export const app = new Elysia({ precompile: true });
 
 app.use(
   cors({

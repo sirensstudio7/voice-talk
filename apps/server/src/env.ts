@@ -1,14 +1,11 @@
-import { config } from "dotenv";
 import { setDefaultResultOrder } from "node:dns";
-import { resolve } from "node:path";
 import { z } from "zod";
 
 // Prefer IPv4 so Supabase pooler connects instead of hanging on IPv6.
 setDefaultResultOrder("ipv4first");
 
-config({ path: resolve(process.cwd(), "../../.env") });
-config({ path: resolve(process.cwd(), "../../.env.local"), override: true });
-config();
+// Bun loads .env and .env.local from this workspace automatically, with
+// .env.local taking precedence — keep secrets in apps/server/.env.
 
 const envSchema = z.object({
   DATABASE_URL: z

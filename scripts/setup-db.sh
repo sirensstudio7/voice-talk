@@ -6,4 +6,4 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/apps/server"
-npm run db:migrate
+bun run db:migrate

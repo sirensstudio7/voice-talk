@@ -14,7 +14,7 @@ Phase 1 voice vertical slice for the AI Cashier demo.
 
 ### 1. Environment
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `apps/server/.env` and configure:
 
 - `GEMINI_API_KEY` — from [Google AI Studio](https://aistudio.google.com/apikey)
 - `DATABASE_URL` — Supabase Postgres connection pooler URL (port 6543)
@@ -30,8 +30,8 @@ docker compose up -d postgres
 ### 2. Database
 
 ```bash
-npm install
-npm run seed:db
+bun install
+bun run seed:db
 ```
 
 This runs the schema migration and seeds Sunrise Coffee + admin user.
@@ -39,17 +39,17 @@ This runs the schema migration and seeds Sunrise Coffee + admin user.
 ### 3. API server
 
 ```bash
-npm run dev:api
+bun run dev:api
 ```
 
-Or from `apps/server`: `npm run dev`
+Or from `apps/server`: `bun run dev`
 
 Health check: [http://localhost:8000/health](http://localhost:8000/health)
 
 ### 4. Customer app
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 Open [http://localhost:6670/b/sunrise-coffee](http://localhost:6670/b/sunrise-coffee).
@@ -59,7 +59,7 @@ Open [http://localhost:6670/b/sunrise-coffee](http://localhost:6670/b/sunrise-co
 ### 5. Admin dashboard
 
 ```bash
-npm run dev:admin
+bun run dev:admin
 ```
 
 Open [http://localhost:6680](http://localhost:6680) and sign in:
@@ -70,7 +70,7 @@ Open [http://localhost:6680](http://localhost:6680) and sign in:
 Or run everything together:
 
 ```bash
-npm run dev:all
+bun run dev:all
 ```
 
 ## Try it
@@ -117,13 +117,13 @@ Share a public HTTPS link while running the app on your Mac.
 brew install cloudflared   # one-time
 ```
 
-Make sure `.env` has `GEMINI_API_KEY` and `DATABASE_URL` set.
+Make sure `apps/server/.env` has `GEMINI_API_KEY` and `DATABASE_URL` set.
 
 **Start the demo**
 
 ```bash
 cd /Users/rio/Desktop/voicetalk
-npm run demo:cloudflare
+bun run demo:cloudflare
 ```
 
 The script will:
@@ -148,7 +148,7 @@ Use this if you want a stable frontend URL on Vercel:
 2. Run API + tunnel locally:
 
 ```bash
-npm run dev:api
+bun run dev:api
 cloudflared tunnel --url http://localhost:8000
 ```
 
@@ -168,8 +168,8 @@ NEXT_PUBLIC_WS_URL=wss://YOUR-TUNNEL-URL.trycloudflare.com/ws/session
 2. **Deploy:** [`docs/DEPLOY-DOMAIN.md`](docs/DEPLOY-DOMAIN.md) — Render (API) + Vercel (apps) + DNS
 
 ```bash
-npm run setup:supabase   # checklist
-npm run check:deploy     # validate env before deploy
+bun run setup:supabase   # checklist
+bun run check:deploy     # validate env before deploy
 ```
 
 Template: [`.env.production.example`](.env.production.example)

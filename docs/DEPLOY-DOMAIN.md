@@ -59,7 +59,7 @@ Domain-only entries (e.g. `yourdomain.com`) allow any `https://` subdomain. Host
 
 4. Deploy → note Render URL: `https://voice-talk-api.onrender.com`
 5. Test: `https://voice-talk-api.onrender.com/health`
-6. Seed (once): `DATABASE_URL="..." npm run seed --workspace=server`
+6. Seed (once): `DATABASE_URL="..." bun run --filter server seed`
 
 ### Custom domain on Render
 

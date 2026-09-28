@@ -1,4 +1,3 @@
-import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { and, eq } from "drizzle-orm";
 import { getBusinessCapabilities, withBookingAddon } from "@voicetalk/shared";
@@ -18,11 +17,17 @@ const businessAccessCache = new Map<
 >();
 
 export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 10);
+  // Bun's built-in bcrypt keeps existing $2b$ hashes valid, so no rehash is needed.
+  return Bun.password.hash(password, { algorithm: "bcrypt", cost: 10 });
 }
 
 export async function verifyPassword(password: string, passwordHash: string): Promise<boolean> {
-  return bcrypt.compare(password, passwordHash);
+  try {
+    return await Bun.password.verify(password, passwordHash);
+  } catch {
+    // Bun throws on malformed hashes where bcrypt.compare returned false.
+    return false;
+  }
 }
 
 export function createAccessToken(userId: string): string {

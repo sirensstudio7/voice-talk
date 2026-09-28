@@ -89,7 +89,7 @@ free_port "$APP_PORT"
 echo "Starting API on port $API_PORT..."
 (
   cd "$ROOT/apps/server"
-  npm run dev
+  bun run dev
 ) >"$API_LOG" 2>&1 &
 API_PID=$!
 
@@ -115,13 +115,13 @@ echo "Wrote apps/customer-app/.env.local with tunnel URLs."
 echo "Building frontend for production (needed for Cloudflare tunnel)..."
 (
   cd "$ROOT"
-  npm run build --workspace=customer-app
+  bun run --filter customer-app build
 ) >"$APP_LOG" 2>&1
 
 echo "Starting frontend on port $APP_PORT..."
 (
   cd "$ROOT"
-  npm run start --workspace=customer-app
+  bun run --filter customer-app start
 ) >>"$APP_LOG" 2>&1 &
 APP_PID=$!
 
