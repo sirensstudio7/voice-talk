@@ -1,5 +1,5 @@
 import { expireQrTokens, deleteExpiredPhotos } from "./photo-moment.js";
-import { withJobLock } from "../redis.js";
+import { withIntervalLock } from "../redis.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -17,7 +17,7 @@ export function startPhotoMomentJobs(log: {
   warn?: (obj: unknown, msg?: string) => void;
 }): void {
   const runHourly = async () => {
-    await withJobLock("photo-qr-expiry", HOUR_MS - 60_000, async () => {
+    await withIntervalLock("photo-qr-expiry", HOUR_MS, async () => {
       try {
         const n = await expireQrTokens();
         if (n > 0) log.info({ expired: n }, "Expired photo QR tokens");
@@ -32,7 +32,7 @@ export function startPhotoMomentJobs(log: {
   };
 
   const runDaily = async () => {
-    await withJobLock("photo-retention", DAY_MS - HOUR_MS, async () => {
+    await withIntervalLock("photo-retention", DAY_MS, async () => {
       try {
         const n = await deleteExpiredPhotos();
         if (n > 0) log.info({ deleted: n }, "Deleted expired photo sessions");

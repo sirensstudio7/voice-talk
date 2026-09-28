@@ -197,7 +197,7 @@ export type VisionWorkspaceItem = {
   slug: string;
   status: string;
   camera_trigger_enabled: boolean;
-  vision_source: "auto" | "python" | "browser" | "human";
+  vision_source: "auto" | "browser" | "human";
   greeting_trigger_mode: "presence" | "gesture" | "raise_hand";
   updated_at: string | null;
 };
@@ -367,7 +367,7 @@ export const api = {
   ) {
     return request<
       Paginated<VisionWorkspaceItem> & {
-        sources: Array<"auto" | "python" | "browser" | "human">;
+        sources: Array<"auto" | "browser" | "human">;
       }
     >(`/platform/vision${qs(params)}`, { token });
   },

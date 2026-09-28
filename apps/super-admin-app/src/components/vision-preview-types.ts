@@ -1,1 +1,1 @@
-export type VisionPreviewSource = "auto" | "python" | "browser" | "human";
+export type VisionPreviewSource = "auto" | "browser" | "human";

@@ -4,7 +4,7 @@ import { getCurrentPlatformAdmin } from "../../auth/platform-auth.js";
 import { requirePermission } from "../../auth/platform-rbac.js";
 import { db } from "../../db/client.js";
 import { businesses, visionSettings } from "../../db/schema.js";
-import { normalizeGreetingTriggerMode, normalizeVisionSource } from "../../services/vision-settings.js";
+import { normalizeGreetingTriggerMode, normalizeVisionSource, VISION_SOURCES } from "../../services/vision-settings.js";
 import { listQueryFields, optionalString } from "../../http/validation.js";
 import { t, type Elysia } from "elysia";
 import { parsePagination } from "./shared.js";
@@ -27,11 +27,15 @@ export async function registerPlatformVisionRoutes(app: Elysia): Promise<void> {
         );
       }
       if (sourceFilter === "auto") {
+        // Retired "python" rows are browser-first now, so surface them as auto.
         conditions.push(
-          or(isNull(visionSettings.visionSource), eq(visionSettings.visionSource, "auto"))!,
+          or(
+            isNull(visionSettings.visionSource),
+            eq(visionSettings.visionSource, "auto"),
+            eq(visionSettings.visionSource, "python"),
+          )!,
         );
       } else if (
-        sourceFilter === "python" ||
         sourceFilter === "browser" ||
         sourceFilter === "human"
       ) {
@@ -77,7 +81,7 @@ export async function registerPlatformVisionRoutes(app: Elysia): Promise<void> {
         total: totalRow?.value ?? 0,
         page,
         limit,
-        sources: ["auto", "python", "browser", "human"] as const,
+        sources: VISION_SOURCES,
       };
     } catch (err) {
       return sendAuthError(request, err);

@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { useSidebar } from "@/components/ui/sidebar";
 import { api, type VisionMetrics, type VisionSettings } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { customerAppUrl } from "@/lib/customer-app";
 
 const DEFAULT_SETTINGS: VisionSettings = {
   camera_trigger_enabled: false,
@@ -239,28 +240,7 @@ export function VisionSettingsPageClient() {
                     Auto (recommended)
                   </span>
                   <span className="mt-0.5 block text-xs text-slate-500">
-                    Uses the Python sidecar when connected; falls back to the browser camera on
-                    phones or when the sidecar is offline.
-                  </span>
-                </span>
-              </label>
-              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 has-[:checked]:border-orange-300 has-[:checked]:bg-orange-50">
-                <input
-                  type="radio"
-                  name="vision-source"
-                  value="python"
-                  checked={settings.vision_source === "python"}
-                  disabled={loading}
-                  onChange={() =>
-                    setSettings((current) => ({ ...current, vision_source: "python" }))
-                  }
-                  className="mt-1"
-                />
-                <span>
-                  <span className="block text-sm font-medium text-slate-900">Python sidecar only</span>
-                  <span className="mt-0.5 block text-xs text-slate-500">
-                    Dedicated kiosk with a local vision process (dev-vision.sh or production
-                    sidecar).
+                    Uses the browser camera on the kiosk display — nothing to install on site.
                   </span>
                 </span>
               </label>
@@ -279,7 +259,7 @@ export function VisionSettingsPageClient() {
                 <span>
                   <span className="block text-sm font-medium text-slate-900">Browser camera only</span>
                   <span className="mt-0.5 block text-xs text-slate-500">
-                    Phone or tablet demo — no Python sidecar required.
+                    Phone or tablet demo — no sidecar required.
                   </span>
                 </span>
               </label>
@@ -299,7 +279,7 @@ export function VisionSettingsPageClient() {
                   <span className="block text-sm font-medium text-slate-900">Human (browser)</span>
                   <span className="mt-0.5 block text-xs text-slate-500">
                     Face &amp; hand-focused browser detection for richer gesture control. Runs in the
-                    display tab — no Python sidecar required.
+                    display tab.
                   </span>
                 </span>
               </label>
@@ -548,12 +528,11 @@ export function VisionSettingsPageClient() {
       <section className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
         <p className="font-medium text-slate-800">Kiosk setup</p>
         <p className="mt-2">
-          Run the vision sidecar on the kiosk mini PC:
+          Open this display URL on the kiosk tablet or mini PC and unlock it with its PIN. Detection
+          runs in the browser — allow camera access when prompted.
         </p>
         <pre className="mt-3 overflow-x-auto rounded-xl bg-slate-900 p-4 text-xs text-slate-100">
-          {`cd services/vision
-pip install -r requirements.txt
-python main.py --business ${business.slug} --ws-url ws://localhost:8000/ws/vision`}
+          {`${customerAppUrl}/${business.slug}?kiosk=default`}
         </pre>
       </section>
       </div>

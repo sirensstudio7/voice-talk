@@ -77,35 +77,6 @@ start_api() {
   exec bun run dev
 }
 
-ensure_vision_sidecar() {
-  if [ "${SKIP_VISION:-0}" = "1" ]; then
-    echo "Skipping vision sidecar (SKIP_VISION=1)."
-    return 0
-  fi
-  local vision_script="$ROOT/scripts/dev-vision.sh"
-  if [ ! -f "$vision_script" ]; then
-    return 0
-  fi
-  bash "$vision_script" ensure
-}
-
-restart_vision_sidecar_debug() {
-  local vision_script="$ROOT/scripts/dev-vision.sh"
-  if [ ! -f "$vision_script" ]; then
-    return 0
-  fi
-  echo "Restarting vision sidecar (debug preview)..."
-  VISION_DEBUG=1 bash "$vision_script" restart
-  sleep 2
-  if VISION_DEBUG=1 bash "$vision_script" status | grep -q '"running":true'; then
-    echo "Vision debug running ($(cat "$ROOT/.vision.slug" 2>/dev/null || echo unknown), log: .vision.log)"
-  else
-    echo "Vision failed to stay running — check .vision.log (often macOS camera permission)." >&2
-    tail -n 3 "$ROOT/.vision.log" 2>/dev/null >&2 || true
-    return 1
-  fi
-}
-
 case "${1:-start}" in
   start)
     start_api
@@ -114,7 +85,6 @@ case "${1:-start}" in
     kill_port
     start_api_daemon
     wait_for_health
-    restart_vision_sidecar_debug
     ;;
   stop)
     kill_port
@@ -127,7 +97,6 @@ case "${1:-start}" in
   ensure)
     if curl -sf --max-time 10 "$HEALTH_DB_URL" 2>/dev/null | grep -q '"db_online":true'; then
       echo "API and database already healthy at ${HEALTH_URL}"
-      ensure_vision_sidecar
       exit 0
     fi
     if curl -sf --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; then
@@ -135,7 +104,6 @@ case "${1:-start}" in
       # Stuck Postgres pools rarely recover without a process restart.
       # Only wait briefly, then recycle the API.
       if wait_for_health 6; then
-        ensure_vision_sidecar
         exit 0
       fi
       echo "Database still unreachable — restarting API..."
@@ -144,7 +112,6 @@ case "${1:-start}" in
     fi
     start_api_daemon
     wait_for_health 30
-    ensure_vision_sidecar
     ;;
   *)
     echo "Usage: $0 {start|restart|stop|health|ensure}" >&2
