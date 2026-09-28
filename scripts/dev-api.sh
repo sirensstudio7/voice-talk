@@ -42,7 +42,7 @@ wait_for_health() {
     sleep 1
   done
   echo "API failed to become healthy at ${HEALTH_URL}" >&2
-  echo "Check DATABASE_URL in .env — for local dev, prefer Supabase Session pooler (port 5432)." >&2
+  echo "Check DATABASE_URL in .env — for local dev, start Postgres via docker compose." >&2
   return 1
 }
 

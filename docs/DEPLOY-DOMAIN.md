@@ -16,20 +16,22 @@ flowchart LR
   App[app.yourdomain.com]
   Admin[admin.yourdomain.com]
   API[api.yourdomain.com]
-  SB[(Supabase)]
+  PG[(Managed Postgres)]
+  R2[(R2 object storage)]
 
   User --> App
   User --> Admin
   App -->|HTTPS + WSS| API
   Admin -->|HTTPS| API
-  API --> SB
+  API --> PG
+  API --> R2
 ```
 
 ---
 
 ## Prerequisites
 
-- [Supabase project configured](SUPABASE-SETUP.md)
+- [Database + object storage configured](DEPLOY.md) (Aiven Postgres, Cloudflare R2)
 - Domain DNS managed (Cloudflare, Namecheap, etc.)
 - GitHub repo pushed
 
@@ -42,9 +44,13 @@ flowchart LR
 3. Set **Environment** variables:
 
 ```env
-DATABASE_URL=postgresql://postgres.[ref]:[pass]@...pooler.supabase.com:6543/postgres
-SUPABASE_URL=https://[ref].supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJ...
+DATABASE_URL=postgresql://avnadmin:[pass]@[host]:[port]/defaultdb?sslmode=require
+REDIS_URL=rediss://default:[pass]@[host].upstash.io:6379
+S3_ENDPOINT=https://[account-id].r2.cloudflarestorage.com
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+S3_REGION=auto
+S3_PUBLIC_BASE_URL=https://media.yourdomain.com
 GEMINI_API_KEY=...
 JWT_SECRET=<long-random-string>
 GEMINI_MODEL=gemini-3.1-flash-live-preview
@@ -160,12 +166,12 @@ Free Render services **sleep** after ~15 min idle. First request is slow; voice 
 
 ---
 
-## Quick reference — your `.env` for local dev pointing at Supabase
+## Quick reference — your `.env` for local dev
 
 ```env
-DATABASE_URL=postgresql://...pooler.supabase.com:6543/postgres
-SUPABASE_URL=https://xxxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJ...
+DATABASE_URL=postgresql://localhost:5432/voicetalk
+REDIS_URL=redis://127.0.0.1:6380
+# S3_* optional locally: uploads land in apps/server/uploads/
 GEMINI_API_KEY=...
 JWT_SECRET=...
 NEXT_PUBLIC_API_URL=http://localhost:8000

@@ -8,7 +8,7 @@ Phase 1 voice vertical slice for the AI Cashier demo.
 - `apps/customer-app` — Next.js customer voice UI (`/b/{slug}`)
 - `apps/admin-app` — Next.js admin dashboard (menu, knowledge, AI rules, orders, analytics)
 - `apps/marketing-app` — Next.js marketing landing page
-- `supabase/` — Postgres schema migrations + Storage bucket setup
+- `db/migrations` — Postgres schema migrations (plain SQL, applied by `apps/server/scripts/migrate.ts`)
 
 ## Setup
 
@@ -17,13 +17,14 @@ Phase 1 voice vertical slice for the AI Cashier demo.
 Copy `.env.example` to `apps/server/.env` and configure:
 
 - `GEMINI_API_KEY` — from [Google AI Studio](https://aistudio.google.com/apikey)
-- `DATABASE_URL` — Supabase Postgres connection pooler URL (port 6543)
+- `DATABASE_URL` — Postgres (local or managed; production uses Aiven)
 - `REDIS_URL` — rate limits + background-job locks, shared across API instances.
   Use Upstash's `rediss://...` string in production; local dev:
   `docker compose up -d redis` gives `redis://127.0.0.1:6380`
-- `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` — for file uploads (optional locally; falls back to `apps/server/uploads/`)
+- `S3_*` — object storage (Cloudflare R2). Optional locally; uploads fall back
+  to `apps/server/uploads/`. Production requires it.
 
-For local Postgres without Supabase:
+For local Postgres:
 
 ```bash
 docker compose up -d postgres redis
@@ -105,7 +106,7 @@ bun run dev:all
 - Seed business: Sunrise Coffee
 - Voice provider: Gemini Live (free tier)
 - Push-to-talk for MVP simplicity
-- File uploads use Supabase Storage in production; local disk fallback for dev
+- File uploads use S3-compatible object storage (Cloudflare R2) in production; local disk for dev
 
 ## Deploy for demo
 
@@ -166,13 +167,13 @@ NEXT_PUBLIC_WS_URL=wss://YOUR-TUNNEL-URL.trycloudflare.com/ws/session
 
 5. Redeploy Vercel, then keep your Mac running with the API + tunnel during the demo
 
-### Production: Supabase + custom domain
+### Production: managed Postgres + custom domain
 
-1. **Supabase:** [`docs/SUPABASE-SETUP.md`](docs/SUPABASE-SETUP.md) — create project, run SQL, copy credentials
+1. **Database + storage:** see [`docs/DEPLOY.md`](docs/DEPLOY.md) — Aiven Postgres, Cloudflare R2 buckets, migration/copy scripts
 2. **Deploy:** [`docs/DEPLOY-DOMAIN.md`](docs/DEPLOY-DOMAIN.md) — Render (API) + Vercel (apps) + DNS
 
 ```bash
-bun run setup:supabase   # checklist
+bun run seed:db          # apply migrations from db/migrations
 bun run check:deploy     # validate env before deploy
 ```
 

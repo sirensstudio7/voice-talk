@@ -25,7 +25,7 @@ if [[ $found -eq 0 ]]; then
 fi
 
 missing=0
-for var in DATABASE_URL REDIS_URL GEMINI_API_KEY JWT_SECRET; do
+for var in DATABASE_URL REDIS_URL S3_ENDPOINT S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY S3_PUBLIC_BASE_URL GEMINI_API_KEY JWT_SECRET; do
   if [[ -z "${!var:-}" ]]; then
     echo "MISSING: $var"
     missing=1
@@ -39,8 +39,8 @@ if [[ -n "${REDIS_URL:-}" && "$REDIS_URL" == redis://* \
   echo "WARN: REDIS_URL uses redis:// for a remote host; managed Redis (Upstash) needs rediss://"
 fi
 
-if [[ -z "${SUPABASE_URL:-}" || -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
-  echo "WARN: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY unset (uploads use local disk only)"
+if [[ -n "${S3_PUBLIC_BASE_URL:-}" && "$S3_PUBLIC_BASE_URL" == http://* ]]; then
+  echo "WARN: S3_PUBLIC_BASE_URL uses http://; public media should be https://"
 fi
 
 if [[ $missing -eq 1 ]]; then

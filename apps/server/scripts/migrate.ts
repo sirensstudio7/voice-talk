@@ -12,7 +12,7 @@ const ALREADY_APPLIED = new Set(["42701", "42P07", "23514"]);
 
 async function migrate() {
   const sql = new SQL({ url: DATABASE_URL, max: 1 });
-  const migrationsDir = resolve(process.cwd(), "../../supabase/migrations");
+  const migrationsDir = resolve(process.cwd(), "../../db/migrations");
   const migrationFiles = readdirSync(migrationsDir)
     .filter((f) => f.endsWith(".sql"))
     .sort();

@@ -22,7 +22,6 @@
     "seed:demo-analytics": "bun run --filter server seed:demo-analytics",
     "seed:demo-analytics:force": "bun run --filter server seed:demo-analytics:force",
     "setup:db": "bash scripts/setup-db.sh",
-    "setup:supabase": "bash scripts/setup-supabase.sh",
     "check:deploy": "bash scripts/check-deploy-env.sh",
     "lint:api": "bun run --filter server lint",
     "test:api": "bun run --filter server test",

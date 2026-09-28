@@ -31,7 +31,7 @@ RUN bun install --frozen-lockfile --production --ignore-scripts --no-cache \
 
 COPY apps/server apps/server
 COPY packages/shared/src packages/shared/src
-COPY supabase supabase
+COPY db db
 
 WORKDIR /app/apps/server
 
