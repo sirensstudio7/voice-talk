@@ -1,6 +1,6 @@
 # TKT-004 — Fan out admin force-end across instances
 
-- **Status:** proposed
+- **Status:** in-progress (code on `feat/multi-instance-hardening`)
 - **Priority:** P1
 - **Area:** multi-instance
 - **Effort:** S (≤ 1 day)
@@ -38,10 +38,22 @@ Reuse the existing Redis fanout instead of adding a new channel:
 
 ## Acceptance criteria
 
-- [ ] With the session on instance A and the admin request on instance B, the
-      call ends within ~1 s and minutes are debited once.
-- [ ] Unknown/stale session ids publish harmlessly (no error spam).
-- [ ] Admin UI still reports "not found" when no instance owns the session.
+- [x] With the session on instance A and the admin request on instance B, the
+      call ends within ~1 s and minutes are debited once (idempotent ledger key;
+      fanout published after the local debit).
+- [x] Unknown/stale session ids publish harmlessly (no error spam): instances
+      without a matching session simply do nothing.
+- [x] Admin UI still reports "not found" when no instance owns the session.
+
+## Implementation notes
+
+- The `/end` route keeps its local fast path; when the session is not local it
+  publishes `{ type: "voice.force_end", voiceSessionId, reason: "admin" }` on
+  `kiosk:broadcast` via `publishKioskPayload`.
+- `applyRemoteKioskPayload` handles `voice.force_end` **before** the vision-hub
+  lookup (a customer-app session can exist on an instance with no hub) and
+  calls `handleRemoteVoiceForceEnd` in `voice-session-runtime.ts`.
+- Counter `voice.force_end_remote_total`; tested in `tests/force-end.test.ts`.
 
 ## Out of scope
 

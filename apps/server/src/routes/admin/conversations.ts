@@ -5,6 +5,7 @@ import { db } from "../../db/client.js";
 import { orderItems, orders, transcriptMessages, voiceSessions, kioskDisplays } from "../../db/schema.js";
 import { optionalString, queryNumber } from "../../http/validation.js";
 import { endVoiceSession } from "../../services/order-persistence.js";
+import { publishKioskPayload } from "../../services/kiosk-bus.js";
 import { safeDebitEndedSession } from "../../services/voice-minutes.js";
 import { forceCompleteVoiceSession } from "../../services/voice-session-runtime.js";
 import { serializeUtcDatetime } from "../../services/pricing.js";
@@ -376,7 +377,7 @@ export async function registerAdminConversationRoutes(app: Elysia): Promise<void
         businessId: string;
         sessionId: string;
       };
-      await requireBusinessAccess(request, businessId);
+      const business = await requireBusinessAccess(request, businessId);
       const session = await db.query.voiceSessions.findFirst({
         where: and(eq(voiceSessions.id, sessionId), eq(voiceSessions.businessId, businessId)),
       });
@@ -386,7 +387,16 @@ export async function registerAdminConversationRoutes(app: Elysia): Promise<void
         const live = forceCompleteVoiceSession(sessionId, "admin");
         await endVoiceSession(sessionId, "admin");
         // Live sockets debit in websocket teardown. Debit here only for orphan rows.
-        if (!live) await safeDebitEndedSession(sessionId);
+        if (!live) {
+          await safeDebitEndedSession(sessionId);
+          // The socket may be pinned to another instance: ask every instance to
+          // wrap the session up (TKT-004).
+          await publishKioskPayload(business.slug, {
+            type: "voice.force_end",
+            voiceSessionId: sessionId,
+            reason: "admin",
+          });
+        }
       }
 
       const ended = await db.query.voiceSessions.findFirst({

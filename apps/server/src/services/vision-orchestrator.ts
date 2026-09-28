@@ -4,7 +4,9 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { logger } from "../http/logger.js";
 import { publishKioskPayload } from "./kiosk-bus.js";
+import { inc } from "../http/metrics.js";
 import { invalidateMenuCache } from "./menu-cache.js";
+import { handleRemoteVoiceForceEnd } from "./voice-session-runtime.js";
 import { visionEvents, visionSettings, type VisionSettings } from "../db/schema.js";
 import {
   DEFAULT_VISION_SETTINGS,
@@ -150,6 +152,15 @@ export async function applyRemoteKioskPayload(
   businessSlug: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
+  // Voice force-end must work even on instances without a vision hub: handled
+  // before the hub lookup (TKT-004).
+  if (payload.type === "voice.force_end") {
+    if (handleRemoteVoiceForceEnd(payload)) {
+      inc("voice.force_end_remote_total");
+    }
+    return;
+  }
+
   const hub = getVisionHub(businessSlug);
   if (!hub) return;
 

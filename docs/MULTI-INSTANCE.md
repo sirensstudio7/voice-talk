@@ -15,7 +15,8 @@ what is per-instance, and the rules to keep scaling horizontal.
 | Voice sessions / Gemini Live | instance memory + socket | per socket, restored by client |
 | Vision hub (kiosk clients, session/cooldown) | instance memory | per instance, event-driven locally |
 | Live rooms (`services/live.ts`) | instance memory | ⚠️ single-instance feature |
-| Admin "force end session" | instance memory | ⚠️ works only on the session's instance |
+| Admin "force end session" | instance memory | ✅ local, then `voice.force_end` fanout |
+| `/menu` payload cache | instance memory | ✅ 45s TTL + bus/admin invalidation |
 
 ## Kiosk configuration fanout
 
@@ -30,7 +31,8 @@ Settings changes do cross instances:
    instance, skips its own origin, and calls `applyRemoteKioskPayload()`.
 3. `vision.config` is *rebuilt* from the receiving instance's hub (session
    state is per-instance); other payloads (banners, lucky spin, booking) are
-   rebroadcast verbatim.
+   rebroadcast verbatim. `voice.force_end` is handled before the hub check so
+   instances without a vision hub still close a locally hosted session.
 
 The bus uses a dedicated Redis connection because Bun's client cannot run
 normal commands while subscribed, and Bun does not auto-reconnect — the bus
