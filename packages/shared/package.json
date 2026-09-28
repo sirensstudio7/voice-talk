@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "prepare": "npm run build"
+    "prepare": "tsc"
   },
   "devDependencies": {
     "typescript": "^5"

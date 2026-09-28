@@ -33,7 +33,7 @@ export function formatConnectionError(exc: unknown): string {
   if (errno === -3008 || message.includes("ENOTFOUND") || message.includes("getaddrinfo")) {
     return (
       "Cannot reach the Gemini voice API (DNS lookup failed). " +
-      "Restart the API with `npm run api:restart` and check your internet connection."
+      "Restart the API with `bun run api:restart` and check your internet connection."
     );
   }
   if (
@@ -42,7 +42,7 @@ export function formatConnectionError(exc: unknown): string {
   ) {
     return (
       "Cannot reach the Gemini voice API (DNS lookup failed). " +
-      "Restart the API with `npm run api:restart` and check your internet connection."
+      "Restart the API with `bun run api:restart` and check your internet connection."
     );
   }
   return message;

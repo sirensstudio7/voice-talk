@@ -1,5 +1,5 @@
 # Render has no first-class Bun runtime, so the API ships as a container.
-FROM oven/bun:1.4-slim
+FROM oven/bun:1.4.0-slim
 
 WORKDIR /app
 

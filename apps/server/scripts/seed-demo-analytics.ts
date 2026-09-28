@@ -111,7 +111,7 @@ async function seedDemoAnalytics() {
   });
 
   if (!business) {
-    console.error("Business sunrise-coffee not found. Run npm run seed:db first.");
+    console.error("Business sunrise-coffee not found. Run bun run seed:db first.");
     process.exit(1);
   }
 
@@ -133,7 +133,7 @@ async function seedDemoAnalytics() {
   }
 
   if (catalog.length === 0) {
-    console.error("No products found. Run npm run seed:db first.");
+    console.error("No products found. Run bun run seed:db first.");
     process.exit(1);
   }
 
