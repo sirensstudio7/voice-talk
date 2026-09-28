@@ -1,6 +1,6 @@
 # TKT-014 — Regression tests for prompts and WS contracts
 
-- **Status:** proposed
+- **Status:** in-progress (code on `feat/multi-instance-hardening`)
 - **Priority:** P1
 - **Area:** testing
 - **Effort:** S (≤ 1 day)
@@ -42,9 +42,21 @@ stops being sent. None of these fail a build today.
 
 ## Acceptance criteria
 
-- [ ] Re-introducing "singkat" in an ID prompt fails `bun test`.
-- [ ] A `/menu` shape regression fails the smoke suite in CI.
-- [ ] `scripts/ws-probe.ts` documented in the README checks section.
+- [x] Re-introducing "singkat" in an ID model-turn prompt fails `bun test`
+      (`tests/prompt-guards.test.ts` covers all four builders plus identity and
+      wrap-up phrases; runs without services).
+- [x] A `/menu` shape regression fails the smoke suite in CI (contract test in
+      `tests/smoke.test.ts` asserts the top-level keys and nested shapes).
+- [x] `scripts/ws-probe.ts` documented in the README checks section.
+
+## Implementation notes
+
+- `scripts/ws-probe.ts` connects to `/ws/session`, sends `session.greeting`,
+  prints session status / first transcript / first audio latency and exits 0/2/3
+  (responded / silent / socket failed). Verified against a refused local socket;
+  run it against production after a deploy as a greeting smoke check.
+- The prompt guard deliberately asserts on built-in prompts only:
+  merchant-provided custom greeting scripts are free-form content.
 
 ## Out of scope
 

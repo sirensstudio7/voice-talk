@@ -116,6 +116,56 @@ suite("api smoke", () => {
     expect(body.slug).toBe("sunrise-coffee");
   });
 
+  test("public menu keeps the kiosk contract", async () => {
+    const response = await api("/menu?business=sunrise-coffee");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+
+    for (const key of [
+      "business",
+      "slug",
+      "assistant_name",
+      "capabilities",
+      "vision",
+      "smart_photo_moment",
+      "lucky_spin",
+      "campaign_banner",
+      "languages",
+      "booking",
+      "products",
+    ]) {
+      expect(body).toHaveProperty(key);
+    }
+
+    expect(Array.isArray(body.products)).toBe(true);
+    const capabilities = body.capabilities as Record<string, unknown>;
+    expect(typeof capabilities.ordering_enabled).toBe("boolean");
+    expect(typeof capabilities.booking_enabled).toBe("boolean");
+
+    const vision = body.vision as Record<string, unknown>;
+    expect(typeof vision.greeting_trigger_mode).toBe("string");
+    expect(typeof vision.silence_timeout_seconds).toBe("number");
+
+    const smartPhoto = body.smart_photo_moment as Record<string, unknown>;
+    expect(typeof smartPhoto.active).toBe("boolean");
+
+    const luckySpin = body.lucky_spin as Record<string, unknown>;
+    expect(typeof luckySpin.active).toBe("boolean");
+    expect(typeof luckySpin.enabled).toBe("boolean");
+
+    const banner = body.campaign_banner as Record<string, unknown>;
+    expect(typeof banner.active).toBe("boolean");
+
+    const languages = body.languages as Record<string, unknown>;
+    expect(typeof languages.active).toBe("boolean");
+    expect(Array.isArray(languages.available)).toBe(true);
+
+    const booking = body.booking as Record<string, unknown>;
+    expect(typeof booking.active).toBe("boolean");
+    expect(Array.isArray(booking.staff)).toBe(true);
+    expect(Array.isArray(booking.services)).toBe(true);
+  });
+
   test("platform login + read works", async () => {
     const login = await api(
       "/platform/auth/login",

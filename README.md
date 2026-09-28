@@ -188,6 +188,16 @@ From `apps/server`: `bun run typecheck`, and `bun run test:with-services` to
 provision throwaway Postgres + Redis containers and run the full suite
 (health, logins, validation rejections).
 
+Voice websocket probe (checks the greeting end-to-end against any environment):
+
+```bash
+cd apps/server
+bun scripts/ws-probe.ts --url wss://lorescale-api.kubeletto.app/ws/session?business=lorescale
+```
+
+It sends `session.greeting`, prints session status / first transcript / first
+audio latency, and exits non-zero when the assistant stays silent.
+
 CI runs the same lint, typecheck and tests on every push or PR that touches
 the API, then builds the production Docker image and boots it against the
 service containers ([`.github/workflows/api.yml`](.github/workflows/api.yml)).
