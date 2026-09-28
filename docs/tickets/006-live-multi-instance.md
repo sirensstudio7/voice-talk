@@ -1,6 +1,6 @@
 # TKT-006 — Decide LIVE's multi-instance model
 
-- **Status:** proposed
+- **Status:** in-progress (guard + ADR on `feat/multi-instance-hardening`)
 - **Priority:** P1
 - **Area:** architecture
 - **Effort:** L (> 1 week if option B/C)
@@ -53,11 +53,23 @@ stateless. Best end state; biggest investment.
 
 ## Acceptance criteria
 
-- [ ] Turning on a LIVE room while `max_instances > 1` produces a loud, actionable
-      error instead of a half-broken room.
-- [ ] `docs/MULTI-INSTANCE.md` and the deploy checklist say exactly how LIVE
-      tenants are deployed today.
-- [ ] ADR exists with the two viable designs and a recommendation.
+- [x] Turning on a LIVE room while `max_instances > 1` produces a loud,
+      actionable error instead of a half-broken room: instances heartbeat in
+      Redis (`services/instance-registry.ts`) and `startLiveSession` throws a
+      409 naming the instance count (`tests/instance-registry.test.ts`).
+- [x] `docs/MULTI-INSTANCE.md` and the deploy checklist say exactly how LIVE
+      tenants are deployed today (single instance; guard fails fast otherwise).
+- [x] ADR exists with the two viable designs and a recommendation:
+      `docs/adr/0001-live-multi-instance.md` (option C — dedicated service with
+      WebRTC/media relay — when LIVE demand justifies it).
+
+## Implementation notes
+
+- The heartbeat is one `SET … EX 45` per instance every 15 s (≈ 5.8k Upstash
+  commands/month) and fails open on Redis errors so a outage cannot block LIVE
+  on a single-instance deployment.
+- `MULTI-INSTANCE.md` states the deployment constraint next to the LIVE row in
+  the shared-vs-per-instance table.
 
 ## Out of scope
 

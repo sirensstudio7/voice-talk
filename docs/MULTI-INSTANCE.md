@@ -14,7 +14,7 @@ what is per-instance, and the rules to keep scaling horizontal.
 | Orders, sessions, analytics | Postgres | ✅ |
 | Voice sessions / Gemini Live | instance memory + socket | per socket, restored by client |
 | Vision hub (kiosk clients, session/cooldown) | instance memory | per instance, event-driven locally |
-| Live rooms (`services/live.ts`) | instance memory | ⚠️ single-instance feature |
+| Live rooms (`services/live.ts`) | instance memory | ⚠️ single-instance feature; room start refuses when >1 instance (TKT-006) |
 | Admin "force end session" | instance memory | ✅ local, then `voice.force_end` fanout |
 | `/menu` payload cache | instance memory | ✅ 45s TTL + bus/admin invalidation |
 
@@ -119,4 +119,6 @@ can be tied to a specific instance and deploy.
 - [ ] Rolling restart test: active voice call + kiosk session survive a pod kill
 - [ ] Kiosk on instance A + settings change → kiosk updates without reconnecting
 - [ ] `/health?metrics=1` on both instances shows `kiosk_bus.subscribed: 1`
-- [ ] Live rooms are not enabled on multi-instance deployments
+- [ ] Live rooms are not enabled on multi-instance deployments — starting one
+      now fails with an actionable 409 (`services/instance-registry.ts`); see
+      `docs/adr/0001-live-multi-instance.md` for the revisit conditions
