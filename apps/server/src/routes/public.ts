@@ -1,38 +1,23 @@
 import { t, type Elysia } from "elysia";
 import { eq } from "drizzle-orm";
-import {
-  normalizeVoiceGender,
-  normalizeVoicePreset,
-} from "@voicetalk/shared";
 import { db } from "../db/client.js";
 import { demoRequests, orderItems } from "../db/schema.js";
 import { env } from "../env.js";
-import { getOrCreateVisionSettings } from "../services/vision-orchestrator.js";
-import { visionSettingsOut } from "../services/vision-settings.js";
 import {
   buildValidatedOrderSnapshot,
   OrderValidationError,
   persistConfirmedOrder,
 } from "../services/order-persistence.js";
-import { effectivePrice, serializeUtcDatetime } from "../services/pricing.js";
-import {
-  getActiveProducts,
-  getSellableProducts,
-  resolveAssistantName,
-} from "../services/config-builder.js";
+import { serializeUtcDatetime } from "../services/pricing.js";
+import { getSellableProducts } from "../services/config-builder.js";
 import { getBusinessBySlug, mapBusinessRow } from "../services/tenant.js";
 import {
   createAppointment,
   getAvailableSlots,
 } from "../services/appointments.js";
-import {
-  getLanguagePackPublicConfig,
-  getSmartPhotoMomentPublicConfig,
-} from "../services/addon-entitlement.js";
-import { getLuckySpinPublicConfig } from "../services/lucky-spin.js";
-import { getCampaignBannerPublicConfig } from "../services/campaign-banner.js";
+import { getMenuPayload } from "../services/menu.js";
 import { resolveCapabilities } from "../services/capabilities.js";
-import { getBookingPublicConfig } from "../services/booking.js";
+import { observe } from "../http/metrics.js";
 import {
   completePhotoSession,
   markPhotoOfferResponse,
@@ -264,50 +249,14 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   app.get("/menu", async (request) => {
     const query = request.query;
     const slug = query.business || env.DEFAULT_BUSINESS_SLUG;
-    const tenant = await getBusinessBySlug(slug);
-    if (!tenant) return request.status(404, { detail: "Business not found" });
-
-    const { capabilities } = await resolveCapabilities(tenant);
-    const productList = capabilities.menu_enabled ? getActiveProducts(tenant) : [];
-    const vision = await getOrCreateVisionSettings(tenant.id);
-    const smartPhotoMoment = await getSmartPhotoMomentPublicConfig(tenant.id);
-    const luckySpin = await getLuckySpinPublicConfig(tenant.id);
-    const campaignBanner = await getCampaignBannerPublicConfig(tenant.id);
-    const languagePack = await getLanguagePackPublicConfig(tenant.id);
-    const booking = await getBookingPublicConfig(tenant.id);
-    return {
-      business: tenant.name,
-      slug: tenant.slug,
-      tagline: tenant.tagline,
-      business_type: tenant.businessType,
-      assistant_name: resolveAssistantName(tenant.aiRules),
-      avatar_url: tenant.aiRules?.avatarUrl || "",
-      avatar_model_path: tenant.aiRules?.avatarModelPath || "",
-      background_url: tenant.backgroundUrl || "",
-      gradient_color: tenant.gradientColor || "",
-      display_orientation: tenant.displayOrientation || "landscape",
-      kiosk_ui_mode: tenant.kioskUiMode === "studio" ? "studio" : "classic",
-      voice_preset: normalizeVoicePreset(tenant.aiRules?.voicePreset),
-      voice_gender: normalizeVoiceGender(tenant.aiRules?.voiceGender),
-      capabilities,
-      vision: visionSettingsOut(vision),
-      smart_photo_moment: smartPhotoMoment,
-      lucky_spin: luckySpin,
-      campaign_banner: campaignBanner,
-      languages: languagePack,
-      booking,
-      products: productList.map((p) => ({
-        id: p.productId,
-        name: p.name,
-        price: effectivePrice(p.price, p.discountPercent),
-        original_price: p.discountPercent > 0 ? p.price : null,
-        discount_percent: p.discountPercent,
-        category: p.category,
-        description: p.description,
-        image_url: p.imageUrl,
-        duration_min: p.durationMin,
-      })),
-    };
+    const started = performance.now();
+    try {
+      const payload = await getMenuPayload(slug);
+      if (!payload) return request.status(404, { detail: "Business not found" });
+      return payload;
+    } finally {
+      observe("menu.request_ms", performance.now() - started);
+    }
   }, {
     query: t.Object({ business: optionalString }),
   });

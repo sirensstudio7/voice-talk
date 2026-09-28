@@ -1,6 +1,6 @@
 # TKT-015 — Latency metrics (menu, first audio)
 
-- **Status:** proposed
+- **Status:** in-progress (code on `feat/multi-instance-hardening`; baseline after deploy)
 - **Priority:** P2
 - **Area:** observability
 - **Effort:** S (≤ 1 day)
@@ -37,9 +37,25 @@ before users do. `/menu` took 1.6–2.3 s for weeks before anyone noticed.
 
 ## Acceptance criteria
 
-- [ ] `/health?metrics=1` returns the new observations after traffic.
-- [ ] Slow cases emit a single warn line with the request/session id.
-- [ ] Metric names documented in `docs/MULTI-INSTANCE.md`.
+- [x] `/health?metrics=1` returns the new observations after traffic
+      (`metrics.test.ts` covers the aggregation; the counters appear once the
+      instrumented paths run).
+- [x] Slow cases emit a single warn line with context: `menu.build_slow`
+      (uncached build > 1s) and `ws.first_audio_slow` (greeting → first audio
+      > 2.5s), both with slug/session context.
+- [x] Metric names documented in `docs/MULTI-INSTANCE.md`.
+
+## Implementation notes
+
+- `http/metrics.ts` gains `observe(name, ms)` with fixed buckets
+  (50/100/250/500/1000/2500/5000 ms) exposed as `<name>.count`, `<name>.avg_ms`,
+  `<name>.max_ms`, `<name>.le_<n>ms`.
+- Instrumented: `/menu` request time and uncached build time; WS socket open →
+  Gemini `connected` (`ws.session_setup_ms`); greeting dispatch → first
+  `audioOutput` frame (`ws.first_audio_ms`).
+- Presenter first-narration timing is intentionally left out for now: the
+  presenter pipeline is being reworked (TKT-007/010), and instrumenting a path
+  that may change shape would be churn.
 
 ## Out of scope
 

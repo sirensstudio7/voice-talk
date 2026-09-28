@@ -87,6 +87,8 @@ never blocks the next bucket.
 |---|---|
 | `ws.connections_active` | sockets on this instance (gauge) |
 | `ws.drained_total` | sockets closed by deploy drains |
+| `ws.session_setup_ms.*` | socket open → Gemini session connected (latency) |
+| `ws.first_audio_ms.*` | greeting dispatch → first assistant audio (latency) |
 | `kiosk_bus.subscribed` | subscriber connected (gauge) |
 | `kiosk_bus.published_total` | fanout messages published |
 | `kiosk_bus.received_total` | fanout messages received from peers |
@@ -94,7 +96,16 @@ never blocks the next bucket.
 | `kiosk_bus.handler_failed_total` | remote payload apply errors |
 | `redis.rate_limit_unavailable_total` | fail-open rate limits |
 | `redis.job_lock_unavailable_total` | skipped job runs |
+| `rate_limit.denied_total` / `rate_limit.denied.<bucket>` | public request denials |
+| `menu.cache_hits_total` / `menu.cache_misses_total` | `/menu` cache behaviour |
+| `menu.request_ms.*` / `menu.build_ms.*` | `/menu` latency (all vs uncached builds) |
+| `minutes.debit_retry_total` | conditional debit-update misses (should stay 0) |
+| `booking.slot_conflict_total` | lost slot races mapped to 409 |
 | `server.shutdowns_total` | SIGTERM shutdowns |
+
+Latency metrics use a fixed bucket set (`*.le_50ms` … `*.le_5000ms` plus
+`*.count`, `*.avg_ms`, `*.max_ms`), so p50/p95 can be estimated from the
+snapshot without a histogram backend.
 
 Log lines carry `instance` (pod name) and `version` (git sha), so an incident
 can be tied to a specific instance and deploy.

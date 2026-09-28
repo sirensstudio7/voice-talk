@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { requireBusinessAccess, sendAuthError } from "../../auth/jwt.js";
 import { db } from "../../db/client.js";
 import { businesses } from "../../db/schema.js";
+import { invalidateMenuCacheForBusiness } from "../../services/menu-cache.js";
 import { ALLOWED_IMAGE_TYPES, deleteFromStorage, MAX_UPLOAD_BYTES, uploadToStorage } from "../../storage/index.js";
 import { logger } from "../../http/logger.js";
 import { readUploadedFile } from "../../http/multipart.js";
@@ -98,6 +99,7 @@ export async function registerAdminAppearanceRoutes(app: Elysia): Promise<void> 
         .set({ gradientColor, displayOrientation, kioskUiMode })
         .where(eq(businesses.id, business.id))
         .returning();
+      invalidateMenuCacheForBusiness(business.id);
       return appearanceOut(updated!);
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
@@ -145,6 +147,7 @@ export async function registerAdminAppearanceRoutes(app: Elysia): Promise<void> 
         .set({ backgroundUrl: url })
         .where(eq(businesses.id, business.id))
         .returning();
+      invalidateMenuCacheForBusiness(business.id);
       return appearanceOut(updated!);
     } catch (err) {
       return sendAuthError(request, err);
@@ -171,6 +174,7 @@ export async function registerAdminAppearanceRoutes(app: Elysia): Promise<void> 
         .where(eq(businesses.id, business.id))
         .returning();
 
+      invalidateMenuCacheForBusiness(business.id);
       return appearanceOut(updated!);
     } catch (err) {
       return sendAuthError(request, err);

@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { logger } from "../http/logger.js";
 import { publishKioskPayload } from "./kiosk-bus.js";
+import { invalidateMenuCache } from "./menu-cache.js";
 import { visionEvents, visionSettings, type VisionSettings } from "../db/schema.js";
 import {
   DEFAULT_VISION_SETTINGS,
@@ -132,6 +133,9 @@ export function broadcastKioskPayloadLocally(
   businessSlug: string,
   payload: Record<string, unknown>,
 ): number {
+  // Any kiosk config push also invalidates the cached /menu payload for that
+  // business — the next kiosk fetch rebuilds it (TKT-005).
+  invalidateMenuCache(businessSlug);
   const hub = getVisionHub(businessSlug);
   if (!hub) return 0;
   return broadcastToKiosks(hub, payload);
@@ -163,6 +167,7 @@ export async function applyRemoteKioskPayload(
  * kiosks immediately, and fan out so other instances refresh and push too.
  */
 export async function announceVisionConfigChange(businessSlug: string): Promise<void> {
+  invalidateMenuCache(businessSlug);
   await refreshHubSettings(businessSlug);
   const hub = getVisionHub(businessSlug);
   if (hub) {

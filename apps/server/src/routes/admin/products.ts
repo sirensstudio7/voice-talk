@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { requireBusinessAccess, sendAuthError } from "../../auth/jwt.js";
 import { db } from "../../db/client.js";
 import { products } from "../../db/schema.js";
+import { invalidateMenuCacheForBusiness } from "../../services/menu-cache.js";
 import { nonEmptyString, numberLike, optionalBoolean, optionalNonEmptyString, optionalNumberLike, optionalString } from "../../http/validation.js";
 import { ALLOWED_IMAGE_TYPES, MAX_UPLOAD_BYTES, uploadToStorage } from "../../storage/index.js";
 import { readUploadedFile } from "../../http/multipart.js";
@@ -88,6 +89,7 @@ export async function registerAdminProductRoutes(app: Elysia): Promise<void> {
           durationMin: Number(body.duration_min ?? 30),
         })
         .returning();
+      invalidateMenuCacheForBusiness(businessId);
       return request.status(201, productOut(product!));
     } catch (err) {
       return sendAuthError(request, err);
@@ -125,6 +127,7 @@ export async function registerAdminProductRoutes(app: Elysia): Promise<void> {
         .set(updates)
         .where(eq(products.id, productRowId))
         .returning();
+      invalidateMenuCacheForBusiness(businessId);
       return productOut(updated!);
     } catch (err) {
       return sendAuthError(request, err);
@@ -145,6 +148,7 @@ export async function registerAdminProductRoutes(app: Elysia): Promise<void> {
         return request.status(404, { detail: "Product not found" });
       }
       await db.delete(products).where(eq(products.id, productRowId));
+      invalidateMenuCacheForBusiness(businessId);
       return request.status(204, );
     } catch (err) {
       return sendAuthError(request, err);
