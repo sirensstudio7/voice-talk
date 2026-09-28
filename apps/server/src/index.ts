@@ -48,18 +48,20 @@ if (!hasSupabaseStorage()) {
   app.use(staticPlugin({ assets: uploadRoot, prefix: "/uploads", indexHTML: false }));
 }
 
-registerHealthRoutes(app);
-registerPublicRoutes(app);
-registerAdminRoutes(app);
-registerPresentationRoutes(app);
-registerLuckySpinRoutes(app);
-registerCampaignBannerRoutes(app);
-registerLiveRoutes(app);
-registerPlatformRoutes(app);
-registerWebSocketRoutes(app);
-registerPresentationWebSocketRoutes(app);
-registerLiveWebSocketRoutes(app);
-registerVisionWebSocketRoutes(app);
+// Every registration must finish before listen(): precompile compiles the
+// router at listen time, so a route added later is never served.
+await registerHealthRoutes(app);
+await registerPublicRoutes(app);
+await registerAdminRoutes(app);
+await registerPresentationRoutes(app);
+await registerLuckySpinRoutes(app);
+await registerCampaignBannerRoutes(app);
+await registerLiveRoutes(app);
+await registerPlatformRoutes(app);
+await registerWebSocketRoutes(app);
+await registerPresentationWebSocketRoutes(app);
+await registerLiveWebSocketRoutes(app);
+await registerVisionWebSocketRoutes(app);
 startPhotoMomentJobs(logger);
 registerVoiceMinuteJobs(logger);
 
