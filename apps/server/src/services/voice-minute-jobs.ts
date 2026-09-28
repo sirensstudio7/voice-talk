@@ -1,6 +1,6 @@
 import type { Logger } from "../http/logger.js";
 
-import { withJobLock } from "../redis.js";
+import { withIntervalLock } from "../redis.js";
 import { sweepOrphanVoiceSessions } from "./voice-minutes.js";
 
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
@@ -14,7 +14,7 @@ function isMissingRelation(err: unknown): boolean {
 
 export function registerVoiceMinuteJobs(log: Logger): void {
   const run = async () => {
-    await withJobLock("voice-minute-sweep", SWEEP_INTERVAL_MS - 30_000, async () => {
+    await withIntervalLock("voice-minute-sweep", SWEEP_INTERVAL_MS, async () => {
       try {
         const n = await sweepOrphanVoiceSessions();
         if (n > 0) log.info({ closed: n }, "Closed orphan voice sessions and debited minutes");

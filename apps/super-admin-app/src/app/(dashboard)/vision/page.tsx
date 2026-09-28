@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   CameraIcon,
-  ComputerDesktopIcon,
   EyeIcon,
   SparklesIcon,
 } from "@heroicons/react/24/outline";
@@ -32,7 +31,6 @@ const VisionPreviewPanel = dynamic(
 
 const SOURCE_OPTIONS = [
   { value: "auto", label: "Auto" },
-  { value: "python", label: "Python sidecar" },
   { value: "browser", label: "Browser camera" },
   { value: "human", label: "Human (browser)" },
 ] as const;
@@ -49,13 +47,6 @@ const PREVIEW_BUTTONS: Array<{
     label: "Auto",
     hint: "How fallback works",
     icon: SparklesIcon,
-    live: false,
-  },
-  {
-    source: "python",
-    label: "Python",
-    hint: "Sidecar info",
-    icon: ComputerDesktopIcon,
     live: false,
   },
   {

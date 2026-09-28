@@ -1,6 +1,7 @@
 import { RedisClient } from "bun";
 import { env } from "./env.js";
 import { logger } from "./http/logger.js";
+import { inc } from "./http/metrics.js";
 
 const log = logger.child({ component: "redis" });
 
@@ -19,13 +20,6 @@ if n == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
 return n
 `;
 
-const RELEASE_LOCK_SCRIPT = `
-if redis.call('GET', KEYS[1]) == ARGV[1] then
-  return redis.call('DEL', KEYS[1])
-end
-return 0
-`;
-
 /**
  * Fixed-window counter shared by every instance. Fails open with a warning:
  * a Redis outage must not lock users out of login or kiosk unlock.
@@ -37,36 +31,40 @@ export async function rateLimit(key: string, limit: number, windowMs: number): P
     );
     return count <= limit;
   } catch (error) {
+    inc("redis.rate_limit_unavailable_total");
     log.warn({ err: error }, "redis.rate_limit_unavailable");
     return true;
   }
 }
 
 /**
- * Run a scheduled job on exactly one instance. Skipped (with a warning) when
- * the lock cannot be taken, so horizontal scaling never double-runs a sweep.
+ * Run a scheduled job at most once per interval across every instance.
+ *
+ * Unlike a lock that is released when the job returns, the key is a time
+ * bucket (`...:<floor(now/interval)>`) that lives for the whole interval. That
+ * matters with two pods: independently-phased timers would otherwise each take
+ * the lock at different moments and run the sweep twice per window.
+ *
+ * Skipped (with a warning) when the bucket is already claimed.
  */
-export async function withJobLock(
+export async function withIntervalLock(
   name: string,
-  ttlMs: number,
+  intervalMs: number,
   job: () => Promise<void>,
 ): Promise<boolean> {
-  const key = `jobs:lock:${name}`;
-  const token = crypto.randomUUID();
+  const bucket = Math.floor(Date.now() / intervalMs);
+  const key = `jobs:interval:${name}:${bucket}`;
   try {
-    const acquired = await redis.set(key, token, "NX", "PX", String(ttlMs));
+    const acquired = await redis.set(key, "1", "NX", "PX", String(intervalMs + 30_000));
     if (acquired !== "OK") return false;
   } catch (error) {
+    inc("redis.job_lock_unavailable_total");
     log.warn({ err: error, job: name }, "redis.job_lock_unavailable");
     return false;
   }
 
-  try {
-    await job();
-    return true;
-  } finally {
-    await redis.send("EVAL", [RELEASE_LOCK_SCRIPT, "1", key, token]).catch(() => undefined);
-  }
+  await job();
+  return true;
 }
 
 type RedisHealth = { online: boolean; latencyMs: number | null };
@@ -74,10 +72,15 @@ type RedisHealth = { online: boolean; latencyMs: number | null };
 let cachedHealth: RedisHealth | null = null;
 let cachedAt = 0;
 
-/** Cached PING for /health; avoids a round trip on every request. */
+/**
+ * Cached PING for /health. Sixty seconds keeps the Upstash bill small while
+ * staying fresh enough for readiness checks; `/health?db=1` forces a probe.
+ */
+const HEALTH_CACHE_TTL_MS = 60_000;
+
 export async function checkRedisHealth(force = false): Promise<RedisHealth> {
   const now = Date.now();
-  if (!force && cachedHealth && now - cachedAt < 15_000) {
+  if (!force && cachedHealth && now - cachedAt < HEALTH_CACHE_TTL_MS) {
     return cachedHealth;
   }
 

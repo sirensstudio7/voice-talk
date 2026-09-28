@@ -3,7 +3,7 @@ import { requireBusinessAccess, sendAuthError } from "../../auth/jwt.js";
 import { db } from "../../db/client.js";
 import { visionSettings } from "../../db/schema.js";
 import { DEFAULT_VISION_SETTINGS, normalizeAutoGoodbyeTimeoutSeconds, normalizeCooldownSeconds, normalizeDetectionDistanceM, normalizeGreetingDelaySeconds, normalizeGreetingTriggerMode, normalizeStartHotkey, normalizeVisionSource, normalizeLostTimeoutSeconds, normalizeSilenceTimeoutSeconds, normalizeVisionScript, visionSettingsOut } from "../../services/vision-settings.js";
-import { broadcastVisionConfig, getOrCreateVisionSettings, getVisionHub, getVisionMetrics, refreshHubSettings } from "../../services/vision-orchestrator.js";
+import { announceVisionConfigChange, getOrCreateVisionSettings, getVisionMetrics } from "../../services/vision-orchestrator.js";
 import { optionalBoolean, optionalNumberLike, optionalString, queryNumber } from "../../http/validation.js";
 import { t, type Elysia } from "elysia";
 
@@ -101,11 +101,7 @@ export async function registerAdminVisionRoutes(app: Elysia): Promise<void> {
         .where(eq(visionSettings.businessId, businessId))
         .returning();
 
-      await refreshHubSettings(business.slug);
-      const hub = getVisionHub(business.slug);
-      if (hub) {
-        broadcastVisionConfig(hub);
-      }
+      await announceVisionConfigChange(business.slug);
       return visionSettingsOut(updated!);
     } catch (err) {
       return sendAuthError(request, err);

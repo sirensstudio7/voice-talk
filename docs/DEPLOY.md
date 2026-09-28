@@ -110,6 +110,10 @@ DATABASE_URL="your-postgres-url" bun run --filter server seed
 > Free tiers that sleep make voice WebSockets drop — use an always-on
 > instance for demos.
 
+Running more than one API instance (replicas) has extra requirements around
+WebSocket fanout, draining and the DB connection budget — see
+[`MULTI-INSTANCE.md`](MULTI-INSTANCE.md).
+
 ## 4. Frontends (Next.js, any host)
 
 Deploy each app separately (Vercel, Netlify, Node, Docker…):

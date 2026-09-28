@@ -5,18 +5,14 @@ import { env } from "../env.js";
 import { logger, shouldLogThrottled } from "../http/logger.js";
 import { getBusinessBySlug } from "../services/tenant.js";
 import {
-  buildVisionConfigPayload,
   ensureVisionHub,
   getOrCreateVisionSettings,
   handleVisionEvent,
-  publishVisionEvent,
   registerKioskClient,
-  registerVisionSource,
   releaseKioskSession,
   setKioskSessionActive,
   startKioskCooldown,
   unregisterKioskClient,
-  unregisterVisionSource,
 } from "../services/vision-orchestrator.js";
 
 type VisionEventType =
@@ -28,72 +24,11 @@ type VisionEventType =
 
 const log = logger.child({ component: "vision" });
 
-function safeSend(socket: SocketBridge, payload: Record<string, unknown>): boolean {
-  try {
-    if (socket.readyState === socket.OPEN) {
-      socket.send(JSON.stringify(payload));
-      return true;
-    }
-  } catch {
-    // ignore
-  }
-  return false;
-}
-
 export function registerVisionWebSocketRoutes(app: Elysia): void {
-  app.ws("/ws/vision", socketRoute((socket, { query }) => handleVisionSource(socket, query)));
+  // Vision detection runs in the kiosk browser itself (MediaPipe/Human), so the
+  // control channel and the event stream share one socket — no cross-instance
+  // routing is involved.
   app.ws("/ws/kiosk", socketRoute((socket, { query }) => handleKioskClient(socket, query)));
-}
-
-async function handleVisionSource(
-  socket: SocketBridge,
-  query: Record<string, string | undefined>,
-): Promise<void> {
-  const slug = query.business || env.DEFAULT_BUSINESS_SLUG;
-  const kioskId = query.kiosk_id || "default";
-  const tenant = await getBusinessBySlug(slug);
-  if (!tenant) {
-    socket.close();
-    return;
-  }
-
-  const hub = await ensureVisionHub(tenant.id, slug);
-  hub.settings = await getOrCreateVisionSettings(tenant.id);
-  registerVisionSource(hub, kioskId, socket);
-  log.info({ businessSlug: slug, kioskId }, "vision.source_connected");
-  safeSend(socket, buildVisionConfigPayload(hub));
-
-  socket.on("message", (raw) => {
-    try {
-      const payload = JSON.parse(String(raw)) as Record<string, unknown>;
-      const msgType = payload.type as string;
-
-      if (msgType === "vision.hello") {
-        void (async () => {
-          hub.settings = await getOrCreateVisionSettings(hub.businessId);
-          safeSend(socket, buildVisionConfigPayload(hub));
-        })();
-        return;
-      }
-
-      if (msgType === "vision.event") {
-        const event = payload.event as VisionEventType;
-        const trackId =
-          typeof payload.track_id === "number" ? payload.track_id : undefined;
-        void handleVisionEvent(hub, kioskId, event, trackId, "python");
-        void publishVisionEvent(slug, { ...payload, business: slug });
-      }
-    } catch (err) {
-      if (shouldLogThrottled(`vision.source_message_failed:${slug}:${kioskId}`)) {
-        log.error({ err, businessSlug: slug, kioskId }, "vision.source_message_failed");
-      }
-    }
-  });
-
-  socket.on("close", () => {
-    unregisterVisionSource(hub, kioskId);
-    log.info({ businessSlug: slug, kioskId }, "vision.source_disconnected");
-  });
 }
 
 async function handleKioskClient(
@@ -142,7 +77,7 @@ async function handleKioskClient(
         const event = payload.event as VisionEventType;
         const trackId =
           typeof payload.track_id === "number" ? payload.track_id : undefined;
-        void handleVisionEvent(hub, kioskId, event, trackId, "browser");
+        void handleVisionEvent(hub, kioskId, event, trackId);
       }
     } catch (err) {
       if (shouldLogThrottled(`vision.kiosk_message_failed:${slug}:${kioskId}`)) {

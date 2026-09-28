@@ -141,7 +141,7 @@ Applies to **every business** using the shared customer app — not tenant-speci
 
 **Browser camera mode:** during a voice session the browser camera is paused (mic handoff). After the conversation ends, the camera restarts; MediaPipe detectors stay warm on the same page for faster session 2+.
 
-**Python sidecar:** keeps scanning at all times — detection is not paused during voice sessions. The server only suppresses duplicate greeting triggers while a session is active.
+Vision detection always runs in the kiosk browser, on the same WebSocket as the kiosk control channel. The server only suppresses duplicate greeting triggers while a session is active.
 
 When a conversation finishes:
 
@@ -156,7 +156,7 @@ When a conversation finishes:
 
 ### Vision source (browser-camera kiosks)
 
-For any business using the kiosk’s built-in camera, set **Admin → Vision Settings → Vision source = `browser`**. Prefer this over `auto` when a Python vision sidecar may also be connected — otherwise browser raise-hand/gesture events can be ignored while the sidecar still runs on a different trigger mode.
+For any business using the kiosk’s built-in camera, keep **Admin → Vision Settings → Vision source = `auto`** (browser camera). `browser` and `human` are explicit browser variants; there is no external vision process to install.
 
 ### Vision goodbye vs FAQ closing
 
@@ -244,12 +244,11 @@ Ends the live WebSocket session and schedules chat clear via `deferChatReset()`.
 
 ## Related dev commands
 
-`bun run api:restart` restarts the API and, when `.vision.slug` exists, restarts the vision sidecar with **debug preview** (`VISION_DEBUG=1`).
+`bun run api:restart` restarts the API in the background (see `.api.log`).
 
 ```bash
-bun run api:restart          # restarts API + restarts vision with debug preview (.vision.slug)
-bash scripts/dev-vision.sh start sunrise-coffee   # first-time vision setup (no debug)
-VISION_DEBUG=1 bash scripts/dev-vision.sh restart sunrise-coffee   # manual debug restart
+bun run api:restart   # restart API
+bun run api:health    # one-line health probe
 ```
 
-See `scripts/dev-api.sh` and `scripts/dev-vision.sh`.
+See `scripts/dev-api.sh`.

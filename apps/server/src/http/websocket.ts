@@ -1,3 +1,5 @@
+import { inc, setGauge } from "./metrics.js";
+
 /**
  * A `ws`-shaped facade over Elysia's WebSocket handler model.
  *
@@ -11,6 +13,9 @@
  */
 
 export const WS_OPEN = 1;
+
+/** Close code sent on SIGTERM so clients reconnect instead of erroring. */
+export const WS_SERVICE_RESTART = 1012;
 
 type MessageListener = (data: Buffer | string, isBinary: boolean) => void;
 type CloseListener = () => void;
@@ -91,9 +96,52 @@ export class SocketBridge {
     this.closed = true;
     for (const listener of this.closeListeners) listener();
   }
+
+  /**
+   * Server-initiated close for deploys: runs local cleanup listeners (hubs and
+   * voice sessions release their state), then closes the wire with a restart
+   * code so clients reconnect instead of surfacing an error.
+   */
+  drain(code: number = WS_SERVICE_RESTART, reason = "Service restart"): void {
+    try {
+      if (this.raw.readyState === WS_OPEN) {
+        this.raw.send(JSON.stringify({ type: "server.draining" }));
+      }
+    } catch {
+      // ignore
+    }
+    this.dispatchClose();
+    try {
+      this.raw.close(code, reason);
+    } catch {
+      // already gone
+    }
+  }
 }
 
 type Record_ = Record<string, string | undefined>;
+
+/** Live sockets for drain-on-shutdown and connection metrics. */
+const openBridges = new Set<SocketBridge>();
+
+export function activeWebSocketCount(): number {
+  return openBridges.size;
+}
+
+/**
+ * Ask every connected socket to reconnect elsewhere and close locally. Called
+ * from SIGTERM before the listener stops; clients see code 1012.
+ */
+export function drainWebSockets(
+  code: number = WS_SERVICE_RESTART,
+  reason = "Service restart",
+): number {
+  const bridges = [...openBridges];
+  for (const bridge of bridges) bridge.drain(code, reason);
+  if (bridges.length > 0) inc("ws.drained_total", bridges.length);
+  setGauge("ws.connections_active", openBridges.size);
+  return bridges.length;
+}
 
 /** The request details Elysia exposes on a WebSocket connection. */
 export type SocketData = {
@@ -115,6 +163,8 @@ export function socketRoute(
     open(ws: { id: string | number; data: Partial<SocketData> } & RawSocket) {
       const bridge = new SocketBridge(ws);
       bridges.set(ws.id, bridge);
+      openBridges.add(bridge);
+      setGauge("ws.connections_active", openBridges.size);
       void handler(bridge, {
         query: ws.data.query ?? {},
         params: ws.data.params ?? {},
@@ -127,6 +177,8 @@ export function socketRoute(
     close(ws: { id: string | number }) {
       const bridge = bridges.get(ws.id);
       bridges.delete(ws.id);
+      if (bridge) openBridges.delete(bridge);
+      setGauge("ws.connections_active", openBridges.size);
       bridge?.dispatchClose();
     },
   };

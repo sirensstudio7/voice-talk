@@ -198,7 +198,7 @@ export type AppearanceSettings = {
 
 export type GreetingTriggerMode = "presence" | "gesture" | "raise_hand";
 
-export type VisionSource = "auto" | "python" | "browser" | "human";
+export type VisionSource = "auto" | "browser" | "human";
 
 export type VisionSettings = {
   camera_trigger_enabled: boolean;

@@ -15,8 +15,6 @@
     "api:stop": "bash scripts/dev-api.sh stop",
     "api:health": "bash scripts/dev-api.sh health",
     "api:ensure": "bash scripts/dev-api.sh ensure",
-    "vision:ensure": "bash scripts/dev-vision.sh ensure",
-    "vision:restart": "VISION_DEBUG=1 bash scripts/dev-vision.sh restart",
     "dev:all": "concurrently \"bun run dev:api\" \"bun run dev\" \"bun run dev:admin\" \"bun run dev:super-admin\" \"bun run dev:marketing\"",
     "seed:db": "bun run --filter server db:migrate && bun run --filter server seed",
     "seed:demo-analytics": "bun run --filter server seed:demo-analytics",
@@ -25,8 +23,7 @@
     "check:deploy": "bash scripts/check-deploy-env.sh",
     "lint:api": "bun run --filter server lint",
     "test:api": "bun run --filter server test",
-    "demo:cloudflare": "bash scripts/demo-cloudflare.sh",
-    "vision:dev": "cd services/vision && python main.py --business ${BUSINESS_SLUG:-demo} --ws-url ws://localhost:8000/ws/vision --debug"
+    "demo:cloudflare": "bash scripts/demo-cloudflare.sh"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
