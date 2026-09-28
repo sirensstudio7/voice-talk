@@ -56,6 +56,13 @@ docker run -d --name voice-talk-api --restart unless-stopped \
   -p 8000:8000 ghcr.io/sirensstudio7/voice-talk:latest
 ```
 
+Set `PLATFORM_ADMIN_EMAIL` and `PLATFORM_ADMIN_PASSWORD` in the API's secret
+environment before first startup. The server seeds that account only when the
+email is not already present. To explicitly reset an existing account, run
+`bun run platform-admin:reset-password` inside the API container with those
+variables set; it updates only that account's password hash and records an
+audit event.
+
 Or use [`docker-compose.prod.yml`](../docker-compose.prod.yml):
 `docker compose -f docker-compose.prod.yml up -d`.
 

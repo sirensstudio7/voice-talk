@@ -86,6 +86,7 @@ Set these variables on the host (or in the env file):
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | Aiven (or any managed Postgres) URL, `?sslmode=require` |
+| `DB_POOL_MAX` | Pooled Postgres connections per API instance (default 10). Keep `instances × DB_POOL_MAX` under the service's connection limit; Aiven's free tier allows only 20 total. Set 5 for one instance on free tier. |
 | `REDIS_URL` | Upstash `rediss://` URL — rate limits + background-job locks |
 | `S3_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` |
 | `S3_BUCKET` | Bucket name (prefixes separate the storage areas) |
@@ -137,11 +138,46 @@ bun run demo:cloudflare
 Shares a temporary public URL via Cloudflare Tunnel while running locally
 (it also sets `PUBLIC_API_URL`, so QR links work during the demo).
 
+## Troubleshooting: database connection limits
+
+A managed Postgres plan caps how many connections the whole service can hold
+at once — Aiven's free tier allows 20. API instances each keep a pool of
+`DB_POOL_MAX` connections, and a login or health check adds one more while it
+runs. If the limit is reached, new connections fail with:
+
+```
+remaining connection slots are reserved for roles with the SUPERUSER attribute
+```
+
+That error can surface as `500 Internal error` on login and is not a password
+problem. On a 20-connection service, set `DB_POOL_MAX=5` and run a single API
+instance unless a pooler is configured. To see who holds connections, run this
+against the database:
+
+```sql
+SELECT application_name, state, count(*)
+FROM pg_stat_activity
+WHERE datname = current_database()
+GROUP BY 1, 2
+ORDER BY 3 DESC;
+```
+
+API pools report `voice-talk-api`; logins and health checks report
+`voice-talk-api-login` and `voice-talk-api-health`. Anything else (a local dev
+server, script, or admin tool) is an external client and should not point at
+the production database.
+
+Enabling connection pooling (PgBouncer) on the service removes the hard
+per-client ceiling: many clients share a few server connections. It requires
+using the service's pooled port in `DATABASE_URL` instead of the direct port;
+keep migrations on the direct port.
+
 ## Checklist
 
 - [ ] Migrations applied from `db/migrations`
 - [ ] Object storage bucket created (`lorescale`) and, if migrating, objects copied (`migrate-storage-to-r2.ts`)
 - [ ] API `/health` returns `{"status":"ok",...}`
+- [ ] `DB_POOL_MAX` accounts for the plan's connection limit and the number of API instances
 - [ ] Seed data exists (Sunrise Coffee) — only if you ran the seed
 - [ ] Admin login works on Vercel
 - [ ] Voice session connects (customer app)

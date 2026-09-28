@@ -29,6 +29,13 @@ const envSchema = z.object({
   LORESCALE_ADMIN_PASSWORD: z.string().default("lorescale123"),
   PLATFORM_ADMIN_EMAIL: z.string().default("superadmin@lorescale.com"),
   PLATFORM_ADMIN_PASSWORD: z.string().default("superadmin123"),
+  /**
+   * Max pooled Postgres connections per API instance. Keep
+   * instances × DB_POOL_MAX under the plan's connection limit (Aiven free
+   * tier allows 20 total). Login and health checks use one extra connection
+   * at a time.
+   */
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
   /** Merchant admin app URL used for impersonation redirects. */
   MERCHANT_ADMIN_URL: z.string().default("http://localhost:6680"),
   /** S3-compatible object storage (Cloudflare R2 in production). */

@@ -25,6 +25,7 @@ export async function withLoginDb<T>(fn: (db: AppDb) => Promise<T>): Promise<T> 
     maxLifetime: 30,
     connection: {
       statement_timeout: 10_000,
+      application_name: "voice-talk-api-login",
     },
   });
   const loginDb = drizzle(client, { schema });

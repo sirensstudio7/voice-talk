@@ -35,6 +35,9 @@ async function pingDb(timeoutMs: number): Promise<DbHealth> {
     connectionTimeout: connectTimeoutSec,
     idleTimeout: 1,
     maxLifetime: 5,
+    connection: {
+      application_name: "voice-talk-api-health",
+    },
   });
 
   let timer: ReturnType<typeof setTimeout> | undefined;

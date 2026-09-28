@@ -14,6 +14,7 @@
     "seed:booking": "bun scripts/seed-booking.ts",
     "seed:demo-analytics": "bun scripts/seed-demo-analytics.ts",
     "seed:demo-analytics:force": "bun scripts/seed-demo-analytics.ts --force",
+    "platform-admin:reset-password": "bun scripts/reset-platform-admin-password.ts",
     "db:migrate": "bun scripts/migrate.ts",
     "db:push": "drizzle-kit push",
     "storage:migrate": "bun scripts/migrate-storage-to-r2.ts"

@@ -15,7 +15,7 @@ function createSqlClient(): SQL {
     // checkouts. Disabling them everywhere means one configuration works on a
     // direct connection and through the pooler alike.
     prepare: false,
-    max: 10,
+    max: env.DB_POOL_MAX,
     connectionTimeout: 25,
     // Recycle idle / old sockets so a bad pooler connection cannot linger.
     idleTimeout: 20,
@@ -23,6 +23,8 @@ function createSqlClient(): SQL {
     // Fail stuck queries instead of holding pool slots forever (login/UI hang).
     connection: {
       statement_timeout: 20_000,
+      // Visible as the application_name in pg_stat_activity.
+      application_name: "voice-talk-api",
     },
   });
 }
