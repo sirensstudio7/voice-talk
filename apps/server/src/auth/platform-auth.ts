@@ -93,7 +93,7 @@ export async function getPlatformAdminFromPending(
       where: eq(platformAdmins.id, payload.sub),
     }),
   );
-  if (!admin || admin.status !== "active") {
+  if (admin?.status !== "active") {
     throw authError("Admin not found or disabled");
   }
   return admin;
@@ -123,7 +123,7 @@ export async function getCurrentPlatformAdmin(
         where: eq(platformAdmins.id, payload.sub),
       }),
     );
-    if (!admin || admin.status !== "active") {
+    if (admin?.status !== "active") {
       throw authError("Admin not found or disabled");
     }
     if (!isPlatformRole(admin.role)) {

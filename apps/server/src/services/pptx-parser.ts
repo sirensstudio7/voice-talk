@@ -20,6 +20,7 @@ function extractTextNodes(xml: string): string[] {
   const texts: string[] = [];
   const re = /<a:t[^>]*>([\s\S]*?)<\/a:t>/g;
   let match: RegExpExecArray | null;
+  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
   while ((match = re.exec(xml)) !== null) {
     const text = decodeXmlEntities(match[1] ?? "")
       .replace(/\s+/g, " ")

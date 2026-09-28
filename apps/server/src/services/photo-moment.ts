@@ -223,7 +223,7 @@ export async function resolvePhotoDownload(token: string): Promise<{
   const session = await db.query.photoSessions.findFirst({
     where: eq(photoSessions.qrToken, token),
   });
-  if (!session || !session.photoPath) throw httpError("Photo not found", 404);
+  if (!session?.photoPath) throw httpError("Photo not found", 404);
   if (!session.downloadExpiresAt || session.downloadExpiresAt.getTime() < Date.now()) {
     throw httpError("Link expired", 410);
   }

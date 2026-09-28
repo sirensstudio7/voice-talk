@@ -17,7 +17,7 @@ import {
   presentationAudioAssets,
   presentationFiles,
   presentationKnowledgeEntries,
-  presentationQuestions,
+  type presentationQuestions,
   presentations,
   presentationSessions,
   presentationSlides,

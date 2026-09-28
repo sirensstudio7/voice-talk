@@ -117,7 +117,7 @@ async function seedDemoAnalytics() {
 
   await syncProductPrices(business.id);
 
-  let catalog = await db.query.products.findMany({
+  const catalog = await db.query.products.findMany({
     where: eq(products.businessId, business.id),
   });
 

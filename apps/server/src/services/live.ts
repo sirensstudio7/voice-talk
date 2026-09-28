@@ -523,7 +523,7 @@ async function requireLiveDedicatedProduct(businessId: string, productRowId: str
   const product = await db.query.products.findFirst({
     where: and(eq(products.id, productRowId), eq(products.businessId, businessId)),
   });
-  if (!product || !product.liveOnly) throw httpError("LIVE product not found", 404);
+  if (!product?.liveOnly) throw httpError("LIVE product not found", 404);
   return product;
 }
 
@@ -1272,7 +1272,7 @@ export async function maybeLiveHostLine(sessionId: string, kind: "welcome" | "ti
     const row = await db.query.liveSessions.findFirst({
       where: eq(liveSessions.id, sessionId),
     });
-    if (!row || row.status !== "live") {
+    if (row?.status !== "live") {
       stopLiveHostLoop(sessionId);
       return;
     }
@@ -1329,7 +1329,7 @@ export async function maybeLiveAiReply(sessionId: string, viewerText: string) {
     const row = await db.query.liveSessions.findFirst({
       where: eq(liveSessions.id, sessionId),
     });
-    if (!row || row.status !== "live") return;
+    if (row?.status !== "live") return;
     const session = await sessionOut(row);
     const reply = await generateLiveReply(session, text);
     if (!reply) return;

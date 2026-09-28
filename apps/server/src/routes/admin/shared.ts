@@ -1,6 +1,6 @@
 
 import { normalizeVoiceGender, normalizeVoicePreset } from "@voicetalk/shared";
-import { aiRules, voiceSessions } from "../../db/schema.js";
+import type { aiRules, voiceSessions } from "../../db/schema.js";
 
 export const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 

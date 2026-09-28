@@ -20,7 +20,7 @@ export function normalizeGradientColor(value: string | undefined | null): string
     throw err;
   }
   if (cleaned.length === 4) {
-    return ("#" + [...cleaned.slice(1)].map((c) => c + c).join("")).toLowerCase();
+    return (`#${[...cleaned.slice(1)].map((c) => c + c).join("")}`).toLowerCase();
   }
   return cleaned.toLowerCase();
 }

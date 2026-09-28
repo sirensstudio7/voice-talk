@@ -24,7 +24,6 @@ import { getBusinessBySlug, mapBusinessRow } from "../services/tenant.js";
 import {
   createAppointment,
   getAvailableSlots,
-  listAppointments,
 } from "../services/appointments.js";
 import {
   getLanguagePackPublicConfig,

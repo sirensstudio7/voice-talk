@@ -6,6 +6,8 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "typecheck": "tsc --noEmit",
+    "lint": "biome check src scripts",
+    "lint:fix": "biome check --write src scripts",
     "seed": "bun scripts/seed.ts",
     "seed:booking": "bun scripts/seed-booking.ts",
     "seed:demo-analytics": "bun scripts/seed-demo-analytics.ts",
@@ -29,6 +31,7 @@
     "zod": "^3.25.51"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
     "@types/bun": "^1.4.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/jszip": "^3.4.0",

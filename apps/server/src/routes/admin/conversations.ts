@@ -9,7 +9,7 @@ import { safeDebitEndedSession } from "../../services/voice-minutes.js";
 import { forceCompleteVoiceSession } from "../../services/voice-session-runtime.js";
 import { serializeUtcDatetime } from "../../services/pricing.js";
 import { orderToOut } from "../public.js";
-import { ConversationSessionRow, ConversationKioskOut } from "./shared.js";
+import type { ConversationSessionRow, ConversationKioskOut } from "./shared.js";
 
 export function parseDateFilter(date: string, tzOffset?: number) {
   const day = new Date(`${date}T00:00:00.000Z`);
@@ -204,7 +204,7 @@ export async function registerAdminConversationRoutes(app: Elysia): Promise<void
           ? query.kiosk_display_id.trim()
           : null;
 
-      let sessions = await db
+      const sessions = await db
         .select()
         .from(voiceSessions)
         .where(voiceSessionsListWhere(businessId, filterStart, filterEnd, kioskDisplayId))

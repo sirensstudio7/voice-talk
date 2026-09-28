@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, type Session } from "@google/genai";
 import { formatConnectionError, withDirectConnectionAsync } from "./networking.js";
 import { buildToolDeclarations, buildToolMapping, type ProductInfo } from "./tools.js";
 import { buildBookingToolMapping } from "./booking-tools.js";
@@ -122,8 +122,7 @@ async function* runSingleSession(
   const eventQueue: SessionEvent[] = [];
   let resolveEvent: (() => void) | null = null;
   let sessionClosed = false;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let liveSession: any = null;
+  let liveSession: Session | null = null;
   let turnCompleteTimer: ReturnType<typeof setTimeout> | null = null;
   let turnCompletePending = false;
 
@@ -347,7 +346,8 @@ async function* runSingleSession(
     clearTurnCompleteTimer();
     turnCompletePending = false;
     try {
-      liveSession?.close();
+      // Control-flow analysis cannot see the assignment inside the closure above.
+      (liveSession as Session | null)?.close();
     } catch {
       // ignore
     }

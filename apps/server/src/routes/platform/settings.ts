@@ -4,7 +4,7 @@ import { requirePermission } from "../../auth/platform-rbac.js";
 import { db } from "../../db/client.js";
 import { platformSettings } from "../../db/schema.js";
 import type { Elysia } from "elysia";
-import { ProviderApiKey, parseProviderApiKeys, withLegacyProviderKeys, redactSettings, getSettingsMap } from "./shared.js";
+import { type ProviderApiKey, parseProviderApiKeys, withLegacyProviderKeys, redactSettings, getSettingsMap } from "./shared.js";
 
 export const SECRET_SETTING_KEYS = new Set([
   "elevenlabs_api_key",

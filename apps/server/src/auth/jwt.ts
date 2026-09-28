@@ -174,7 +174,7 @@ function forbiddenError(detail: string) {
   return err;
 }
 
-function notFoundError(detail: string) {
+function _notFoundError(detail: string) {
   const err = new Error(detail) as Error & { statusCode: number };
   err.statusCode = 404;
   return err;

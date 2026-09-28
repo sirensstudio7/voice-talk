@@ -473,7 +473,9 @@ async function handleSession(
         safeSendJson(socket, { type: "transcript.user", text });
         audioQueue.push(new ClientTextEvent(text));
       } else if (msgType === "session.restore") {
-        Object.keys(restorePayload).forEach((k) => delete restorePayload[k]);
+        Object.keys(restorePayload).forEach((k) => {
+          delete restorePayload[k];
+        });
         Object.assign(restorePayload, payload);
         orderStore.loadSnapshot((payload.order as Record<string, unknown>) ?? {});
         if (!restoreResolved) {

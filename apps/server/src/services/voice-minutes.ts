@@ -2,11 +2,9 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import {
-  accountSubscriptions,
   businessMembers,
   minuteGrants,
   minuteLedger,
-  plans,
   topupOrders,
   topupPackages,
   transcriptMessages,
@@ -515,7 +513,7 @@ export async function createTopupOrder(opts: {
   const pkg = await db.query.topupPackages.findFirst({
     where: eq(topupPackages.id, opts.packageId),
   });
-  if (!pkg || pkg.status !== "active") {
+  if (pkg?.status !== "active") {
     throw httpError("Top-up package is not available.", 400);
   }
 
