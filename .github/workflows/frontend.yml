@@ -1,0 +1,84 @@
+name: Frontend
+
+# TKT-011. Typecheck is blocking on every frontend app. Lint is intentionally
+# non-blocking for now: admin-app and super-admin-app still need the ESLint 9
+# flat-config migration and the other apps carry a pre-existing error backlog.
+# Flip the lint job to blocking once that backlog is cleared or the apps move
+# to Biome.
+
+on:
+  push:
+    paths:
+      - "apps/customer-app/**"
+      - "apps/admin-app/**"
+      - "apps/super-admin-app/**"
+      - "apps/marketing-app/**"
+      - "packages/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    paths:
+      - "apps/customer-app/**"
+      - "apps/admin-app/**"
+      - "apps/super-admin-app/**"
+      - "apps/marketing-app/**"
+      - "packages/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/frontend.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Typecheck (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [customer-app, admin-app, super-admin-app, marketing-app]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Cache bun install
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        working-directory: apps/${{ matrix.app }}
+        run: bunx tsc --noEmit
+
+  lint:
+    name: Lint (${{ matrix.app }}) — non-blocking
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [customer-app, admin-app, super-admin-app, marketing-app]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Cache bun install
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Lint
+        working-directory: apps/${{ matrix.app }}
+        run: bunx eslint .
