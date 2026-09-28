@@ -43,10 +43,8 @@ suite("api smoke", () => {
 
   afterAll(async () => {
     await app?.stop();
-    const { closeRedis } = await import("../src/redis.js");
-    closeRedis();
-    const { closeDb } = await import("../src/db/client.js");
-    await closeDb();
+    // Shared db/Redis clients stay open: test files run in one process and may
+    // still be in flight. The runner exits the process when every file is done.
   });
 
   test("health reports db and redis online", async () => {

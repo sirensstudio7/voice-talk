@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { logger } from "../http/logger.js";
+import { inc } from "../http/metrics.js";
 import {
   businessMembers,
   minuteGrants,
@@ -333,35 +334,59 @@ export async function assertCanStartVoiceSession(userId: string): Promise<VoiceM
   return wallet;
 }
 
-async function consumeLots(userId: string, seconds: number): Promise<number> {
+/**
+ * Take `seconds` from the user's live lots, subscription lots first.
+ *
+ * Runs as one transaction with the lots row-locked (`FOR UPDATE`). Two
+ * concurrent debits — two API instances, or a session ending while the orphan
+ * sweep runs — serialize instead of both reading the same `remaining_seconds`,
+ * so the wallet can never be spent twice. The per-lot update is additionally
+ * conditional on the locked value, which keeps `remaining_seconds` >= 0 even if
+ * a future call path bypasses the lock.
+ *
+ * Exported for the concurrency test (TKT-001); application code charges through
+ * `debitVoiceSession`.
+ */
+export async function consumeLots(userId: string, seconds: number): Promise<number> {
+  if (seconds <= 0) return 0;
   const now = new Date();
-  const lots: MinuteGrant[] = await db
-    .select()
-    .from(minuteGrants)
-    .where(
-      and(
-        eq(minuteGrants.userId, userId),
-        gt(minuteGrants.remainingSeconds, 0),
-        or(isNull(minuteGrants.expiresAt), gt(minuteGrants.expiresAt, now)),
-      ),
-    )
-    .orderBy(
-      sql`case when ${minuteGrants.kind} = 'subscription' then 0 else 1 end`,
-      asc(minuteGrants.expiresAt),
-      asc(minuteGrants.createdAt),
-    );
+  return db.transaction(async (tx) => {
+    const lots: MinuteGrant[] = await tx
+      .select()
+      .from(minuteGrants)
+      .where(
+        and(
+          eq(minuteGrants.userId, userId),
+          gt(minuteGrants.remainingSeconds, 0),
+          or(isNull(minuteGrants.expiresAt), gt(minuteGrants.expiresAt, now)),
+        ),
+      )
+      .orderBy(
+        sql`case when ${minuteGrants.kind} = 'subscription' then 0 else 1 end`,
+        asc(minuteGrants.expiresAt),
+        asc(minuteGrants.createdAt),
+      )
+      .for("update");
 
-  let left = seconds;
-  for (const lot of lots) {
-    if (left <= 0) break;
-    const take = Math.min(lot.remainingSeconds, left);
-    await db
-      .update(minuteGrants)
-      .set({ remainingSeconds: lot.remainingSeconds - take })
-      .where(eq(minuteGrants.id, lot.id));
-    left -= take;
-  }
-  return seconds - left;
+    let left = seconds;
+    for (const lot of lots) {
+      if (left <= 0) break;
+      const take = Math.min(lot.remainingSeconds, left);
+      const [updated] = await tx
+        .update(minuteGrants)
+        .set({ remainingSeconds: sql`${minuteGrants.remainingSeconds} - ${take}` })
+        .where(and(eq(minuteGrants.id, lot.id), gte(minuteGrants.remainingSeconds, take)))
+        .returning({ remainingSeconds: minuteGrants.remainingSeconds });
+      if (!updated) {
+        // Unreachable while the row lock holds; counted so a future regression
+        // (an update path that skips the lock) is visible instead of silent.
+        inc("minutes.debit_retry_total");
+        continue;
+      }
+      left -= take;
+    }
+    return seconds - left;
+  });
 }
 
 export async function debitVoiceSession(opts: {

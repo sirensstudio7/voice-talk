@@ -1,6 +1,6 @@
 # TKT-002 — Atomic booking (no double-book)
 
-- **Status:** proposed
+- **Status:** in-progress (code + migration 067 on `feat/multi-instance-hardening`)
 - **Priority:** P0
 - **Area:** booking
 - **Effort:** M (2–4 days)
@@ -43,12 +43,32 @@ retry handling.
 
 ## Acceptance criteria
 
-- [ ] Two parallel `createAppointment` calls for the same staff/time: exactly one
+- [x] Two parallel `createAppointment` calls for the same staff/time: exactly one
       row exists; the loser gets a structured conflict error.
-- [ ] Voice path surfaces the conflict as a spoken alternative, not a crash.
-- [ ] Cancelled appointments free the slot (exclusion predicate verified).
-- [ ] Migration is idempotent and runs on existing data (no overlap today in
-      production; add a pre-flight check in the migration comment).
+      (`tests/booking-guard.test.ts`, staffed and unstaffed cases.)
+- [x] Voice path surfaces the conflict as a spoken alternative, not a crash
+      (`book_appointment` returns the error plus up to three `alternatives`).
+- [x] Cancelled appointments free the slot (exclusion predicate verified in the
+      same test).
+- [x] Migration is idempotent (re-ran against a scratch database) and aborts
+      with the offending ids when existing overlaps are present.
+
+## Implementation notes
+
+- `db/migrations/067_appointment_overlap_guard.sql`: enables `btree_gist`, then
+  adds `appointments_staff_no_overlap` (staffed) and
+  `appointments_business_no_overlap` (unstaffed) exclusion constraints. When the
+  extension cannot be enabled it falls back to
+  `uq_appointments_staff_start_slot` (exact-slot unique index) and raises a
+  warning.
+- `services/appointments.ts` maps `23P01`/`23505` (including Bun's
+  `DrizzleQueryError` wrapper, via `db/errors.ts`) to `SlotTakenError`
+  (status 409, counter `booking.slot_conflict_total`). The public route now
+  responds 409; previously every failure was a 400.
+- Deleting a doctor whose appointments overlap unassigned bookings is rejected
+  with a 409 explaining the conflict (`services/booking.ts` `deleteStaff`).
+- Deployment note: run `bun run seed:db` before rolling the code; if it aborts on
+  pre-flight, cancel the listed overlapping appointments and re-run.
 
 ## Out of scope
 

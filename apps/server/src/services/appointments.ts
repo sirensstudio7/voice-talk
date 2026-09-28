@@ -1,6 +1,7 @@
 import { and, eq, gte, lt, ne, sql } from "drizzle-orm";
 
 import { db } from "../db/client.js";
+import { isAppointmentOverlapError } from "../db/errors.js";
 import {
   appointments,
   bookingServices,
@@ -8,7 +9,22 @@ import {
   businessHours,
   products,
 } from "../db/schema.js";
+import { inc } from "../http/metrics.js";
 import { loadStaffHoursForSlot } from "./booking.js";
+
+/**
+ * Thrown when a slot lost the race between the availability check and the
+ * insert. The database exclusion constraint (migration 067) is the actual
+ * guarantee; this error is how callers turn it into a friendly retry.
+ */
+export class SlotTakenError extends Error {
+  statusCode = 409;
+
+  constructor(message = "That time slot is no longer available.") {
+    super(message);
+    this.name = "SlotTakenError";
+  }
+}
 
 const SLOT_STEP_MIN = 15;
 /** Clinic wall-clock. Indonesia product; matches seed bookings and kiosk copy. */
@@ -100,6 +116,15 @@ export function parseAppointmentStart(raw: string): Date {
     throw new Error("Invalid start time.");
   }
   return parsed;
+}
+
+/** Clinic-local YYYY-MM-DD for a start string; null when it cannot be parsed. */
+export function appointmentLocalDate(raw: string): string | null {
+  try {
+    return ymdInClinicZone(parseAppointmentStart(raw));
+  } catch {
+    return null;
+  }
 }
 
 function addCalendarDays(ymd: string, days: number): string {
@@ -386,23 +411,34 @@ export async function createAppointment(options: {
 
   const matched = available.some((slot) => minuteKey(new Date(slot)) === minuteKey(startsAt));
   if (!matched) {
-    throw new Error("That time slot is no longer available.");
+    throw new SlotTakenError();
   }
 
-  const [row] = await db
-    .insert(appointments)
-    .values({
-      businessId: options.businessId,
-      productId: service.id,
-      treatmentName: service.name,
-      customerName: options.customerName.trim(),
-      customerPhone: options.customerPhone?.trim() ?? "",
-      startsAt,
-      endsAt,
-      voiceSessionId: options.voiceSessionId ?? null,
-      staffId,
-    })
-    .returning();
+  let row: typeof appointments.$inferSelect | undefined;
+  try {
+    [row] = await db
+      .insert(appointments)
+      .values({
+        businessId: options.businessId,
+        productId: service.id,
+        treatmentName: service.name,
+        customerName: options.customerName.trim(),
+        customerPhone: options.customerPhone?.trim() ?? "",
+        startsAt,
+        endsAt,
+        voiceSessionId: options.voiceSessionId ?? null,
+        staffId,
+      })
+      .returning();
+  } catch (error) {
+    // Migration 067's exclusion constraint rejects the loser of a concurrent
+    // race that both passed the pre-check above.
+    if (isAppointmentOverlapError(error)) {
+      inc("booking.slot_conflict_total");
+      throw new SlotTakenError();
+    }
+    throw error;
+  }
 
   let staffName: string | null = null;
   if (row!.staffId) {

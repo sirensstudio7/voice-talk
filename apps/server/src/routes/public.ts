@@ -43,6 +43,11 @@ import {
 } from "../services/photo-moment.js";
 import { MAX_PHOTO_UPLOAD_BYTES } from "../storage/index.js";
 import { readUploadedFile } from "../http/multipart.js";
+import {
+  allowPublicRequest,
+  RATE_LIMITS,
+  RATE_LIMIT_DETAIL,
+} from "../http/rate-limit.js";
 import { nonEmptyString, numberLike, optionalString } from "../http/validation.js";
 
 export const kioskUnlockBody = t.Object({
@@ -226,6 +231,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
 
   app.post("/businesses/:slug/orders/confirm", async (request) => {
     const { slug } = request.params as { slug: string };
+    if (!(await allowPublicRequest(request, RATE_LIMITS.orderConfirm, slug))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const body = request.body;
     const business = await getBusinessBySlug(slug);
     if (!business) return request.status(404, { detail: "Business not found" });
@@ -341,6 +349,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
 
   app.post("/businesses/:slug/appointments", async (request) => {
     const { slug } = request.params as { slug: string };
+    if (!(await allowPublicRequest(request, RATE_LIMITS.appointmentCreate, slug))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const body = request.body;
     const business = await getBusinessBySlug(slug);
     if (!business) return request.status(404, { detail: "Business not found" });
@@ -361,7 +372,11 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
       });
       return request.status(201, appointment);
     } catch (error) {
-      return request.status(400, {
+      const status =
+        error && typeof error === "object" && "statusCode" in error
+          ? Number((error as { statusCode?: number }).statusCode) || 400
+          : 400;
+      return request.status(status, {
         detail: error instanceof Error ? error.message : "Could not create appointment.",
       });
     }
@@ -370,6 +385,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   });
 
   app.post("/public/demo-requests", async (request) => {
+    if (!(await allowPublicRequest(request, RATE_LIMITS.demoRequest))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const body = request.body;
 
     const email = body.email?.toLowerCase().trim() ?? "";
@@ -450,6 +468,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   });
 
   app.post("/public/photo/session/start", async (request) => {
+    if (!(await allowPublicRequest(request, RATE_LIMITS.photoStart))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const body = request.body;
 
     let businessId = body.businessId?.trim() ?? "";
@@ -499,6 +520,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   });
 
   app.post("/public/photo/session/:id/upload", async (request) => {
+    if (!(await allowPublicRequest(request, RATE_LIMITS.photoUpload))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const { id } = request.params as { id: string };
     const data = readUploadedFile(request.body);
     if (!data) return request.status(400, { detail: "No file uploaded." });
@@ -523,6 +547,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   });
 
   app.post("/public/photo/session/:id/complete", async (request) => {
+    if (!(await allowPublicRequest(request, RATE_LIMITS.photoComplete))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const { id } = request.params as { id: string };
     try {
       const result = await completePhotoSession(id);
@@ -563,6 +590,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   });
 
   app.post("/public/photo/events", async (request) => {
+    if (!(await allowPublicRequest(request, RATE_LIMITS.photoEvent))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const body = request.body;
 
     let businessId = body.businessId?.trim() ?? "";

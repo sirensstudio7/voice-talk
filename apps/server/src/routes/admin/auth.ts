@@ -3,6 +3,11 @@ import { clearUserCache, createAccessToken, getCurrentUser, hashPassword, sendAu
 import { db } from "../../db/client.js";
 import { withLoginDb } from "../../db/login-db.js";
 import { platformSettings, users } from "../../db/schema.js";
+import {
+  allowPublicRequest,
+  RATE_LIMITS,
+  RATE_LIMIT_DETAIL,
+} from "../../http/rate-limit.js";
 import { ensureTrialEntitlement } from "../../services/entitlement.js";
 import { listBusinessesForUser } from "../../services/user-businesses.js";
 import { t, type Elysia } from "elysia";
@@ -35,6 +40,11 @@ export async function registerAdminAuthRoutes(app: Elysia): Promise<void> {
     const body = request.body;
     try {
       const normalizedEmail = body.email.toLowerCase().trim();
+      if (
+        !(await allowPublicRequest(request, RATE_LIMITS.merchantLogin, normalizedEmail))
+      ) {
+        return request.status(429, { detail: RATE_LIMIT_DETAIL });
+      }
       const user = await withLoginDb((loginDb) =>
         loginDb.query.users.findFirst({
           where: eq(users.email, normalizedEmail),

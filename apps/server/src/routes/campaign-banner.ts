@@ -22,6 +22,11 @@ import {
 import { getBusinessBySlug } from "../services/tenant.js";
 import { ALLOWED_IMAGE_TYPES, uploadToStorage } from "../storage/index.js";
 import { readUploadedFile } from "../http/multipart.js";
+import {
+  allowPublicRequest,
+  RATE_LIMITS,
+  RATE_LIMIT_DETAIL,
+} from "../http/rate-limit.js";
 import { optionalBoolean, optionalNullableString, optionalString } from "../http/validation.js";
 import { t, type Elysia } from "elysia";
 
@@ -289,6 +294,9 @@ export async function registerCampaignBannerRoutes(app: Elysia): Promise<void> {
 
   app.post("/public/campaign-banner/events", async (request) => {
     try {
+      if (!(await allowPublicRequest(request, RATE_LIMITS.bannerEvent))) {
+        return request.status(429, { detail: RATE_LIMIT_DETAIL });
+      }
       const body = request.body;
 
       let businessId = body.businessId?.trim() ?? "";

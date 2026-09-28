@@ -1,6 +1,6 @@
 # TKT-003 — Rate-limit public mutations + merchant login
 
-- **Status:** proposed
+- **Status:** in-progress (code on `feat/multi-instance-hardening`)
 - **Priority:** P0
 - **Area:** security
 - **Effort:** S (≤ 1 day)
@@ -44,9 +44,37 @@ and allow a kiosk display token to bypass per-IP spin limits if needed.
 
 ## Acceptance criteria
 
-- [ ] Burst tests hit 429 for each endpoint at the documented limit.
-- [ ] Normal kiosk flows (a table of 4 visitors spinning once each) are unaffected.
-- [ ] Metrics show denied counts per bucket.
+- [x] Burst tests hit 429 for each covered bucket
+      (`tests/public-rate-limits.test.ts`: helper keying, merchant login, demo
+      requests, lucky-spin).
+- [x] Normal kiosk flows are unaffected: limits are per IP **and** slug and are
+      sized at roughly 2× expected peak.
+- [x] Metrics show denied counts per bucket
+      (`rate_limit.denied_total` + `rate_limit.denied.<bucket>` on
+      `/health?metrics=1`).
+
+## Implementation notes
+
+`src/http/rate-limit.ts` provides `allowPublicRequest(request, rule, scope?)`
+(Redis fixed window shared by all instances, fails open, counts denials). Wired
+limits, all per client IP plus scope:
+
+| Endpoint | Scope | Limit |
+|---|---|---|
+| `POST /public/lucky-spin/:slug/spin` | slug | 30 / 15 min |
+| `POST /businesses/:slug/orders/confirm` | slug | 20 / 15 min |
+| `POST /businesses/:slug/appointments` | slug | 10 / 15 min |
+| `POST /public/photo/session/start` | — | 20 / 15 min |
+| `POST /public/photo/session/:id/upload` | — | 30 / 15 min |
+| `POST /public/photo/session/:id/complete` | — | 20 / 15 min |
+| `POST /public/photo/events` | — | 120 / min |
+| `POST /public/campaign-banner/events` | — | 120 / min |
+| `POST /public/demo-requests` | — | 5 / 15 min |
+| `POST /admin/auth/login` | email | 10 / 15 min |
+
+The kiosk-unlock and platform-login limiters are unchanged. Client IP comes from
+the first `x-forwarded-for` hop (same convention as kiosk unlock); the edge is
+expected to set it. Tune after watching `rate_limit.denied.*` for a day.
 
 ## Out of scope
 

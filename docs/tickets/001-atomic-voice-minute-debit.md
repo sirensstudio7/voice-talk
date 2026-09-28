@@ -1,6 +1,6 @@
 # TKT-001 — Atomic voice-minute debit
 
-- **Status:** proposed
+- **Status:** in-progress (code on `feat/multi-instance-hardening`, deploy with TKT-016)
 - **Priority:** P0
 - **Area:** money / voice minutes
 - **Effort:** S (≤ 1 day)
@@ -47,12 +47,21 @@ harder to keep subscription-first ordering); an advisory lock keyed by `user_id`
 
 ## Acceptance criteria
 
-- [ ] A concurrency test seeds one lot and runs two debits in parallel; final
+- [x] A concurrency test seeds one lot and runs two debits in parallel; final
       `remaining_seconds` equals `initial - sum(charges)` and never goes negative.
-- [ ] Existing debit idempotency test still passes (same session debited twice
+      (`tests/billing.test.ts` — four concurrent 30s debits drain a 100s lot,
+      asserting `remaining = 0`, `charged = 100`, conservation.)
+- [x] Existing debit idempotency test still passes (same session debited twice
       charges once).
-- [ ] Metric `redis.*`-style counter for debit conflicts/retries is exposed on
-      `/health?metrics=1` (name e.g. `minutes.debit_retry_total`).
+- [x] Metric `minutes.debit_retry_total` is exposed on `/health?metrics=1`.
+
+## Implementation notes
+
+- `consumeLots` now runs in `db.transaction` with `.for("update")` on the live
+  lots, and each lot update is conditional (`remaining_seconds >= take`) as the
+  no-lock fallback; shortfalls are counted by `minutes.debit_retry_total`.
+- No schema change; `debitVoiceSession`, the orphan sweep, and admin adjustments
+  keep the same contract.
 
 ## Out of scope
 

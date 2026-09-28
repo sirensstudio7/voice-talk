@@ -2,9 +2,11 @@ import { Type } from "@google/genai";
 
 import { logger } from "../http/logger.js";
 import {
+  appointmentLocalDate,
   cancelAppointment,
   createAppointment,
   getAvailableSlots,
+  SlotTakenError,
 } from "./appointments.js";
 import { effectivePrice } from "./pricing.js";
 import type { ProductInfo } from "./tools.js";
@@ -151,6 +153,12 @@ export function buildBookingToolMapping(options: {
         const message = error instanceof Error ? error.message : "Could not book appointment.";
         // The tool args carry customer name/phone — log identities, not the payload.
         log.warn({ err: error, businessId: options.businessId }, "booking.create_failed");
+        if (error instanceof SlotTakenError) {
+          // Give the model the next open times so it can offer one out loud
+          // instead of dead-ending the caller.
+          const alternatives = await bookingAlternatives(options.businessId, args, includeStaff);
+          return { error: message, alternatives };
+        }
         return { error: message };
       }
     },
@@ -166,4 +174,25 @@ export function buildBookingToolMapping(options: {
       }
     },
   };
+}
+
+/** Next open slots for the same service/day after a lost booking race. */
+async function bookingAlternatives(
+  businessId: string,
+  args: Record<string, unknown>,
+  includeStaff: boolean | undefined,
+): Promise<string[]> {
+  try {
+    const date = appointmentLocalDate(String(args.starts_at ?? ""));
+    if (!date) return [];
+    const slots = await getAvailableSlots({
+      businessId,
+      productId: String(args.product_id ?? ""),
+      date,
+      staffId: includeStaff ? String(args.staff_id ?? "") : undefined,
+    });
+    return slots.slice(0, 3);
+  } catch {
+    return [];
+  }
 }
