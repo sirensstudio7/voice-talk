@@ -51,8 +51,6 @@ const envSchema = z.object({
   ALLOWED_ORIGINS: z.string().optional(),
   /** Comma-separated production domains always allowed over HTTPS, e.g. lorescale.com */
   PRODUCTION_DOMAIN: z.string().default("lorescale.com"),
-  /** Public origin for photo QR download links (marketing app hosts /p/[token]). */
-  PHOTO_DOWNLOAD_BASE_URL: z.string().optional(),
   /** Public API origin used in QR codes. Phones cannot reach localhost. */
   PUBLIC_API_URL: z.string().optional(),
   /** Analytics event retention (TKT-008). Vision events keep a longer history. */
@@ -101,13 +99,6 @@ export function getPublicApiBaseUrl(): string {
 }
 
 /** QR links are scanned on customer phones — never emit localhost. */
-export function getPhotoDownloadBaseUrl(): string {
-  const configured = env.PHOTO_DOWNLOAD_BASE_URL?.trim();
-  if (configured && !isLocalhostUrl(configured)) {
-    return configured.replace(/\/+$/, "");
-  }
-  return getPublicApiBaseUrl();
-}
 
 export function getAllowedOrigins(): string[] | true {
   const raw = env.ALLOWED_ORIGINS?.trim();

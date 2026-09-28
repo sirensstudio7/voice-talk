@@ -1,6 +1,6 @@
 # TKT-013 — Remove dead code and legacy apps
 
-- **Status:** proposed
+- **Status:** in-progress (code on `feat/multi-instance-hardening`)
 - **Priority:** P2
 - **Area:** maintenance
 - **Effort:** S (≤ 1 day)
@@ -37,10 +37,22 @@ contributors (and agents) waste context deciding whether they matter.
 
 ## Acceptance criteria
 
-- [ ] No references remain (`grep` clean, builds pass, `bun run lint:api` clean).
-- [ ] Deleted items listed in the PR description so reviewers can object.
-- [ ] Any "keep for later" decision is recorded in `docs/FEATURES.md` as dormant,
-      not left ambiguous.
+- [x] No references remain: `avatar-placeholder.tsx`, `manual-voice-mode.tsx`,
+      `order-summary-panel.tsx` and the `PHOTO_DOWNLOAD_BASE_URL` /
+      `getPhotoDownloadBaseUrl` pair are deleted; grep, lint and typecheck are
+      clean.
+- [x] Deleted items are listed in the commit so reviewers can object.
+- [x] "Keep for later" decisions are recorded as dormant in `docs/FEATURES.md`:
+      the marketing pricing section, the super-admin add-ons placeholder, and
+      the presenter script/audio helpers.
+
+## Implementation notes
+
+- `apps-legacy/` turned out to be **untracked** on this machine (only leftover
+  `node_modules`, 59 MB) — nothing to remove from git; the local directory was
+  deleted.
+- The marketing `pricing.tsx` and super-admin `add-ons` page are kept as
+  dormant (product decision pending), not deleted.
 
 ## Out of scope
 
