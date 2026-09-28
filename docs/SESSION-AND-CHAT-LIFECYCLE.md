@@ -244,10 +244,10 @@ Ends the live WebSocket session and schedules chat clear via `deferChatReset()`.
 
 ## Related dev commands
 
-`npm run api:restart` restarts the API and, when `.vision.slug` exists, restarts the vision sidecar with **debug preview** (`VISION_DEBUG=1`).
+`bun run api:restart` restarts the API and, when `.vision.slug` exists, restarts the vision sidecar with **debug preview** (`VISION_DEBUG=1`).
 
 ```bash
-npm run api:restart          # restarts API + restarts vision with debug preview (.vision.slug)
+bun run api:restart          # restarts API + restarts vision with debug preview (.vision.slug)
 bash scripts/dev-vision.sh start sunrise-coffee   # first-time vision setup (no debug)
 VISION_DEBUG=1 bash scripts/dev-vision.sh restart sunrise-coffee   # manual debug restart
 ```

@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import { t, type Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import {
   normalizeVoiceGender,
@@ -24,7 +24,6 @@ import { getBusinessBySlug, mapBusinessRow } from "../services/tenant.js";
 import {
   createAppointment,
   getAvailableSlots,
-  listAppointments,
 } from "../services/appointments.js";
 import {
   getLanguagePackPublicConfig,
@@ -43,6 +42,67 @@ import {
   uploadPhotoSessionImage,
 } from "../services/photo-moment.js";
 import { MAX_PHOTO_UPLOAD_BYTES } from "../storage/index.js";
+import { readUploadedFile } from "../http/multipart.js";
+import { nonEmptyString, numberLike, optionalString } from "../http/validation.js";
+
+export const kioskUnlockBody = t.Object({
+  business: optionalString,
+  kiosk: optionalString,
+  pin: optionalString,
+});
+
+export const kioskReleaseBody = t.Object({
+  business: optionalString,
+  kiosk: optionalString,
+  token: optionalString,
+});
+
+export const orderConfirmBody = t.Object({
+  items: t.Array(
+    t.Object({
+      product_id: nonEmptyString,
+      quantity: t.Number(),
+    }),
+  ),
+});
+
+export const appointmentCreateBody = t.Object({
+  product_id: optionalString,
+  customer_name: optionalString,
+  customer_phone: optionalString,
+  starts_at: optionalString,
+  staff_id: optionalString,
+});
+
+export const demoRequestBody = t.Object({
+  email: optionalString,
+  phone: optionalString,
+  company_name: optionalString,
+  city: optionalString,
+  country: optionalString,
+  business_industry: optionalString,
+  branch_total: t.Optional(numberLike),
+  preferred_date: optionalString,
+  preferred_time: optionalString,
+});
+
+export const photoSessionStartBody = t.Object({
+  businessId: optionalString,
+  slug: optionalString,
+  orderId: optionalString,
+});
+
+export const photoSessionResponseBody = t.Object({
+  response: optionalString,
+});
+
+export const photoEventBody = t.Object({
+  businessId: optionalString,
+  slug: optionalString,
+  eventName: optionalString,
+  photoSessionId: optionalString,
+  metadata: t.Optional(t.Record(t.String(), t.Unknown())),
+});
 
 function orderToOut(order: {
   id: string;
@@ -83,20 +143,23 @@ function orderToOut(order: {
 
 export { orderToOut };
 
-export async function registerPublicRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/public/kiosks/unlock", async (request, reply) => {
-    const body = (request.body ?? {}) as { business?: string; kiosk?: string; pin?: string };
+export async function registerPublicRoutes(app: Elysia): Promise<void> {
+  app.post("/public/kiosks/unlock", async (request) => {
+    const body = request.body;
     const business = body.business?.trim() ?? "";
     const pin = body.pin ?? "";
     if (!business || !pin) {
-      return reply.status(400).send({ detail: "business and pin are required." });
+      return request.status(400, { detail: "business and pin are required." });
     }
     const { checkKioskUnlockRateLimit, unlockKioskDisplay } = await import(
       "../services/kiosk-displays.js"
     );
-    const key = `${request.ip}:${business}`;
-    if (!checkKioskUnlockRateLimit(key)) {
-      return reply.status(429).send({ detail: "Too many PIN attempts. Try again later." });
+    const forwardedFor = (request.headers["x-forwarded-for"] ?? "").split(",")[0]?.trim();
+    const clientIp =
+      forwardedFor || request.server?.requestIP(request.request)?.address || "unknown";
+    const key = `${clientIp}:${business}`;
+    if (!(await checkKioskUnlockRateLimit(key))) {
+      return request.status(429, { detail: "Too many PIN attempts. Try again later." });
     }
     try {
       return await unlockKioskDisplay({
@@ -109,20 +172,22 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
         err instanceof Error && "statusCode" in err
           ? (err as Error & { statusCode: number }).statusCode
           : 500;
-      return reply.status(status).send({
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Unlock failed.",
       });
     }
+  }, {
+    body: kioskUnlockBody,
   });
 
-  app.post("/public/kiosks/release", async (request, reply) => {
-    const body = (request.body ?? {}) as { business?: string; kiosk?: string; token?: string };
+  app.post("/public/kiosks/release", async (request) => {
+    const body = request.body;
     const business = body.business?.trim() ?? "";
     const authHeader = request.headers.authorization ?? "";
     const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
     const token = (body.token ?? bearer).trim();
     if (!business || !token) {
-      return reply.status(400).send({ detail: "business and token are required." });
+      return request.status(400, { detail: "business and token are required." });
     }
     const { releaseKioskDisplayByToken } = await import("../services/kiosk-displays.js");
     try {
@@ -131,41 +196,43 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
         kioskSlug: body.kiosk,
         token,
       });
-      return reply.status(204).send();
+      return request.status(204);
     } catch (err) {
       const status =
         err instanceof Error && "statusCode" in err
           ? (err as Error & { statusCode: number }).statusCode
           : 500;
-      return reply.status(status).send({
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Release failed.",
       });
     }
+  }, {
+    body: kioskReleaseBody,
   });
 
-  app.get("/businesses/:slug", async (request, reply) => {
+  app.get("/businesses/:slug", async (request) => {
     const { slug } = request.params as { slug: string };
     const business = await getBusinessBySlug(slug);
-    if (!business) return reply.status(404).send({ detail: "Business not found" });
+    if (!business) return request.status(404, { detail: "Business not found" });
     return mapBusinessRow(business);
   });
 
-  app.get("/businesses/:slug/payment", async (request, reply) => {
+  app.get("/businesses/:slug/payment", async (request) => {
     const { slug } = request.params as { slug: string };
     const business = await getBusinessBySlug(slug);
-    if (!business) return reply.status(404).send({ detail: "Business not found" });
+    if (!business) return request.status(404, { detail: "Business not found" });
     return { payment_qr_url: business.paymentQrUrl || "" };
   });
 
-  app.post("/businesses/:slug/orders/confirm", async (request, reply) => {
+  app.post("/businesses/:slug/orders/confirm", async (request) => {
     const { slug } = request.params as { slug: string };
-    const body = request.body as { items: Array<{ product_id: string; quantity: number }> };
+    const body = request.body;
     const business = await getBusinessBySlug(slug);
-    if (!business) return reply.status(404).send({ detail: "Business not found" });
+    if (!business) return request.status(404, { detail: "Business not found" });
 
     const { capabilities } = await resolveCapabilities(business);
     if (!capabilities.ordering_enabled) {
-      return reply.status(403).send({ detail: "Ordering is not enabled for this business." });
+      return request.status(403, { detail: "Ordering is not enabled for this business." });
     }
 
     try {
@@ -178,17 +245,19 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       return orderToOut({ ...order, items });
     } catch (exc) {
       if (exc instanceof OrderValidationError) {
-        return reply.status(400).send({ detail: exc.detail });
+        return request.status(400, { detail: exc.detail });
       }
       throw exc;
     }
+  }, {
+    body: orderConfirmBody,
   });
 
-  app.get("/menu", async (request, reply) => {
-    const query = request.query as { business?: string };
+  app.get("/menu", async (request) => {
+    const query = request.query;
     const slug = query.business || env.DEFAULT_BUSINESS_SLUG;
     const tenant = await getBusinessBySlug(slug);
-    if (!tenant) return reply.status(404).send({ detail: "Business not found" });
+    if (!tenant) return request.status(404, { detail: "Business not found" });
 
     const { capabilities } = await resolveCapabilities(tenant);
     const productList = capabilities.menu_enabled ? getActiveProducts(tenant) : [];
@@ -231,24 +300,22 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
         duration_min: p.durationMin,
       })),
     };
+  }, {
+    query: t.Object({ business: optionalString }),
   });
 
-  app.get("/businesses/:slug/availability", async (request, reply) => {
+  app.get("/businesses/:slug/availability", async (request) => {
     const { slug } = request.params as { slug: string };
-    const { product_id: productId, date, staff_id: staffId } = request.query as {
-      product_id?: string;
-      date?: string;
-      staff_id?: string;
-    };
+    const { product_id: productId, date, staff_id: staffId } = request.query;
     const business = await getBusinessBySlug(slug);
-    if (!business) return reply.status(404).send({ detail: "Business not found" });
+    if (!business) return request.status(404, { detail: "Business not found" });
     if (!productId || !date) {
-      return reply.status(400).send({ detail: "product_id and date are required." });
+      return request.status(400, { detail: "product_id and date are required." });
     }
 
     const { capabilities } = await resolveCapabilities(business);
     if (!capabilities.booking_enabled) {
-      return reply.status(403).send({ detail: "Booking is not enabled for this business." });
+      return request.status(403, { detail: "Booking is not enabled for this business." });
     }
 
     try {
@@ -260,27 +327,27 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       });
       return { slots };
     } catch (error) {
-      return reply.status(400).send({
+      return request.status(400, {
         detail: error instanceof Error ? error.message : "Could not load availability.",
       });
     }
+  }, {
+    query: t.Object({
+      product_id: optionalString,
+      date: optionalString,
+      staff_id: optionalString,
+    }),
   });
 
-  app.post("/businesses/:slug/appointments", async (request, reply) => {
+  app.post("/businesses/:slug/appointments", async (request) => {
     const { slug } = request.params as { slug: string };
-    const body = request.body as {
-      product_id?: string;
-      customer_name?: string;
-      customer_phone?: string;
-      starts_at?: string;
-      staff_id?: string;
-    };
+    const body = request.body;
     const business = await getBusinessBySlug(slug);
-    if (!business) return reply.status(404).send({ detail: "Business not found" });
+    if (!business) return request.status(404, { detail: "Business not found" });
 
     const { capabilities } = await resolveCapabilities(business);
     if (!capabilities.booking_enabled) {
-      return reply.status(403).send({ detail: "Booking is not enabled for this business." });
+      return request.status(403, { detail: "Booking is not enabled for this business." });
     }
 
     try {
@@ -292,26 +359,18 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
         startsAt: String(body.starts_at ?? ""),
         staffId: body.staff_id ? String(body.staff_id) : null,
       });
-      return reply.status(201).send(appointment);
+      return request.status(201, appointment);
     } catch (error) {
-      return reply.status(400).send({
+      return request.status(400, {
         detail: error instanceof Error ? error.message : "Could not create appointment.",
       });
     }
+  }, {
+    body: appointmentCreateBody,
   });
 
-  app.post("/public/demo-requests", async (request, reply) => {
-    const body = request.body as {
-      email?: string;
-      phone?: string;
-      company_name?: string;
-      city?: string;
-      country?: string;
-      business_industry?: string;
-      branch_total?: number | string;
-      preferred_date?: string;
-      preferred_time?: string;
-    };
+  app.post("/public/demo-requests", async (request) => {
+    const body = request.body;
 
     const email = body.email?.toLowerCase().trim() ?? "";
     const phone = body.phone?.trim() ?? "";
@@ -333,30 +392,30 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       !preferredDateRaw ||
       !preferredTime
     ) {
-      return reply.status(400).send({ detail: "All fields are required." });
+      return request.status(400, { detail: "All fields are required." });
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return reply.status(400).send({ detail: "Enter a valid email address." });
+      return request.status(400, { detail: "Enter a valid email address." });
     }
     if (phone.length < 6 || phone.length > 40) {
-      return reply.status(400).send({ detail: "Enter a valid phone number." });
+      return request.status(400, { detail: "Enter a valid phone number." });
     }
     if (!Number.isInteger(branchTotal) || branchTotal < 1) {
-      return reply.status(400).send({ detail: "Branch total must be a whole number of at least 1." });
+      return request.status(400, { detail: "Branch total must be a whole number of at least 1." });
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(preferredDateRaw)) {
-      return reply.status(400).send({ detail: "Enter a valid preferred date." });
+      return request.status(400, { detail: "Enter a valid preferred date." });
     }
     const preferredDate = new Date(`${preferredDateRaw}T12:00:00.000Z`);
     if (Number.isNaN(preferredDate.getTime())) {
-      return reply.status(400).send({ detail: "Enter a valid preferred date." });
+      return request.status(400, { detail: "Enter a valid preferred date." });
     }
     const todayStr = new Date().toISOString().slice(0, 10);
     if (preferredDateRaw < todayStr) {
-      return reply.status(400).send({ detail: "Preferred date must be today or later." });
+      return request.status(400, { detail: "Preferred date must be today or later." });
     }
     if (!/^\d{2}:\d{2}$/.test(preferredTime)) {
-      return reply.status(400).send({ detail: "Enter a valid preferred time." });
+      return request.status(400, { detail: "Enter a valid preferred time." });
     }
     if (
       companyName.length > 255 ||
@@ -366,7 +425,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       email.length > 255 ||
       preferredTime.length > 10
     ) {
-      return reply.status(400).send({ detail: "One or more fields are too long." });
+      return request.status(400, { detail: "One or more fields are too long." });
     }
 
     const [created] = await db
@@ -385,24 +444,22 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       })
       .returning({ id: demoRequests.id, status: demoRequests.status });
 
-    return reply.status(201).send({ id: created!.id, status: created!.status });
+    return request.status(201, { id: created!.id, status: created!.status });
+  }, {
+    body: demoRequestBody,
   });
 
-  app.post("/public/photo/session/start", async (request, reply) => {
-    const body = request.body as {
-      businessId?: string;
-      slug?: string;
-      orderId?: string;
-    };
+  app.post("/public/photo/session/start", async (request) => {
+    const body = request.body;
 
     let businessId = body.businessId?.trim() ?? "";
     if (!businessId && body.slug) {
       const business = await getBusinessBySlug(body.slug);
-      if (!business) return reply.status(404).send({ detail: "Business not found" });
+      if (!business) return request.status(404, { detail: "Business not found" });
       businessId = business.id;
     }
     if (!businessId) {
-      return reply.status(400).send({ detail: "businessId or slug is required" });
+      return request.status(400, { detail: "businessId or slug is required" });
     }
 
     try {
@@ -418,34 +475,38 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       return { sessionId: session.id };
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
       throw err;
     }
+  }, {
+    body: photoSessionStartBody,
   });
 
-  app.post("/public/photo/session/:id/response", async (request, reply) => {
+  app.post("/public/photo/session/:id/response", async (request) => {
     const { id } = request.params as { id: string };
-    const body = request.body as { response?: string };
+    const body = request.body;
     const response = body.response?.trim().toLowerCase();
     if (response !== "yes" && response !== "no" && response !== "timeout") {
-      return reply.status(400).send({ detail: "response must be yes, no, or timeout" });
+      return request.status(400, { detail: "response must be yes, no, or timeout" });
     }
     await markPhotoOfferResponse(id, response);
     return { ok: true };
+  }, {
+    body: photoSessionResponseBody,
   });
 
-  app.post("/public/photo/session/:id/upload", async (request, reply) => {
+  app.post("/public/photo/session/:id/upload", async (request) => {
     const { id } = request.params as { id: string };
-    const data = await request.file();
-    if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+    const data = readUploadedFile(request.body);
+    if (!data) return request.status(400, { detail: "No file uploaded." });
 
     const buffer = await data.toBuffer();
-    if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+    if (!buffer.length) return request.status(400, { detail: "Uploaded file is empty." });
     if (buffer.length > MAX_PHOTO_UPLOAD_BYTES) {
-      return reply.status(400).send({ detail: "Photo must be 8 MB or smaller." });
+      return request.status(400, { detail: "Photo must be 8 MB or smaller." });
     }
 
     try {
@@ -453,7 +514,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       return { photoPath: result.photoPath, ok: true };
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
@@ -461,7 +522,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
     }
   });
 
-  app.post("/public/photo/session/:id/complete", async (request, reply) => {
+  app.post("/public/photo/session/:id/complete", async (request) => {
     const { id } = request.params as { id: string };
     try {
       const result = await completePhotoSession(id);
@@ -472,7 +533,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       };
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
@@ -480,42 +541,38 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
     }
   });
 
-  app.get("/public/photo/download/:token", async (request, reply) => {
+  app.get("/public/photo/download/:token", async (request) => {
     const { token } = request.params as { token: string };
-    const query = request.query as { redirect?: string };
+    const query = request.query;
     try {
       const result = await resolvePhotoDownload(token);
       if (query.redirect === "1") {
-        return reply.redirect(result.url);
+        return request.redirect(result.url);
       }
       return result;
     } catch (err) {
       if (err instanceof Error && "statusCode" in err) {
-        return reply.status((err as Error & { statusCode: number }).statusCode).send({
+        return request.status((err as Error & { statusCode: number }).statusCode, {
           detail: err.message,
         });
       }
       throw err;
     }
+  }, {
+    query: t.Object({ redirect: optionalString }),
   });
 
-  app.post("/public/photo/events", async (request, reply) => {
-    const body = request.body as {
-      businessId?: string;
-      slug?: string;
-      eventName?: string;
-      photoSessionId?: string;
-      metadata?: Record<string, unknown>;
-    };
+  app.post("/public/photo/events", async (request) => {
+    const body = request.body;
 
     let businessId = body.businessId?.trim() ?? "";
     if (!businessId && body.slug) {
       const business = await getBusinessBySlug(body.slug);
-      if (!business) return reply.status(404).send({ detail: "Business not found" });
+      if (!business) return request.status(404, { detail: "Business not found" });
       businessId = business.id;
     }
     if (!businessId || !body.eventName) {
-      return reply.status(400).send({ detail: "businessId/slug and eventName are required" });
+      return request.status(400, { detail: "businessId/slug and eventName are required" });
     }
 
     await trackAnalyticsEvent({
@@ -525,5 +582,7 @@ export async function registerPublicRoutes(app: FastifyInstance): Promise<void> 
       metadata: body.metadata,
     });
     return { ok: true };
+  }, {
+    body: photoEventBody,
   });
 }

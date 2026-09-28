@@ -432,7 +432,7 @@ export async function getBookingPublicConfig(businessId: string) {
 /** Used by slot generation so appointments.ts does not import the whole booking module cycle. */
 export async function loadStaffHoursForSlot(businessId: string, staffId: string) {
   const staff = await getStaff(businessId, staffId);
-  if (!staff || !staff.isActive) return null;
+  if (!staff?.isActive) return null;
   const hours = await listStaffHours(businessId, staffId);
   return { staff, hours };
 }

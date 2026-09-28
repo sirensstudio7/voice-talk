@@ -1,11 +1,12 @@
-import bcrypt from "bcrypt";
-import type { FastifyReply, FastifyRequest } from "fastify";
 import jwt from "jsonwebtoken";
 import { and, eq } from "drizzle-orm";
 import { getBusinessCapabilities, withBookingAddon } from "@voicetalk/shared";
 import { db } from "../db/client.js";
 import { businessMembers, businesses, users, type User } from "../db/schema.js";
 import { env } from "../env.js";
+import type { AuthContext, StatusContext } from "../http/context.js";
+import { publicErrorDetail } from "../http/errors.js";
+import { logger } from "../http/logger.js";
 
 const JWT_ALGORITHM = "HS256";
 const USER_CACHE_TTL_MS = 60_000;
@@ -18,11 +19,17 @@ const businessAccessCache = new Map<
 >();
 
 export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 10);
+  // Bun's built-in bcrypt keeps existing $2b$ hashes valid, so no rehash is needed.
+  return Bun.password.hash(password, { algorithm: "bcrypt", cost: 10 });
 }
 
 export async function verifyPassword(password: string, passwordHash: string): Promise<boolean> {
-  return bcrypt.compare(password, passwordHash);
+  try {
+    return await Bun.password.verify(password, passwordHash);
+  } catch {
+    // Bun throws on malformed hashes where bcrypt.compare returned false.
+    return false;
+  }
 }
 
 export function createAccessToken(userId: string): string {
@@ -32,7 +39,7 @@ export function createAccessToken(userId: string): string {
   });
 }
 
-function readBearerToken(request: FastifyRequest): string {
+function readBearerToken(request: AuthContext): string {
   const header = request.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     throw authError("Not authenticated");
@@ -40,7 +47,7 @@ function readBearerToken(request: FastifyRequest): string {
   return header.slice("Bearer ".length);
 }
 
-export function getAuthUserId(request: FastifyRequest): string {
+export function getAuthUserId(request: AuthContext): string {
   const token = readBearerToken(request);
   try {
     const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: [JWT_ALGORITHM] }) as {
@@ -67,7 +74,7 @@ async function getCachedUser(userId: string): Promise<User | undefined> {
   return user;
 }
 
-export async function getCurrentUser(request: FastifyRequest): Promise<User> {
+export async function getCurrentUser(request: AuthContext): Promise<User> {
   const userId = getAuthUserId(request);
   const user = await getCachedUser(userId);
   if (!user) throw authError("User not found");
@@ -106,26 +113,8 @@ export function clearBusinessAccessCache(businessId?: string): void {
   }
 }
 
-function publicErrorDetail(error: unknown): string {
-  if (!(error instanceof Error)) return "Internal error";
-
-  const parts = [error.message];
-  if (error.cause instanceof Error) parts.push(error.cause.message);
-  const combined = parts.join(" ");
-
-  if (/CONNECT_TIMEOUT|connect timed out|timed out|ECONNREFUSED|connection/i.test(combined)) {
-    return "Database connection timed out. Please retry in a moment.";
-  }
-
-  if (error.name === "DrizzleQueryError" && error.cause instanceof Error) {
-    return error.cause.message;
-  }
-
-  return error.message;
-}
-
 export async function requireBusinessAccess(
-  request: FastifyRequest,
+  request: AuthContext,
   businessId: string,
 ): Promise<typeof businesses.$inferSelect> {
   const userId = getAuthUserId(request);
@@ -169,19 +158,23 @@ function forbiddenError(detail: string) {
   return err;
 }
 
-function notFoundError(detail: string) {
+function _notFoundError(detail: string) {
   const err = new Error(detail) as Error & { statusCode: number };
   err.statusCode = 404;
   return err;
 }
 
-export function sendAuthError(reply: FastifyReply, error: unknown): void {
+export function sendAuthError(request: StatusContext, error: unknown): unknown {
   const statusCode =
     error instanceof Error && "statusCode" in error
       ? (error as Error & { statusCode: number }).statusCode
       : 500;
-  const detail = publicErrorDetail(error);
-  reply.status(statusCode).send({ detail });
+  if (statusCode >= 500) {
+    // Routes that catch their own errors never reach app.onError; log here so
+    // a 500 always has an operator-visible line.
+    logger.error({ err: error, status: statusCode }, "http.error");
+  }
+  return request.status(statusCode, { detail: publicErrorDetail(error, statusCode) });
 }
 
 export function userOut(user: User) {

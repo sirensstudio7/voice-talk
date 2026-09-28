@@ -1,118 +1,76 @@
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
-import cors from "@fastify/cors";
-import multipart from "@fastify/multipart";
-import fastifyStatic from "@fastify/static";
-import websocket from "@fastify/websocket";
-import Fastify from "fastify";
+import { buildApp, MAX_BODY_BYTES } from "./app.js";
 import { closeDb, startDbPoolWatchdog } from "./db/client.js";
 import { warmDbConnection } from "./db/health.js";
-import { env, getProductionDomains, hasSupabaseStorage, isAllowedOrigin } from "./env.js";
-import { registerAdminRoutes } from "./routes/admin.js";
-import { registerHealthRoutes } from "./routes/health.js";
-import { registerPlatformRoutes } from "./routes/platform.js";
-import { registerPresentationRoutes } from "./routes/presentations.js";
-import { registerPublicRoutes } from "./routes/public.js";
-import { registerPresentationWebSocketRoutes } from "./routes/presentation-websocket.js";
-import { registerWebSocketRoutes } from "./routes/websocket.js";
-import { registerVisionWebSocketRoutes } from "./routes/vision-ws.js";
-import { registerLuckySpinRoutes } from "./routes/lucky-spin.js";
-import { registerCampaignBannerRoutes } from "./routes/campaign-banner.js";
-import { registerLiveRoutes } from "./routes/live.js";
-import { registerLiveWebSocketRoutes } from "./routes/live-websocket.js";
-import { initVisionEventBus } from "./services/vision-orchestrator.js";
-import { registerPhotoMomentJobs } from "./services/photo-jobs.js";
+import { env, getProductionDomains, hasObjectStorage } from "./env.js";
+import { logger } from "./http/logger.js";
+import { closeRedis } from "./redis.js";
+import { startPhotoMomentJobs } from "./services/photo-jobs.js";
 import { registerVoiceMinuteJobs } from "./services/voice-minute-jobs.js";
-import { getUploadRoot, MAX_PRESENTATION_UPLOAD_BYTES } from "./storage/index.js";
 
-const app = Fastify({ logger: true });
+const app = await buildApp();
 
-await app.register(cors, {
-  origin: (origin, cb) => {
-    if (isAllowedOrigin(origin)) {
-      cb(null, true);
-      return;
-    }
-    app.log.warn({ origin }, "CORS origin not allowed");
-    cb(null, false);
-  },
-  credentials: true,
-  methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-});
-
-await app.register(multipart, {
-  limits: { fileSize: Math.max(8 * 1024 * 1024, MAX_PRESENTATION_UPLOAD_BYTES) },
-});
-await app.register(websocket);
-
-if (!hasSupabaseStorage()) {
-  const uploadRoot = getUploadRoot();
-  await mkdir(uploadRoot, { recursive: true });
-  await app.register(fastifyStatic, {
-    root: uploadRoot,
-    prefix: "/uploads/",
-    decorateReply: false,
-  });
-}
-
-await registerHealthRoutes(app);
-await registerPublicRoutes(app);
-await registerAdminRoutes(app);
-await registerPresentationRoutes(app);
-await registerLuckySpinRoutes(app);
-await registerCampaignBannerRoutes(app);
-await registerLiveRoutes(app);
-await registerPlatformRoutes(app);
-await registerWebSocketRoutes(app);
-await registerPresentationWebSocketRoutes(app);
-await registerLiveWebSocketRoutes(app);
-await registerVisionWebSocketRoutes(app);
-await initVisionEventBus();
-registerPhotoMomentJobs(app);
-registerVoiceMinuteJobs(app);
-
-app.setErrorHandler((error, _request, reply) => {
-  const err = error as Error & { statusCode?: number; cause?: Error };
-  const statusCode = err.statusCode ?? 500;
-  const cause =
-    err.name === "DrizzleQueryError" && err.cause?.message ? err.cause.message : err.message;
-  const combined = `${err.message} ${cause}`;
-  const detail = /CONNECT_TIMEOUT|connect timed out|timed out|ECONNREFUSED|connection/i.test(
-    combined,
-  )
-    ? "Database connection timed out. Please retry in a moment."
-    : cause;
-  reply.status(statusCode).send({ detail });
-});
+startPhotoMomentJobs(logger.child({ component: "jobs" }));
+registerVoiceMinuteJobs(logger.child({ component: "jobs" }));
 
 const start = async () => {
   const allowedOrigins = env.ALLOWED_ORIGINS?.trim();
   const productionDomains = getProductionDomains();
-  console.info(`Gemini model default: ${env.GEMINI_MODEL}`);
-  console.info(`API key configured: ${Boolean(env.GEMINI_API_KEY)}`);
-  console.info(`Default business slug: ${env.DEFAULT_BUSINESS_SLUG}`);
-  console.info(`Supabase storage: ${hasSupabaseStorage()}`);
-  console.info(`CORS allowed origins: ${allowedOrigins || "(all)"}`);
-  console.info(`CORS production domains: ${productionDomains.join(", ") || "(none)"}`);
 
   await warmDbConnection();
   startDbPoolWatchdog();
-  await app.listen({ port: env.PORT ?? env.API_PORT, host: "0.0.0.0" });
+
+  app.listen(
+    {
+      port: env.PORT ?? env.API_PORT,
+      hostname: "0.0.0.0",
+      maxRequestBodySize: MAX_BODY_BYTES,
+    },
+    ({ hostname, port }) =>
+      logger.info(
+        {
+          hostname,
+          port,
+          model: env.GEMINI_MODEL,
+          gemini_key_configured: Boolean(env.GEMINI_API_KEY),
+          storage: hasObjectStorage() ? "s3" : "local",
+          default_business_slug: env.DEFAULT_BUSINESS_SLUG,
+          cors_origins: allowedOrigins || "(all)",
+          cors_production_domains: productionDomains.join(",") || "(none)",
+        },
+        "server.listening",
+      ),
+  );
 };
 
-process.on("SIGINT", async () => {
-  await app.close();
+let shuttingDown = false;
+const shutdown = async (signal: string) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, "server.shutdown");
+  await app.stop();
+  closeRedis();
   await closeDb();
   process.exit(0);
+};
+
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+
+// A process that reached an undefined state must not keep serving traffic;
+// the supervisor restarts it. Rejections are logged but do not exit: this
+// server has many fire-and-forget tasks where one rejected promise is benign.
+process.on("uncaughtException", (error) => {
+  logger.error({ err: error }, "server.fatal");
+  process.exit(1);
 });
 
-process.on("SIGTERM", async () => {
-  await app.close();
-  await closeDb();
-  process.exit(0);
+process.on("unhandledRejection", (reason) => {
+  logger.error({ err: reason }, "server.unhandled_rejection");
 });
 
 start().catch((err) => {
-  console.error(err);
+  logger.error({ err }, "server.fatal");
   process.exit(1);
 });
+
+export { app };

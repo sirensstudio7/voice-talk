@@ -24,8 +24,8 @@ kill_port() {
     fi
   fi
 
-  pkill -f "tsx watch src/index.ts" 2>/dev/null || true
-  pkill -f "node dist/index.js" 2>/dev/null || true
+  pkill -f "bun --watch src/index.ts" 2>/dev/null || true
+  pkill -f "bun src/index.ts" 2>/dev/null || true
   sleep 1
 }
 
@@ -42,7 +42,7 @@ wait_for_health() {
     sleep 1
   done
   echo "API failed to become healthy at ${HEALTH_URL}" >&2
-  echo "Check DATABASE_URL in .env — for local dev, prefer Supabase Session pooler (port 5432)." >&2
+  echo "Check DATABASE_URL in .env — for local dev, start Postgres via docker compose." >&2
   return 1
 }
 
@@ -53,28 +53,28 @@ clear_proxy_env() {
 }
 
 start_api_daemon() {
-  if [ ! -d "$SERVER_DIR/node_modules" ]; then
-    echo "Missing node_modules at apps/server — run npm install from repo root" >&2
+  if [ ! -d "$ROOT/node_modules" ]; then
+    echo "Missing node_modules at repo root — run bun install" >&2
     exit 1
   fi
 
   kill_port
   clear_proxy_env
   cd "$SERVER_DIR"
-  nohup npm run dev >>"$API_LOG" 2>&1 &
+  nohup bun run dev >>"$API_LOG" 2>&1 &
   disown
 }
 
 start_api() {
-  if [ ! -d "$SERVER_DIR/node_modules" ]; then
-    echo "Missing node_modules at apps/server — run npm install from repo root" >&2
+  if [ ! -d "$ROOT/node_modules" ]; then
+    echo "Missing node_modules at repo root — run bun install" >&2
     exit 1
   fi
 
   kill_port
   clear_proxy_env
   cd "$SERVER_DIR"
-  exec npm run dev
+  exec bun run dev
 }
 
 ensure_vision_sidecar() {

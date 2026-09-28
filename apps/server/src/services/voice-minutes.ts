@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
+import { logger } from "../http/logger.js";
 import {
-  accountSubscriptions,
   businessMembers,
   minuteGrants,
   minuteLedger,
-  plans,
   topupOrders,
   topupPackages,
   transcriptMessages,
@@ -23,6 +22,8 @@ import {
   getPlanByCode,
   type EntitlementSnapshot,
 } from "./entitlement.js";
+
+const log = logger.child({ component: "billing" });
 
 export const MIN_CHARGE_SECONDS = 15;
 export const ORPHAN_SESSION_MS = 15 * 60 * 1000;
@@ -515,7 +516,7 @@ export async function createTopupOrder(opts: {
   const pkg = await db.query.topupPackages.findFirst({
     where: eq(topupPackages.id, opts.packageId),
   });
-  if (!pkg || pkg.status !== "active") {
+  if (pkg?.status !== "active") {
     throw httpError("Top-up package is not available.", 400);
   }
 
@@ -731,6 +732,6 @@ export async function safeDebitEndedSession(sessionId: string): Promise<void> {
     await debitEndedSession(sessionId);
   } catch (err) {
     if (isMissingRelation(err)) return;
-    console.error("Failed to debit voice minutes", err);
+    log.error({ err, voiceSessionId: sessionId }, "billing.debit_failed");
   }
 }

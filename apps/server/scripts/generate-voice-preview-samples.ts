@@ -1,10 +1,10 @@
 /**
  * Regenerate admin AI-rules voice preview WAVs with Gemini TTS (24 kHz PCM).
  *
- * Usage (from repo root):
- *   npx tsx --env-file=.env apps/server/scripts/generate-voice-preview-samples.ts
- *   npx tsx --env-file=.env apps/server/scripts/generate-voice-preview-samples.ts male
- *   npx tsx --env-file=.env apps/server/scripts/generate-voice-preview-samples.ts male en
+ * Usage (from apps/server, with .env next to its package.json):
+ *   bun scripts/generate-voice-preview-samples.ts
+ *   bun scripts/generate-voice-preview-samples.ts male
+ *   bun scripts/generate-voice-preview-samples.ts male en
  */
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";

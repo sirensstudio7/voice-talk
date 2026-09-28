@@ -1,0 +1,27 @@
+# Vendor-neutral production compose — works on any Docker host (VM, Fly.io,
+# Railway, Kubernetes node, Coolify…). The API image is published by CI to
+# GHCR; build from source instead by uncommenting `build:`.
+#
+#   cp .env.production.example apps/server/.env.production.local   # then fill it
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# The container listens on 8000 (API_PORT default) unless the env file sets
+# PORT; the host port is API_PORT (default 8000) and TLS/domain termination
+# belongs to your reverse proxy or platform router.
+services:
+  api:
+    image: ${API_IMAGE:-ghcr.io/sirensstudio7/voice-talk:latest}
+    # build:
+    #   context: .
+    #   dockerfile: apps/server/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - apps/server/.env.production.local
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

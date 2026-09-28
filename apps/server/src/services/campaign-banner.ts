@@ -271,7 +271,7 @@ export async function createBanner(
       displayOrder: typeof body.display_order === "number" ? body.display_order : nextOrder,
       startAt,
       endAt,
-      isActive: body.is_active === false ? false : true,
+      isActive: body.is_active !== false,
       createdBy: createdBy ?? null,
     })
     .returning();

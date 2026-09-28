@@ -1,5 +1,6 @@
-import type { FastifyInstance } from "fastify";
-import type { WebSocket } from "ws";
+import type { Elysia } from "elysia";
+
+import { socketRoute, type SocketBridge } from "../http/websocket.js";
 import {
   getVoicePresetGeminiVoice,
   isCombinedCustomerNameAsk,
@@ -62,6 +63,9 @@ import {
   registerActiveVoiceSession,
   unregisterActiveVoiceSession,
 } from "../services/voice-session-runtime.js";
+import { logger, shouldLogThrottled } from "../http/logger.js";
+
+const log = logger.child({ component: "ws" });
 
 const CONVERSATION_COMPLETION_GRACE_MS = 5_000;
 
@@ -95,7 +99,7 @@ function createTranscriptTurnBuffer() {
   };
 }
 
-function safeSendJson(socket: WebSocket, payload: Record<string, unknown>): boolean {
+function safeSendJson(socket: SocketBridge, payload: Record<string, unknown>): boolean {
   try {
     if (socket.readyState === socket.OPEN) {
       socket.send(JSON.stringify(payload));
@@ -111,23 +115,12 @@ function getGeminiModel(tenant: { geminiModel: string }): string {
   return tenant.geminiModel || env.GEMINI_MODEL;
 }
 
-export async function registerWebSocketRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/ws/session", { websocket: true }, (socket, request) => {
-    void handleSession(
-      socket,
-      request.query as {
-        business?: string;
-        language?: string;
-        kiosk_id?: string;
-        token?: string;
-        embed?: string;
-      },
-    );
-  });
+export function registerWebSocketRoutes(app: Elysia): void {
+  app.ws("/ws/session", socketRoute((socket, { query }) => handleSession(socket, query)));
 }
 
 async function handleSession(
-  socket: WebSocket,
+  socket: SocketBridge,
   query: {
     business?: string;
     language?: string;
@@ -137,7 +130,11 @@ async function handleSession(
   },
 ): Promise<void> {
   const slug = query.business || env.DEFAULT_BUSINESS_SLUG;
-  console.info(`Session websocket connected for business=${slug}`);
+  const connectedAt = performance.now();
+  log.info(
+    { businessSlug: slug, kioskId: query.kiosk_id, phase: "connected" },
+    "ws.session",
+  );
 
   const tenant = await getBusinessBySlug(slug);
   if (!tenant) {
@@ -157,6 +154,10 @@ async function handleSession(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Kiosk unlock required.";
+    log.warn(
+      { err, businessSlug: slug, kioskId: query.kiosk_id, phase: "rejected" },
+      "ws.session",
+    );
     safeSendJson(socket, { type: "error", error: message });
     socket.close();
     return;
@@ -303,8 +304,9 @@ async function handleSession(
             return;
           }
           visionSilenceStage = "follow_up";
-          console.info(
-            `Vision silence follow-up business=${slug} after=${visionSettingsCache!.silenceTimeoutSeconds}s`,
+          log.info(
+            { businessSlug: slug, afterSeconds: visionSettingsCache!.silenceTimeoutSeconds },
+            "vision.silence_follow_up",
           );
           audioQueue.push(
             new ClientTextEvent(buildVisionSilenceFollowUpPrompt(resolvedLanguage)),
@@ -326,8 +328,9 @@ async function handleSession(
             visionSilenceStage = "none";
             return;
           }
-          console.info(
-            `Vision auto-goodbye business=${slug} after=${visionSettingsCache!.autoGoodbyeTimeoutSeconds}s more silence`,
+          log.info(
+            { businessSlug: slug, afterSeconds: visionSettingsCache!.autoGoodbyeTimeoutSeconds },
+            "vision.auto_goodbye",
           );
           speakVisionGoodbyeAndEnd();
         }, goodbyeMs);
@@ -374,13 +377,11 @@ async function handleSession(
         try {
           const hub = getVisionHub(slug) ?? (await ensureVisionHub(tenant.id, slug));
           if (hub.sessionActive) {
-            console.info(
-              `Vision session released after conversation.complete business=${slug} reason=${reason}`,
-            );
+            log.info({ businessSlug: slug, reason }, "vision.session_released");
             releaseKioskSession(hub);
           }
         } catch (err) {
-          console.warn(`Vision release on conversation.complete failed business=${slug}`, err);
+          log.warn({ err, businessSlug: slug }, "vision.release_failed");
         }
       })();
     }, graceMs);
@@ -483,7 +484,9 @@ async function handleSession(
         safeSendJson(socket, { type: "transcript.user", text });
         audioQueue.push(new ClientTextEvent(text));
       } else if (msgType === "session.restore") {
-        Object.keys(restorePayload).forEach((k) => delete restorePayload[k]);
+        Object.keys(restorePayload).forEach((k) => {
+          delete restorePayload[k];
+        });
         Object.assign(restorePayload, payload);
         orderStore.loadSnapshot((payload.order as Record<string, unknown>) ?? {});
         if (!restoreResolved) {
@@ -493,7 +496,7 @@ async function handleSession(
         }
       } else if (msgType === "session.greeting") {
         const greetingSource = String(payload.source ?? "manual");
-        console.info(`Vision session.greeting business=${slug} source=${greetingSource}`);
+        log.info({ businessSlug: slug, source: greetingSource }, "vision.greeting");
         if (greetingSource === "vision") {
           void (async () => {
             const hub = await ensureVisionHub(tenant.id, slug);
@@ -616,7 +619,10 @@ async function handleSession(
         );
       }
     } catch (err) {
-      console.error("Client receive error:", err);
+      // Throttled: a misbehaving client can fail on every frame.
+      if (shouldLogThrottled(`ws.client_error:${voiceSessionId}`)) {
+        log.error({ err, businessSlug: slug, voiceSessionId }, "ws.client_error");
+      }
       audioQueue.push(SHUTDOWN);
     }
   });
@@ -831,7 +837,16 @@ async function handleSession(
       if (!safeSendJson(socket, event)) break;
     }
   } catch (err) {
-    console.error("Gemini session failed:", err);
+    log.error(
+      {
+        err,
+        businessSlug: slug,
+        voiceSessionId,
+        model: getGeminiModel(tenant),
+        phase: "failed",
+      },
+      "ws.session",
+    );
     safeSendJson(socket, { type: "error", error: formatConnectionError(err) });
   }
   } finally {
@@ -843,6 +858,18 @@ async function handleSession(
     await endVoiceSession(voiceSessionId, endReason ?? (faqEnabled ? "disconnected" : null));
     await safeDebitEndedSession(voiceSessionId);
     safeSendJson(socket, { type: "session.status", status: "disconnected" });
+    log.info(
+      {
+        businessSlug: slug,
+        kioskId: query.kiosk_id,
+        voiceSessionId,
+        model: getGeminiModel(tenant),
+        reason: endReason ?? (faqEnabled ? "disconnected" : null),
+        phase: "ended",
+        durationMs: Math.round(performance.now() - connectedAt),
+      },
+      "ws.session",
+    );
     try {
       socket.close();
     } catch {

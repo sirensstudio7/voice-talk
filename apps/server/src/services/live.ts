@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { GoogleGenAI } from "@google/genai";
 import { getVoicePresetGeminiVoice } from "@voicetalk/shared";
-import type { WebSocket } from "ws";
+import type { SocketBridge } from "../http/websocket.js";
 
 import { db } from "../db/client.js";
+import { logger } from "../http/logger.js";
 import {
   aiRules,
   businesses,
@@ -28,6 +29,8 @@ import { hasServiceAccessForBusiness } from "./entitlement.js";
 import { synthesizeSpeechWav } from "./presentation-ai.js";
 import { speakWithGeminiLive, stopLiveHostVoice } from "./live-narrator.js";
 import { resolveGeminiApiKeyForBusiness } from "./user-api-keys.js";
+
+const log = logger.child({ component: "live" });
 
 function httpError(message: string, statusCode: number): Error & { statusCode: number } {
   const err = new Error(message) as Error & { statusCode: number };
@@ -523,7 +526,7 @@ async function requireLiveDedicatedProduct(businessId: string, productRowId: str
   const product = await db.query.products.findFirst({
     where: and(eq(products.id, productRowId), eq(products.businessId, businessId)),
   });
-  if (!product || !product.liveOnly) throw httpError("LIVE product not found", 404);
+  if (!product?.liveOnly) throw httpError("LIVE product not found", 404);
   return product;
 }
 
@@ -968,10 +971,10 @@ Rules:
       } catch (err) {
         if (isQuotaError(err)) {
           textQuotaUntil = Date.now() + 60_000;
-          console.warn("[live] Gemini text quota hit, using catalog fallback");
+          log.warn({ operation: "host_reply" }, "gemini.quota_fallback");
           break;
         }
-        console.warn("[live] Gemini host reply failed", model, err);
+        log.warn({ err, model, operation: "host_reply" }, "gemini.failed");
       }
     }
     if (!text) return fallbackLiveReply(session, latest, recent);
@@ -983,7 +986,7 @@ Rules:
     return { text: text.slice(0, 400), productId: mentioned?.id ?? null };
   } catch (err) {
     if (isQuotaError(err)) textQuotaUntil = Date.now() + 60_000;
-    console.warn("[live] Gemini host reply failed, using catalog fallback", err);
+    log.warn({ err, operation: "host_reply" }, "gemini.failed");
     return fallbackLiveReply(session, latest, recent);
   }
 }
@@ -1025,7 +1028,7 @@ async function tryLiveTts(session: LiveSessionOut, text: string) {
         ttsQuotaUntil = Date.now() + 60_000;
         return null;
       }
-      console.warn("[live] TTS failed", model, err);
+      log.warn({ err, model, operation: "tts" }, "gemini.failed");
     }
   }
   return null;
@@ -1048,7 +1051,7 @@ async function speakLiveLine(session: LiveSessionOut, text: string) {
     });
     if (voiced) return;
   } catch (err) {
-    console.warn("[live] Gemini Live voice failed", err);
+    log.warn({ err, operation: "live_voice" }, "gemini.failed");
   }
   try {
     const tts = await tryLiveTts(session, line);
@@ -1062,7 +1065,7 @@ async function speakLiveLine(session: LiveSessionOut, text: string) {
     }
   } catch (err) {
     if (isQuotaError(err)) ttsQuotaUntil = Date.now() + 60_000;
-    console.warn("[live] TTS failed", err);
+    log.warn({ err, operation: "tts" }, "gemini.failed");
   }
   broadcastLive(session.id, { type: "ai.speak", text: line });
 }
@@ -1108,13 +1111,13 @@ function stopLiveHostLoop(sessionId: string) {
 function startLiveHostLoop(sessionId: string) {
   if (hostTicks.has(sessionId)) return;
   void maybeLiveHostLine(sessionId, hostWelcomed.has(sessionId) ? "tick" : "welcome").catch(
-    (err) => console.warn("[live] host line failed", err),
+    (err) => log.warn({ err, sessionId }, "live.host_line_failed"),
   );
   hostTicks.set(
     sessionId,
     setInterval(() => {
       void maybeLiveHostLine(sessionId, "tick").catch((err) =>
-        console.warn("[live] host tick failed", err),
+        log.warn({ err, sessionId }, "live.host_tick_failed"),
       );
     }, HOST_INTERVAL_MS),
   );
@@ -1231,10 +1234,10 @@ Name the product exactly as listed.`;
       } catch (err) {
         if (isQuotaError(err)) {
           textQuotaUntil = Date.now() + 60_000;
-          console.warn("[live] Gemini host line quota hit, using product pitch fallback");
+          log.warn({ operation: "host_line" }, "gemini.quota_fallback");
           break;
         }
-        console.warn("[live] Gemini host line failed", model, err);
+        log.warn({ err, model, operation: "host_line" }, "gemini.failed");
       }
     }
     if (!text) return fallbackHostLine(session, kind, index);
@@ -1245,7 +1248,7 @@ Name the product exactly as listed.`;
     return { text: text.slice(0, 400), productId: mentioned?.id ?? null };
   } catch (err) {
     if (isQuotaError(err)) textQuotaUntil = Date.now() + 60_000;
-    console.warn("[live] Gemini host line failed, using product pitch fallback", err);
+    log.warn({ err, operation: "host_line" }, "gemini.failed");
     return fallbackHostLine(session, kind, index);
   }
 }
@@ -1272,7 +1275,7 @@ export async function maybeLiveHostLine(sessionId: string, kind: "welcome" | "ti
     const row = await db.query.liveSessions.findFirst({
       where: eq(liveSessions.id, sessionId),
     });
-    if (!row || row.status !== "live") {
+    if (row?.status !== "live") {
       stopLiveHostLoop(sessionId);
       return;
     }
@@ -1316,7 +1319,7 @@ export async function maybeLiveHostLine(sessionId: string, kind: "welcome" | "ti
     hostWelcomed.add(sessionId);
     await publishAiLine(session, reply);
   } catch (err) {
-    console.warn("[live] host line failed", err);
+    log.warn({ err, sessionId }, "live.host_line_failed");
   }
 }
 
@@ -1329,23 +1332,23 @@ export async function maybeLiveAiReply(sessionId: string, viewerText: string) {
     const row = await db.query.liveSessions.findFirst({
       where: eq(liveSessions.id, sessionId),
     });
-    if (!row || row.status !== "live") return;
+    if (row?.status !== "live") return;
     const session = await sessionOut(row);
     const reply = await generateLiveReply(session, text);
     if (!reply) return;
     await publishAiLine(session, reply);
     lastChatReplyAt.set(sessionId, Date.now());
   } catch (err) {
-    console.warn("[live] AI reply failed", err);
+    log.warn({ err, sessionId }, "live.ai_reply_failed");
   } finally {
     answeringChat.delete(sessionId);
   }
 }
 
-type LiveSocket = { ws: WebSocket; role: "host" | "viewer" };
+type LiveSocket = { ws: SocketBridge; role: "host" | "viewer" };
 const rooms = new Map<string, Set<LiveSocket>>();
 
-export function joinLiveRoom(sessionId: string, role: "host" | "viewer", ws: WebSocket) {
+export function joinLiveRoom(sessionId: string, role: "host" | "viewer", ws: SocketBridge) {
   let room = rooms.get(sessionId);
   if (!room) {
     room = new Set();

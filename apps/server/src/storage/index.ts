@@ -1,9 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createClient } from "@supabase/supabase-js";
-import ws from "ws";
 
-import { env, hasSupabaseStorage } from "../env.js";
+import { env, hasObjectStorage } from "../env.js";
 
 const UPLOAD_ROOT = join(process.cwd(), "uploads");
 
@@ -12,17 +10,43 @@ export const PHOTO_BRANDING_BUCKET = "photo-branding";
 export const PRESENTATION_BUCKET = "presentation-assets";
 export const MAX_PRESENTATION_UPLOAD_BYTES = 50 * 1024 * 1024;
 
-let supabase: ReturnType<typeof createClient> | null = null;
+/**
+ * S3-compatible object storage (Cloudflare R2 in production).
+ *
+ * Everything lives in a single physical bucket (S3_BUCKET) under a prefix
+ * named after the logical bucket, so one public domain serves all uploads:
+ * `https://<S3_PUBLIC_BASE_URL>/<bucket>/<path>`. Without S3 configured the
+ * local disk is used, which is the development and test path — production
+ * requires object storage in env.ts because container disks are ephemeral.
+ */
+let s3: Bun.S3Client | null = null;
 
-function getSupabase() {
-  if (!hasSupabaseStorage()) return null;
-  if (!supabase) {
-    supabase = createClient(env.SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      realtime: { transport: ws as unknown as typeof WebSocket },
+function getS3(): Bun.S3Client | null {
+  if (!hasObjectStorage()) return null;
+  if (!s3) {
+    s3 = new Bun.S3Client({
+      endpoint: env.S3_ENDPOINT!,
+      accessKeyId: env.S3_ACCESS_KEY_ID!,
+      secretAccessKey: env.S3_SECRET_ACCESS_KEY!,
+      region: env.S3_REGION,
     });
   }
-  return supabase;
+  return s3;
+}
+
+/** Object key inside the physical bucket: logical bucket acts as prefix. */
+function objectKey(bucket: string, path: string): string {
+  return `${bucket}/${path}`;
+}
+
+function publicBase(): string {
+  return (env.S3_PUBLIC_BASE_URL ?? "").replace(/\/+$/, "");
+}
+
+async function writeLocal(bucket: string, path: string, data: Buffer): Promise<void> {
+  const localPath = join(UPLOAD_ROOT, bucket, path);
+  await mkdir(join(localPath, ".."), { recursive: true });
+  await writeFile(localPath, data);
 }
 
 export async function uploadToStorage(
@@ -31,21 +55,15 @@ export async function uploadToStorage(
   data: Buffer,
   contentType: string,
 ): Promise<string> {
-  const client = getSupabase();
+  const client = getS3();
   if (client) {
-    await client.storage.from(bucket).remove([path]).catch(() => undefined);
-    const { error } = await client.storage.from(bucket).upload(path, data, {
-      contentType,
-      upsert: true,
+    await client.write(objectKey(bucket, path), data, {
+      bucket: env.S3_BUCKET!,
+      type: contentType,
     });
-    if (error) throw new Error(error.message);
-    const { data: publicData } = client.storage.from(bucket).getPublicUrl(path);
-    return publicData.publicUrl;
+    return `${publicBase()}/${objectKey(bucket, path)}`;
   }
-
-  const localPath = join(UPLOAD_ROOT, bucket, path);
-  await mkdir(join(localPath, ".."), { recursive: true });
-  await writeFile(localPath, data);
+  await writeLocal(bucket, path, data);
   return `/uploads/${bucket}/${path}`;
 }
 
@@ -56,20 +74,15 @@ export async function uploadPrivateToStorage(
   data: Buffer,
   contentType: string,
 ): Promise<string> {
-  const client = getSupabase();
+  const client = getS3();
   if (client) {
-    await client.storage.from(bucket).remove([path]).catch(() => undefined);
-    const { error } = await client.storage.from(bucket).upload(path, data, {
-      contentType,
-      upsert: true,
+    await client.write(objectKey(bucket, path), data, {
+      bucket: env.S3_BUCKET!,
+      type: contentType,
     });
-    if (error) throw new Error(error.message);
-    return path;
+  } else {
+    await writeLocal(bucket, path, data);
   }
-
-  const localPath = join(UPLOAD_ROOT, bucket, path);
-  await mkdir(join(localPath, ".."), { recursive: true });
-  await writeFile(localPath, data);
   return path;
 }
 
@@ -78,13 +91,11 @@ export async function createSignedDownloadUrl(
   path: string,
   expiresInSeconds = 3600,
 ): Promise<string> {
-  const client = getSupabase();
+  const client = getS3();
   if (client) {
-    const { data, error } = await client.storage.from(bucket).createSignedUrl(path, expiresInSeconds);
-    if (error || !data?.signedUrl) {
-      throw new Error(error?.message ?? "Failed to create signed URL");
-    }
-    return data.signedUrl;
+    return client
+      .file(objectKey(bucket, path), { bucket: env.S3_BUCKET! })
+      .presign({ expiresIn: expiresInSeconds });
   }
 
   // Local-dev: temporary tokenized path resolved by the download API.
@@ -92,32 +103,34 @@ export async function createSignedDownloadUrl(
 }
 
 export async function downloadFromStorage(bucket: string, pathOrUrl: string): Promise<Buffer | null> {
-  const client = getSupabase();
+  const client = getS3();
   let path = pathOrUrl;
 
   if (pathOrUrl.startsWith("http")) {
-    try {
-      const url = new URL(pathOrUrl);
+    const base = publicBase();
+    if (base && pathOrUrl.startsWith(`${base}/${bucket}/`)) {
+      path = decodeURIComponent(pathOrUrl.slice(`${base}/${bucket}/`.length));
+    } else {
+      // Public URLs written before a storage migration still encode bucket
+      // and object path; anything else is fetched verbatim.
       const marker = `/object/public/${bucket}/`;
-      const idx = url.pathname.indexOf(marker);
-      if (idx >= 0) {
-        path = decodeURIComponent(url.pathname.slice(idx + marker.length));
+      const markerIndex = pathOrUrl.indexOf(marker);
+      if (markerIndex >= 0) {
+        path = decodeURIComponent(pathOrUrl.slice(markerIndex + marker.length));
       } else {
-        const res = await fetch(pathOrUrl);
-        if (!res.ok) return null;
-        return Buffer.from(await res.arrayBuffer());
+        const response = await fetch(pathOrUrl).catch(() => null);
+        if (!response?.ok) return null;
+        return Buffer.from(await response.arrayBuffer());
       }
-    } catch {
-      return null;
     }
   } else if (pathOrUrl.startsWith(`/uploads/${bucket}/`)) {
     path = pathOrUrl.slice(`/uploads/${bucket}/`.length);
   }
 
   if (client) {
-    const { data, error } = await client.storage.from(bucket).download(path);
-    if (error || !data) return null;
-    return Buffer.from(await data.arrayBuffer());
+    const object = client.file(objectKey(bucket, path), { bucket: env.S3_BUCKET! });
+    if (!(await object.exists())) return null;
+    return Buffer.from(await object.arrayBuffer());
   }
 
   try {
@@ -128,47 +141,33 @@ export async function downloadFromStorage(bucket: string, pathOrUrl: string): Pr
 }
 
 export async function deleteStorageObject(bucket: string, path: string): Promise<void> {
-  const client = getSupabase();
+  const client = getS3();
   if (client) {
-    const { error } = await client.storage.from(bucket).remove([path]);
-    if (error) throw new Error(error.message);
+    await client.delete(objectKey(bucket, path), { bucket: env.S3_BUCKET! });
     return;
   }
   await rm(join(UPLOAD_ROOT, bucket, path), { force: true });
 }
 
 export async function deleteFromStorage(bucket: string, prefix: string): Promise<void> {
-  const client = getSupabase();
+  const client = getS3();
   if (client) {
-    const paths = new Set<string>();
-
-    const { data: files, error: listError } = await client.storage.from(bucket).list(prefix, {
-      limit: 100,
-    });
-    if (listError) {
-      throw new Error(listError.message);
-    }
-
-    for (const file of files ?? []) {
-      if (file.name) {
-        paths.add(`${prefix}/${file.name}`);
+    const fullPrefix = `${objectKey(bucket, prefix)}/`;
+    let startAfter: string | undefined;
+    for (;;) {
+      const page = await client.list(
+        { prefix: fullPrefix, maxKeys: 1000, ...(startAfter ? { startAfter } : {}) },
+        { bucket: env.S3_BUCKET! },
+      );
+      const contents = page.contents ?? [];
+      for (const object of contents) {
+        await client.delete(object.key, { bucket: env.S3_BUCKET! });
       }
-    }
-
-    // Fallback for uploads that used the standard background filename convention.
-    for (const extension of Object.values(ALLOWED_IMAGE_TYPES)) {
-      paths.add(`${prefix}/background${extension}`);
-    }
-
-    if (paths.size > 0) {
-      const { error: removeError } = await client.storage.from(bucket).remove([...paths]);
-      if (removeError) {
-        throw new Error(removeError.message);
-      }
+      if (!page.isTruncated || contents.length === 0) break;
+      startAfter = contents[contents.length - 1]!.key;
     }
     return;
   }
-
   await rm(join(UPLOAD_ROOT, bucket, prefix), { recursive: true, force: true });
 }
 

@@ -1,8 +1,11 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 import { env } from "../env.js";
+import { logger } from "../http/logger.js";
 import { withDirectConnectionAsync } from "./networking.js";
 import { createTextQueue, PRESENTER_SHUTDOWN } from "./presenter-live.js";
+
+const log = logger.child({ component: "live" });
 
 type HostVoice = {
   push: (text: string) => void;
@@ -112,7 +115,7 @@ Do not add a welcome. Do not invent products. Do not ask questions. Speak only t
           }
         },
         onerror: (err) => {
-          console.warn("[live] Gemini Live voice error", err);
+          log.warn({ err, sessionId: input.sessionId, operation: "live_voice" }, "gemini.failed");
           resolveReady(false);
           markTurnDone();
         },
@@ -152,7 +155,10 @@ Do not add a welcome. Do not invent products. Do not ask questions. Speak only t
       }
     }
   }).catch((err) => {
-    console.warn("[live] Gemini Live voice failed to start", err);
+    log.warn(
+      { err, sessionId: input.sessionId, operation: "live_voice_start" },
+      "gemini.failed",
+    );
     resolveReady(false);
     hosts.delete(input.sessionId);
   });

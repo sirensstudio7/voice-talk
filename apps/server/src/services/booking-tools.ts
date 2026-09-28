@@ -1,5 +1,6 @@
 import { Type } from "@google/genai";
 
+import { logger } from "../http/logger.js";
 import {
   cancelAppointment,
   createAppointment,
@@ -7,6 +8,8 @@ import {
 } from "./appointments.js";
 import { effectivePrice } from "./pricing.js";
 import type { ProductInfo } from "./tools.js";
+
+const log = logger.child({ component: "booking" });
 
 export function buildBookingToolDeclarations(options?: { includeStaff?: boolean }) {
   const staffParams = options?.includeStaff
@@ -146,7 +149,8 @@ export function buildBookingToolMapping(options: {
         return { success: true, appointment };
       } catch (error) {
         const message = error instanceof Error ? error.message : "Could not book appointment.";
-        console.warn("[booking] book_appointment failed:", message, args);
+        // The tool args carry customer name/phone — log identities, not the payload.
+        log.warn({ err: error, businessId: options.businessId }, "booking.create_failed");
         return { error: message };
       }
     },

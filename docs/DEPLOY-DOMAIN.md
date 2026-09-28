@@ -4,7 +4,7 @@ Example layout (replace `yourdomain.com` with yours):
 
 | Subdomain | Service | Hosts |
 |---|---|---|
-| `api.yourdomain.com` | Render | Fastify (`apps/server`) — REST + WebSocket |
+| `api.yourdomain.com` | Your container host | Elysia on Bun (`apps/server`) — REST + WebSocket |
 | `app.yourdomain.com` | Vercel | Customer voice UI (`apps/customer-app`) |
 | `dashboard.yourdomain.com` | Vercel | Merchant admin (`apps/admin-app`) |
 | `admin.yourdomain.com` | Vercel | Super Admin / platform ops (`apps/super-admin-app`) |
@@ -16,66 +16,68 @@ flowchart LR
   App[app.yourdomain.com]
   Admin[admin.yourdomain.com]
   API[api.yourdomain.com]
-  SB[(Supabase)]
+  PG[(Managed Postgres)]
+  R2[(R2 object storage)]
 
   User --> App
   User --> Admin
   App -->|HTTPS + WSS| API
   Admin -->|HTTPS| API
-  API --> SB
+  API --> PG
+  API --> R2
 ```
 
 ---
 
 ## Prerequisites
 
-- [Supabase project configured](SUPABASE-SETUP.md)
+- [Database + object storage configured](DEPLOY.md) (Aiven Postgres, Cloudflare R2)
+- A container host (VM + Docker, Fly.io, Railway, Cloud Run, Kubernetes…)
 - Domain DNS managed (Cloudflare, Namecheap, etc.)
 - GitHub repo pushed
 
 ---
 
-## Step 1 — Deploy API on Render
+## Step 1 — Deploy the API container
 
-1. [render.com](https://render.com) → **New → Blueprint** (or Web Service)
-2. Connect repo, use [`render.yaml`](../render.yaml)
-3. Set **Environment** variables:
+1. Build or pull the image (CI publishes `ghcr.io/<owner>/<repo>:latest`):
 
-```env
-DATABASE_URL=postgresql://postgres.[ref]:[pass]@...pooler.supabase.com:6543/postgres
-SUPABASE_URL=https://[ref].supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJ...
-GEMINI_API_KEY=...
-JWT_SECRET=<long-random-string>
-GEMINI_MODEL=gemini-3.1-flash-live-preview
-PLATFORM_ADMIN_EMAIL=superadmin@lorescale.com
-PLATFORM_ADMIN_PASSWORD=<strong-password>
-MERCHANT_ADMIN_URL=https://dashboard.yourdomain.com
-ALLOWED_ORIGINS=https://app.yourdomain.com,https://dashboard.yourdomain.com,https://admin.yourdomain.com,yourdomain.com
-PHOTO_DOWNLOAD_BASE_URL=https://yourdomain.com
+```bash
+docker pull ghcr.io/sirensstudio7/voice-talk:latest
+# or: docker build -f apps/server/Dockerfile -t voice-talk-api .
 ```
 
-Domain-only entries (e.g. `yourdomain.com`) allow any `https://` subdomain. Host-only entries (e.g. `app.yourdomain.com`) match that host exactly.
+2. Run it with the production env file (see [`DEPLOY.md`](DEPLOY.md) for the
+   full variable list):
 
-4. Deploy → note Render URL: `https://voice-talk-api.onrender.com`
-5. Test: `https://voice-talk-api.onrender.com/health`
-6. Seed (once): `DATABASE_URL="..." npm run seed --workspace=server`
-
-### Custom domain on Render
-
-1. Render service → **Settings → Custom Domains**
-2. Add `api.yourdomain.com`
-3. At your DNS provider, add the CNAME Render shows, e.g.:
-
-```
-api  CNAME  voice-talk-api.onrender.com
+```bash
+docker run -d --name voice-talk-api --restart unless-stopped \
+  --env-file apps/server/.env.production.local \
+  -p 8000:8000 ghcr.io/sirensstudio7/voice-talk:latest
 ```
 
-4. Wait for SSL (automatic). Test: `https://api.yourdomain.com/health`
+Or use [`docker-compose.prod.yml`](../docker-compose.prod.yml):
+`docker compose -f docker-compose.prod.yml up -d`.
+
+3. Verify: `curl http://localhost:8000/health` (add `?db=1` to ping Postgres + Redis).
+
+4. TLS/domain: terminate HTTPS either at your platform router or with a
+   reverse proxy in front of the container, e.g. Caddy:
+
+```
+api.yourdomain.com {
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
+Point `PUBLIC_API_URL` (required in production) at the public origin —
+`https://api.yourdomain.com` above.
 
 ---
 
 ## Step 2 — Deploy customer app on Vercel
+
+Any Next.js host works; the Vercel flow below is the shortest path.
 
 1. [vercel.com](https://vercel.com) → Import repo
 2. **Root Directory:** `apps/customer-app`
@@ -154,18 +156,21 @@ Voice WebSocket must use `wss://` (not `ws://`) on HTTPS sites.
 
 ---
 
-## Render free tier note
+## Host sizing note
 
-Free Render services **sleep** after ~15 min idle. First request is slow; voice WebSockets may drop. For production demos on a custom domain, use a **Starter** plan or another host (Fly.io, Railway).
+Free/scale-to-zero tiers **sleep** after idle. First request is slow and
+voice WebSockets drop mid-session — use an always-on instance (any provider)
+for production. The API is stateless; uploads go to R2 and state lives in
+Postgres/Redis, so you can run more than one replica.
 
 ---
 
-## Quick reference — your `.env` for local dev pointing at Supabase
+## Quick reference — your `.env` for local dev
 
 ```env
-DATABASE_URL=postgresql://...pooler.supabase.com:6543/postgres
-SUPABASE_URL=https://xxxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJ...
+DATABASE_URL=postgresql://localhost:5432/voicetalk
+REDIS_URL=redis://127.0.0.1:6380
+# S3_* optional locally: uploads land in apps/server/uploads/
 GEMINI_API_KEY=...
 JWT_SECRET=...
 NEXT_PUBLIC_API_URL=http://localhost:8000

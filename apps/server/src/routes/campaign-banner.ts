@@ -1,5 +1,4 @@
 import { extname } from "node:path";
-import type { FastifyInstance } from "fastify";
 import sharp from "sharp";
 
 import { getAuthUserId, requireBusinessAccess, sendAuthError } from "../auth/jwt.js";
@@ -22,6 +21,37 @@ import {
 } from "../services/campaign-banner.js";
 import { getBusinessBySlug } from "../services/tenant.js";
 import { ALLOWED_IMAGE_TYPES, uploadToStorage } from "../storage/index.js";
+import { readUploadedFile } from "../http/multipart.js";
+import { optionalBoolean, optionalNullableString, optionalString } from "../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const campaignBannerSettingsBody = t.Object({
+  enabled: optionalBoolean,
+  layout: optionalString,
+});
+
+export const bannerReorderBody = t.Object({
+  ordered_ids: t.Array(t.String()),
+});
+
+export const bannerBody = t.Object({
+  title: optionalString,
+  target_url: optionalString,
+  qr_url: optionalString,
+  duration_sec: t.Optional(t.Number()),
+  display_order: t.Optional(t.Number()),
+  is_active: optionalBoolean,
+  start_at: optionalNullableString,
+  end_at: optionalNullableString,
+});
+
+export const campaignBannerEventBody = t.Object({
+  businessId: optionalString,
+  slug: optionalString,
+  bannerId: optionalString,
+  eventName: optionalString,
+  metadata: t.Optional(t.Record(t.String(), t.Unknown())),
+});
 
 function statusFromError(err: unknown): number {
   if (err && typeof err === "object" && "statusCode" in err) {
@@ -61,25 +91,25 @@ async function prepareBannerImage(buffer: Buffer): Promise<{
   return { data, mime: "image/jpeg", ext: "jpg" };
 }
 
-export async function registerCampaignBannerRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/admin/businesses/:businessId/campaign-banner/settings", async (request, reply) => {
+export async function registerCampaignBannerRoutes(app: Elysia): Promise<void> {
+  app.get("/admin/businesses/:businessId/campaign-banner/settings", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       const settings = await getOrCreateCampaignBannerSettings(businessId);
       return campaignBannerSettingsOut(settings);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/admin/businesses/:businessId/campaign-banner/settings", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId/campaign-banner/settings", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      const body = request.body as { enabled?: boolean; layout?: string };
+      const body = request.body;
       if (typeof body.enabled !== "boolean" && body.layout === undefined) {
-        return reply.status(400).send({ detail: "enabled or layout is required" });
+        return request.status(400, { detail: "enabled or layout is required" });
       }
       const settings = await updateCampaignBannerSettings(
         businessId,
@@ -92,66 +122,73 @@ export async function registerCampaignBannerRoutes(app: FastifyInstance): Promis
       return campaignBannerSettingsOut(settings);
     } catch (err) {
       const status = statusFromError(err);
-      if (status === 401 || status === 403) return sendAuthError(reply, err);
-      return reply.status(status).send({
+      if (status === 401 || status === 403) return sendAuthError(request, err);
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Failed to update settings",
       });
     }
+  }, {
+    body: campaignBannerSettingsBody,
   });
 
-  app.get("/admin/businesses/:businessId/campaign-banner/banners", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/campaign-banner/banners", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       const rows = await listScheduledBanners(businessId);
       return { items: rows.map(bannerOut) };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/campaign-banner/banners", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/campaign-banner/banners", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       const userId = getAuthUserId(request);
-      const body = request.body as Record<string, unknown>;
+      const body = request.body;
       const created = await createBanner(businessId, body, userId);
-      return reply.status(201).send(bannerOut(created));
+      return request.status(201, bannerOut(created));
     } catch (err) {
       const status = statusFromError(err);
-      if (status === 401 || status === 403) return sendAuthError(reply, err);
-      return reply.status(status).send({
+      if (status === 401 || status === 403) return sendAuthError(request, err);
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Failed to create banner",
       });
     }
+  }, {
+    body: bannerBody,
   });
 
   app.patch(
     "/admin/businesses/:businessId/campaign-banner/banners/:bannerId",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, bannerId } = request.params as {
           businessId: string;
           bannerId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const body = request.body as Record<string, unknown>;
+        const body = request.body;
         const updated = await updateBanner(businessId, bannerId, body);
         return bannerOut(updated);
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to update banner",
         });
       }
+    },
+    {
+      body: bannerBody,
     },
   );
 
   app.delete(
     "/admin/businesses/:businessId/campaign-banner/banners/:bannerId",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, bannerId } = request.params as {
           businessId: string;
@@ -162,8 +199,8 @@ export async function registerCampaignBannerRoutes(app: FastifyInstance): Promis
         return { ok: true };
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to delete banner",
         });
       }
@@ -172,46 +209,46 @@ export async function registerCampaignBannerRoutes(app: FastifyInstance): Promis
 
   app.post(
     "/admin/businesses/:businessId/campaign-banner/banners/reorder",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId } = request.params as { businessId: string };
         await requireBusinessAccess(request, businessId);
-        const body = request.body as { ordered_ids?: string[] };
-        if (!Array.isArray(body.ordered_ids)) {
-          return reply.status(400).send({ detail: "ordered_ids array is required" });
-        }
+        const body = request.body;
         const rows = await reorderBanners(businessId, body.ordered_ids.map(String));
         return { items: rows.map(bannerOut) };
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to reorder banners",
         });
       }
+    },
+    {
+      body: bannerReorderBody,
     },
   );
 
   app.post(
     "/admin/businesses/:businessId/campaign-banner/banners/:bannerId/image",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, bannerId } = request.params as {
           businessId: string;
           bannerId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const data = await request.file();
-        if (!data) return reply.status(400).send({ detail: "No file uploaded." });
+        const data = readUploadedFile(request.body);
+        if (!data) return request.status(400, { detail: "No file uploaded." });
 
         const mime = data.mimetype?.toLowerCase() ?? "";
         if (!["image/png", "image/jpeg", "image/webp"].includes(mime)) {
-          return reply.status(400).send({ detail: "Image must be PNG, JPG, or WebP." });
+          return request.status(400, { detail: "Image must be PNG, JPG, or WebP." });
         }
         const buffer = await data.toBuffer();
-        if (!buffer.length) return reply.status(400).send({ detail: "Uploaded file is empty." });
+        if (!buffer.length) return request.status(400, { detail: "Uploaded file is empty." });
         if (buffer.length > MAX_BANNER_IMAGE_BYTES) {
-          return reply.status(400).send({ detail: "Banner image must be 3 MB or smaller." });
+          return request.status(400, { detail: "Banner image must be 3 MB or smaller." });
         }
 
         const prepared = await prepareBannerImage(buffer);
@@ -228,42 +265,36 @@ export async function registerCampaignBannerRoutes(app: FastifyInstance): Promis
         return bannerOut(updated);
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to upload banner image",
         });
       }
     },
   );
 
-  app.get("/admin/businesses/:businessId/campaign-banner/analytics", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/campaign-banner/analytics", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       return await getCampaignBannerAnalytics(businessId);
     } catch (err) {
       const status = statusFromError(err);
-      if (status === 401 || status === 403) return sendAuthError(reply, err);
-      return reply.status(status).send({
+      if (status === 401 || status === 403) return sendAuthError(request, err);
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Failed to load analytics",
       });
     }
   });
 
-  app.post("/public/campaign-banner/events", async (request, reply) => {
+  app.post("/public/campaign-banner/events", async (request) => {
     try {
-      const body = request.body as {
-        businessId?: string;
-        slug?: string;
-        bannerId?: string;
-        eventName?: string;
-        metadata?: Record<string, unknown>;
-      };
+      const body = request.body;
 
       let businessId = body.businessId?.trim() ?? "";
       if (!businessId && body.slug) {
         const business = await getBusinessBySlug(body.slug);
-        if (!business) return reply.status(404).send({ detail: "Business not found" });
+        if (!business) return request.status(404, { detail: "Business not found" });
         businessId = business.id;
       }
       const bannerId = body.bannerId?.trim() ?? "";
@@ -273,7 +304,7 @@ export async function registerCampaignBannerRoutes(app: FastifyInstance): Promis
         !bannerId ||
         (eventName !== "campaign_banner_impression" && eventName !== "campaign_banner_click")
       ) {
-        return reply.status(400).send({
+        return request.status(400, {
           detail: "businessId/slug, bannerId, and a valid eventName are required",
         });
       }
@@ -287,9 +318,11 @@ export async function registerCampaignBannerRoutes(app: FastifyInstance): Promis
       return { ok: true };
     } catch (err) {
       const status = statusFromError(err);
-      return reply.status(status).send({
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Failed to track event",
       });
     }
+  }, {
+    body: campaignBannerEventBody,
   });
 }

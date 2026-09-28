@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import { t, type Elysia } from "elysia";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import {
@@ -8,6 +8,7 @@ import {
   sendAuthError,
 } from "../auth/jwt.js";
 import { db } from "../db/client.js";
+import { logger } from "../http/logger.js";
 import {
   AI_PRESENTER_CODE,
   assertLanguageAllowed,
@@ -17,7 +18,7 @@ import {
   presentationAudioAssets,
   presentationFiles,
   presentationKnowledgeEntries,
-  presentationQuestions,
+  type presentationQuestions,
   presentations,
   presentationSessions,
   presentationSlides,
@@ -56,6 +57,65 @@ import {
   PRESENTATION_BUCKET,
   uploadToStorage,
 } from "../storage/index.js";
+import { readUploadedFile } from "../http/multipart.js";
+import { nonEmptyString, optionalBoolean, optionalNonEmptyString, optionalNumberLike, optionalString } from "../http/validation.js";
+
+export const presentationCreateBody = t.Object({
+  title: nonEmptyString,
+  description: optionalString,
+  language: optionalString,
+  category: optionalString,
+});
+
+export const presentationUpdateBody = t.Object({
+  title: optionalString,
+  description: optionalString,
+  language: optionalString,
+  category: optionalString,
+});
+
+export const presentationSessionBody = t.Object({
+  name: optionalString,
+  enable_qna: optionalBoolean,
+  auto_start: optionalBoolean,
+});
+
+export const presentationKnowledgeCreateBody = t.Object({
+  title: optionalString,
+  content: nonEmptyString,
+  sort_order: optionalNumberLike,
+});
+
+export const presentationKnowledgeUpdateBody = t.Object({
+  title: optionalString,
+  content: optionalNonEmptyString,
+  sort_order: optionalNumberLike,
+});
+
+export const sessionControlBody = t.Object({
+  action: t.Union([
+    t.Literal("start"),
+    t.Literal("pause"),
+    t.Literal("resume"),
+    t.Literal("next"),
+    t.Literal("previous"),
+    t.Literal("end"),
+    t.Literal("finish_stage"),
+  ]),
+});
+
+export const sessionQuestionBody = t.Object({
+  question: nonEmptyString,
+});
+
+export const sessionTranscribeBody = t.Object({
+  audio_base64: nonEmptyString,
+  mime_type: optionalString,
+});
+
+export const sessionAudienceCountBody = t.Object({
+  audience_count: t.Optional(t.Number()),
+});
 
 async function requirePresenterAccess(
   request: Parameters<typeof requireBusinessAccess>[0],
@@ -221,8 +281,8 @@ async function loadPresentationForBusiness(businessId: string, presentationId: s
   return row ?? null;
 }
 
-export async function registerPresentationRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/admin/businesses/:businessId/presentations", async (request, reply) => {
+export async function registerPresentationRoutes(app: Elysia): Promise<void> {
+  app.get("/admin/businesses/:businessId/presentations", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requirePresenterAccess(request, businessId);
@@ -234,18 +294,17 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
       enqueueMissingThumbnails(rows);
       return rows.map(presentationOut);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/presentations", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/presentations", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requirePresenterAccess(request, businessId);
       const userId = getAuthUserId(request);
-      const body = request.body as Record<string, unknown>;
-      const title = String(body.title ?? "").trim();
-      if (!title) return reply.status(400).send({ detail: "Title is required" });
+      const body = request.body;
+      const title = body.title.trim();
 
       const [row] = await db
         .insert(presentations)
@@ -259,13 +318,15 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           status: "draft",
         })
         .returning();
-      return reply.status(201).send(presentationOut(row!));
+      return request.status(201, presentationOut(row!));
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
+  }, {
+    body: presentationCreateBody,
   });
 
-  app.get("/admin/businesses/:businessId/presentations/:presentationId", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/presentations/:presentationId", async (request) => {
     try {
       const { businessId, presentationId } = request.params as {
         businessId: string;
@@ -273,7 +334,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
       };
       await requirePresenterAccess(request, businessId);
       const row = await loadPresentationForBusiness(businessId, presentationId);
-      if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+      if (!row) return request.status(404, { detail: "Presentation not found" });
 
       const files = await db
         .select()
@@ -312,13 +373,13 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         })),
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
   app.get(
     "/admin/businesses/:businessId/presentations/:presentationId/knowledge",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, presentationId } = request.params as {
           businessId: string;
@@ -326,18 +387,18 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         };
         await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
-        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        if (!row) return request.status(404, { detail: "Presentation not found" });
         const knowledge = await listPresentationKnowledge(presentationId);
         return knowledge.map(knowledgeOut);
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
 
   app.post(
     "/admin/businesses/:businessId/presentations/:presentationId/knowledge",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, presentationId } = request.params as {
           businessId: string;
@@ -345,11 +406,10 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         };
         await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
-        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        if (!row) return request.status(404, { detail: "Presentation not found" });
 
-        const body = request.body as Record<string, unknown>;
-        const content = String(body.content ?? "").trim();
-        if (!content) return reply.status(400).send({ detail: "Content is required" });
+        const body = request.body;
+        const content = body.content.trim();
 
         const [entry] = await db
           .insert(presentationKnowledgeEntries)
@@ -362,16 +422,19 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           .returning();
 
         await syncKnowledgeEmbedding(entry!);
-        return reply.status(201).send(knowledgeOut(entry!));
+        return request.status(201, knowledgeOut(entry!));
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
+    },
+    {
+      body: presentationKnowledgeCreateBody,
     },
   );
 
   app.patch(
     "/admin/businesses/:businessId/presentations/:presentationId/knowledge/:entryId",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, presentationId, entryId } = request.params as {
           businessId: string;
@@ -380,7 +443,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         };
         await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
-        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        if (!row) return request.status(404, { detail: "Presentation not found" });
 
         const existing = await db.query.presentationKnowledgeEntries.findFirst({
           where: and(
@@ -388,9 +451,9 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
             eq(presentationKnowledgeEntries.presentationId, presentationId),
           ),
         });
-        if (!existing) return reply.status(404).send({ detail: "Knowledge entry not found" });
+        if (!existing) return request.status(404, { detail: "Knowledge entry not found" });
 
-        const body = request.body as Record<string, unknown>;
+        const body = request.body;
         const updates: Partial<typeof presentationKnowledgeEntries.$inferInsert> = {
           updatedAt: new Date(),
         };
@@ -407,14 +470,17 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         await syncKnowledgeEmbedding(updated!);
         return knowledgeOut(updated!);
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
+    },
+    {
+      body: presentationKnowledgeUpdateBody,
     },
   );
 
   app.delete(
     "/admin/businesses/:businessId/presentations/:presentationId/knowledge/:entryId",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, presentationId, entryId } = request.params as {
           businessId: string;
@@ -423,7 +489,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         };
         await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
-        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        if (!row) return request.status(404, { detail: "Presentation not found" });
 
         const existing = await db.query.presentationKnowledgeEntries.findFirst({
           where: and(
@@ -431,20 +497,20 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
             eq(presentationKnowledgeEntries.presentationId, presentationId),
           ),
         });
-        if (!existing) return reply.status(404).send({ detail: "Knowledge entry not found" });
+        if (!existing) return request.status(404, { detail: "Knowledge entry not found" });
 
         await db
           .delete(presentationKnowledgeEntries)
           .where(eq(presentationKnowledgeEntries.id, entryId));
         await deleteKnowledgeEmbedding(presentationId, entryId);
-        return reply.status(204).send();
+        return request.status(204, );
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
 
-  app.patch("/admin/businesses/:businessId/presentations/:presentationId", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId/presentations/:presentationId", async (request) => {
     try {
       const { businessId, presentationId } = request.params as {
         businessId: string;
@@ -452,8 +518,8 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
       };
       await requirePresenterAccess(request, businessId);
       const row = await loadPresentationForBusiness(businessId, presentationId);
-      if (!row) return reply.status(404).send({ detail: "Presentation not found" });
-      const body = request.body as Record<string, unknown>;
+      if (!row) return request.status(404, { detail: "Presentation not found" });
+      const body = request.body;
       const updates: Partial<typeof presentations.$inferInsert> = { updatedAt: new Date() };
       if (body.title !== undefined) updates.title = String(body.title);
       if (body.description !== undefined) updates.description = String(body.description);
@@ -468,11 +534,13 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         .returning();
       return presentationOut(updated!);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
+  }, {
+    body: presentationUpdateBody,
   });
 
-  app.delete("/admin/businesses/:businessId/presentations/:presentationId", async (request, reply) => {
+  app.delete("/admin/businesses/:businessId/presentations/:presentationId", async (request) => {
     try {
       const { businessId, presentationId } = request.params as {
         businessId: string;
@@ -480,20 +548,20 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
       };
       await requirePresenterAccess(request, businessId);
       const row = await loadPresentationForBusiness(businessId, presentationId);
-      if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+      if (!row) return request.status(404, { detail: "Presentation not found" });
       await db
         .update(presentations)
         .set({ deletedAt: new Date(), status: "archived", updatedAt: new Date() })
         .where(eq(presentations.id, presentationId));
-      return reply.status(204).send();
+      return request.status(204, );
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
   app.post(
     "/admin/businesses/:businessId/presentations/:presentationId/files",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, presentationId } = request.params as {
           businessId: string;
@@ -501,21 +569,19 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         };
         await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
-        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        if (!row) return request.status(404, { detail: "Presentation not found" });
 
-        const data = await request.file();
-        if (!data) return reply.status(400).send({ detail: "File is required" });
+        const data = readUploadedFile(request.body);
+        if (!data) return request.status(400, { detail: "File is required" });
 
         const buffer = await data.toBuffer();
         if (buffer.length > MAX_PRESENTATION_UPLOAD_BYTES) {
-          return reply.status(400).send({ detail: "File exceeds 50MB limit" });
+          return request.status(400, { detail: "File exceeds 50MB limit" });
         }
 
         const fileType = detectPresentationFileType(data.filename, data.mimetype);
         if (!fileType) {
-          return reply
-            .status(400)
-            .send({ detail: "Unsupported file type. Use PPTX, PDF, DOCX, or TXT." });
+          return request.status(400, { detail: "Unsupported file type. Use PPTX, PDF, DOCX, or TXT." });
         }
 
         const objectPath = `${businessId}/${presentationId}/${randomUUID()}-${data.filename}`;
@@ -553,13 +619,16 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
               pptxBuffer: buffer,
             });
           } catch (thumbErr) {
-            console.warn("[presentations] thumbnail after upload failed", thumbErr);
+            logger.warn(
+              { err: thumbErr, presentationId },
+              "presentation.thumbnail_failed",
+            );
           }
         }
 
-        return reply.status(201).send(fileOut(file!));
+        return request.status(201, fileOut(file!));
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
@@ -567,7 +636,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
   /** Authenticated PPTX download for the in-browser deck viewer (avoids storage CORS issues). */
   app.get(
     "/admin/businesses/:businessId/presentations/:presentationId/pptx",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, presentationId } = request.params as {
           businessId: string;
@@ -575,28 +644,28 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         };
         await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
-        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        if (!row) return request.status(404, { detail: "Presentation not found" });
 
         const files = await db
           .select()
           .from(presentationFiles)
           .where(eq(presentationFiles.presentationId, presentationId));
         const pptx = files.find((f) => f.fileType === "pptx");
-        if (!pptx) return reply.status(404).send({ detail: "PPTX not found" });
+        if (!pptx) return request.status(404, { detail: "PPTX not found" });
 
         const buffer = await downloadFromStorage(PRESENTATION_BUCKET, pptx.storagePath);
-        if (!buffer) return reply.status(404).send({ detail: "PPTX file missing from storage" });
+        if (!buffer) return request.status(404, { detail: "PPTX file missing from storage" });
 
-        return reply
-          .header(
-            "Content-Type",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-          )
-          .header("Content-Disposition", `inline; filename="${pptx.fileName || "deck.pptx"}"`)
-          .header("Cache-Control", "private, max-age=86400")
-          .send(buffer);
+        return new Response(buffer as unknown as BodyInit, {
+          headers: {
+            "Content-Type":
+              "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "Content-Disposition": `inline; filename="${pptx.fileName || "deck.pptx"}"`,
+            "Cache-Control": "private, max-age=86400",
+          },
+        });
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
@@ -604,7 +673,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
   /** Authenticated audio stream for greeting / slide / closing narration. */
   app.get(
     "/admin/businesses/:businessId/presentations/:presentationId/audio/:assetId",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, presentationId, assetId } = request.params as {
           businessId: string;
@@ -613,14 +682,14 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         };
         await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
-        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        if (!row) return request.status(404, { detail: "Presentation not found" });
 
         const [asset] = await db
           .select()
           .from(presentationAudioAssets)
           .where(eq(presentationAudioAssets.id, assetId))
           .limit(1);
-        if (!asset) return reply.status(404).send({ detail: "Audio not found" });
+        if (!asset) return request.status(404, { detail: "Audio not found" });
 
         // Greeting/closing/slide audio is anchored on a slide row for this deck.
         const [slide] = await db
@@ -629,28 +698,30 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           .where(eq(presentationSlides.id, asset.slideId))
           .limit(1);
         if (!slide || slide.presentationId !== presentationId) {
-          return reply.status(404).send({ detail: "Audio not found" });
+          return request.status(404, { detail: "Audio not found" });
         }
 
         const buffer = await downloadFromStorage(PRESENTATION_BUCKET, asset.storagePath);
         if (!buffer) {
-          return reply.status(404).send({ detail: "Audio file missing from storage" });
+          return request.status(404, { detail: "Audio file missing from storage" });
         }
 
-        return reply
-          .header("Content-Type", "audio/wav")
-          .header("Cache-Control", "private, max-age=3600")
-          .header("Accept-Ranges", "bytes")
-          .send(buffer);
+        return new Response(buffer as unknown as BodyInit, {
+          headers: {
+            "Content-Type": "audio/wav",
+            "Cache-Control": "private, max-age=3600",
+            "Accept-Ranges": "bytes",
+          },
+        });
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
 
   app.post(
     "/admin/businesses/:businessId/presentations/:presentationId/process",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, presentationId } = request.params as {
           businessId: string;
@@ -658,14 +729,14 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         };
         await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
-        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        if (!row) return request.status(404, { detail: "Presentation not found" });
 
         const files = await db
           .select()
           .from(presentationFiles)
           .where(eq(presentationFiles.presentationId, presentationId));
         if (files.length === 0) {
-          return reply.status(400).send({ detail: "Upload a file before processing" });
+          return request.status(400, { detail: "Upload a file before processing" });
         }
 
         await db
@@ -682,14 +753,14 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         const updated = await loadPresentationForBusiness(businessId, presentationId);
         return presentationOut(updated!);
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
 
   app.post(
     "/admin/businesses/:businessId/presentations/:presentationId/process/cancel",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, presentationId } = request.params as {
           businessId: string;
@@ -697,20 +768,20 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         };
         await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
-        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        if (!row) return request.status(404, { detail: "Presentation not found" });
 
         await cancelPresentationProcessing(presentationId);
         const updated = await loadPresentationForBusiness(businessId, presentationId);
         return presentationOut(updated!);
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
 
   app.post(
     "/admin/businesses/:businessId/presentations/:presentationId/regenerate-scripts",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, presentationId } = request.params as {
           businessId: string;
@@ -718,18 +789,18 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         };
         await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
-        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        if (!row) return request.status(404, { detail: "Presentation not found" });
         enqueuePresentationProcessing(presentationId);
         return { ok: true };
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
 
   app.post(
     "/admin/businesses/:businessId/presentations/:presentationId/sessions",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, presentationId } = request.params as {
           businessId: string;
@@ -737,14 +808,12 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         };
         await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
-        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        if (!row) return request.status(404, { detail: "Presentation not found" });
         if (row.status !== "ready" && row.status !== "completed") {
-          return reply
-            .status(400)
-            .send({ detail: "Presentation must be ready before launching a session" });
+          return request.status(400, { detail: "Presentation must be ready before launching a session" });
         }
 
-        const body = (request.body ?? {}) as Record<string, unknown>;
+        const body = request.body;
         const [session] = await db
           .insert(presentationSessions)
           .values({
@@ -759,16 +828,19 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
 
         if (session!.autoStart) {
           const started = await advanceSession(session!.id, "start");
-          return reply.status(201).send(sessionOut(started!));
+          return request.status(201, sessionOut(started!));
         }
-        return reply.status(201).send(sessionOut(session!));
+        return request.status(201, sessionOut(session!));
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
+    },
+    {
+      body: presentationSessionBody,
     },
   );
 
-  app.get("/admin/businesses/:businessId/sessions", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/sessions", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requirePresenterAccess(request, businessId);
@@ -779,11 +851,11 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         .orderBy(desc(presentationSessions.createdAt));
       return rows.map(sessionOut);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.get("/admin/businesses/:businessId/sessions/:sessionId", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/sessions/:sessionId", async (request) => {
     try {
       const { businessId, sessionId } = request.params as {
         businessId: string;
@@ -792,7 +864,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
       await requirePresenterAccess(request, businessId);
       const bundle = await getSessionBundle(sessionId);
       if (!bundle || bundle.session.businessId !== businessId) {
-        return reply.status(404).send({ detail: "Session not found" });
+        return request.status(404, { detail: "Session not found" });
       }
 
       const slideIds = bundle.slides.map((s) => s.id);
@@ -825,13 +897,13 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         })),
       };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
   app.post(
     "/admin/businesses/:businessId/sessions/:sessionId/control",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
@@ -842,25 +914,23 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           where: eq(presentationSessions.id, sessionId),
         });
         if (!session || session.businessId !== businessId) {
-          return reply.status(404).send({ detail: "Session not found" });
+          return request.status(404, { detail: "Session not found" });
         }
-        const body = request.body as { action?: string };
-        const action = String(body.action ?? "");
-        const allowed = ["start", "pause", "resume", "next", "previous", "end", "finish_stage"] as const;
-        if (!allowed.includes(action as (typeof allowed)[number])) {
-          return reply.status(400).send({ detail: "Invalid action" });
-        }
-        const updated = await advanceSession(sessionId, action as (typeof allowed)[number]);
+        const body = request.body;
+        const updated = await advanceSession(sessionId, body.action);
         return sessionOut(updated!);
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
+    },
+    {
+      body: sessionControlBody,
     },
   );
 
   app.post(
     "/admin/businesses/:businessId/sessions/:sessionId/questions",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
@@ -871,22 +941,25 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           where: eq(presentationSessions.id, sessionId),
         });
         if (!session || session.businessId !== businessId) {
-          return reply.status(404).send({ detail: "Session not found" });
+          return request.status(404, { detail: "Session not found" });
         }
-        const body = request.body as { question?: string };
-        const question = String(body.question ?? "").trim();
-        if (!question) return reply.status(400).send({ detail: "Question is required" });
+        const body = request.body;
+        const question = body.question.trim();
+        if (!question) return request.status(400, { detail: "Question is required" });
         const row = await submitSessionQuestion(sessionId, question);
-        return reply.status(201).send(questionOut(row!));
+        return request.status(201, questionOut(row!));
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
+    },
+    {
+      body: sessionQuestionBody,
     },
   );
 
   app.post(
     "/admin/businesses/:businessId/sessions/:sessionId/transcribe",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
@@ -897,7 +970,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           where: eq(presentationSessions.id, sessionId),
         });
         if (!session || session.businessId !== businessId) {
-          return reply.status(404).send({ detail: "Session not found" });
+          return request.status(404, { detail: "Session not found" });
         }
         const presentation = await db.query.presentations.findFirst({
           where: eq(presentations.id, session.presentationId),
@@ -905,18 +978,21 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         const text = await transcribeQuestionAudio(
           businessId,
           presentation?.language,
-          request.body as { audio_base64?: string; mime_type?: string },
+          request.body,
         );
         return { text };
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
+    },
+    {
+      body: sessionTranscribeBody,
     },
   );
 
   app.get(
     "/admin/businesses/:businessId/sessions/:sessionId/analytics",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
@@ -925,7 +1001,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         await requirePresenterAccess(request, businessId);
         const bundle = await getSessionBundle(sessionId);
         if (!bundle || bundle.session.businessId !== businessId) {
-          return reply.status(404).send({ detail: "Session not found" });
+          return request.status(404, { detail: "Session not found" });
         }
         const { session, questions, slides } = bundle;
         const started = session.startedAt?.getTime() ?? session.createdAt.getTime();
@@ -952,7 +1028,7 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
           current_slide_number: session.currentSlideNumber,
         };
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
@@ -960,14 +1036,14 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
   // Public-ish audience question endpoint (token still required for MVP security)
   app.patch(
     "/admin/businesses/:businessId/sessions/:sessionId/audience-count",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, sessionId } = request.params as {
           businessId: string;
           sessionId: string;
         };
         await requirePresenterAccess(request, businessId);
-        const body = request.body as { audience_count?: number };
+        const body = request.body;
         const [updated] = await db
           .update(presentationSessions)
           .set({
@@ -981,17 +1057,20 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
             ),
           )
           .returning();
-        if (!updated) return reply.status(404).send({ detail: "Session not found" });
+        if (!updated) return request.status(404, { detail: "Session not found" });
         return sessionOut(updated);
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
+    },
+    {
+      body: sessionAudienceCountBody,
     },
   );
 
   app.post(
     "/admin/businesses/:businessId/presentations/:presentationId/share",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, presentationId } = request.params as {
           businessId: string;
@@ -999,37 +1078,35 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
         };
         await requirePresenterAccess(request, businessId);
         const row = await loadPresentationForBusiness(businessId, presentationId);
-        if (!row) return reply.status(404).send({ detail: "Presentation not found" });
+        if (!row) return request.status(404, { detail: "Presentation not found" });
         if (row.status !== "ready" && row.status !== "completed") {
-          return reply
-            .status(400)
-            .send({ detail: "Prepare the presentation before sharing it" });
+          return request.status(400, { detail: "Prepare the presentation before sharing it" });
         }
         const shared = await ensurePresentationShareToken(presentationId);
         if (!shared?.shareToken) {
-          return reply.status(500).send({ detail: "Could not create a share link" });
+          return request.status(500, { detail: "Could not create a share link" });
         }
         return {
           share_token: shared.shareToken,
           share_url: presentationSharePageUrl(shared.shareToken),
         };
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
 
-  app.get("/public/presentations/share/:token", async (request, reply) => {
+  app.get("/public/presentations/share/:token", async (request) => {
     const { token } = request.params as { token: string };
     const row = await loadPresentationByShareToken(token);
-    if (!row) return reply.status(404).send({ detail: "Share link not found" });
+    if (!row) return request.status(404, { detail: "Share link not found" });
     if (row.status !== "ready" && row.status !== "completed") {
-      return reply.status(409).send({ detail: "This presentation is not ready yet" });
+      return request.status(409, { detail: "This presentation is not ready yet" });
     }
     try {
       await assertSharedPresenterActive(row.businessId);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
     return {
       title: row.title,
@@ -1041,34 +1118,39 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
     };
   });
 
-  app.get("/public/presentations/share/:token/pptx", async (request, reply) => {
+  app.get("/public/presentations/share/:token/pptx", async (request) => {
     const { token } = request.params as { token: string };
     const row = await loadPresentationByShareToken(token);
-    if (!row) return reply.status(404).send({ detail: "Share link not found" });
+    if (!row) return request.status(404, { detail: "Share link not found" });
     const files = await db
       .select()
       .from(presentationFiles)
       .where(eq(presentationFiles.presentationId, row.id));
     const pptx = files.find((f) => f.fileType === "pptx");
-    if (!pptx) return reply.status(404).send({ detail: "PPTX not found" });
+    if (!pptx) return request.status(404, { detail: "PPTX not found" });
     const buffer = await downloadFromStorage(PRESENTATION_BUCKET, pptx.storagePath);
-    return reply
-      .header("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
-      .header("Content-Disposition", `inline; filename="${pptx.fileName || "deck.pptx"}"`)
-      .send(buffer);
+    if (!buffer) return request.status(404, { detail: "PPTX file missing from storage" });
+
+    return new Response(buffer as unknown as BodyInit, {
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "Content-Disposition": `inline; filename="${pptx.fileName || "deck.pptx"}"`,
+      },
+    });
   });
 
-  app.post("/public/presentations/share/:token/start", async (request, reply) => {
+  app.post("/public/presentations/share/:token/start", async (request) => {
     const { token } = request.params as { token: string };
     const row = await loadPresentationByShareToken(token);
-    if (!row) return reply.status(404).send({ detail: "Share link not found" });
+    if (!row) return request.status(404, { detail: "Share link not found" });
     if (row.status !== "ready" && row.status !== "completed") {
-      return reply.status(409).send({ detail: "This presentation is not ready yet" });
+      return request.status(409, { detail: "This presentation is not ready yet" });
     }
     try {
       await assertSharedPresenterActive(row.businessId);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
     const [session] = await db
       .insert(presentationSessions)
@@ -1084,18 +1166,18 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
     const started = session!.autoStart
       ? await advanceSession(session!.id, "start")
       : session!;
-    return reply.status(201).send(sessionOut(started!));
+    return request.status(201, sessionOut(started!));
   });
 
   app.get(
     "/public/presentations/share/:token/sessions/:sessionId",
-    async (request, reply) => {
+    async (request) => {
       const { token, sessionId } = request.params as { token: string; sessionId: string };
       const row = await loadPresentationByShareToken(token);
-      if (!row) return reply.status(404).send({ detail: "Share link not found" });
+      if (!row) return request.status(404, { detail: "Share link not found" });
       const bundle = await getSessionBundle(sessionId);
       if (!bundle || bundle.session.presentationId !== row.id) {
-        return reply.status(404).send({ detail: "Session not found" });
+        return request.status(404, { detail: "Session not found" });
       }
       const slideIds = bundle.slides.map((s) => s.id);
       const audio =
@@ -1129,84 +1211,88 @@ export async function registerPresentationRoutes(app: FastifyInstance): Promise<
 
   app.post(
     "/public/presentations/share/:token/sessions/:sessionId/control",
-    async (request, reply) => {
+    async (request) => {
       const { token, sessionId } = request.params as { token: string; sessionId: string };
       const row = await loadPresentationByShareToken(token);
-      if (!row) return reply.status(404).send({ detail: "Share link not found" });
+      if (!row) return request.status(404, { detail: "Share link not found" });
       const session = await db.query.presentationSessions.findFirst({
         where: eq(presentationSessions.id, sessionId),
       });
       if (!session || session.presentationId !== row.id) {
-        return reply.status(404).send({ detail: "Session not found" });
+        return request.status(404, { detail: "Session not found" });
       }
-      const body = request.body as { action?: string };
-      const action = String(body.action ?? "");
-      const allowed = ["start", "pause", "resume", "next", "previous", "end", "finish_stage"] as const;
-      if (!allowed.includes(action as (typeof allowed)[number])) {
-        return reply.status(400).send({ detail: "Invalid action" });
-      }
-      const updated = await advanceSession(sessionId, action as (typeof allowed)[number]);
+      const body = request.body;
+      const updated = await advanceSession(sessionId, body.action);
       return sessionOut(updated!);
+    },
+    {
+      body: sessionControlBody,
     },
   );
 
   app.post(
     "/public/presentations/share/:token/sessions/:sessionId/questions",
-    async (request, reply) => {
+    async (request) => {
       const { token, sessionId } = request.params as { token: string; sessionId: string };
       const row = await loadPresentationByShareToken(token);
-      if (!row) return reply.status(404).send({ detail: "Share link not found" });
+      if (!row) return request.status(404, { detail: "Share link not found" });
       const session = await db.query.presentationSessions.findFirst({
         where: eq(presentationSessions.id, sessionId),
       });
       if (!session || session.presentationId !== row.id) {
-        return reply.status(404).send({ detail: "Session not found" });
+        return request.status(404, { detail: "Session not found" });
       }
-      const body = request.body as { question?: string };
-      const question = String(body.question ?? "").trim();
-      if (!question) return reply.status(400).send({ detail: "Question is required" });
+      const body = request.body;
+      const question = body.question.trim();
+      if (!question) return request.status(400, { detail: "Question is required" });
       const created = await submitSessionQuestion(sessionId, question);
-      return reply.status(201).send(questionOut(created!));
+      return request.status(201, questionOut(created!));
+    },
+    {
+      body: sessionQuestionBody,
     },
   );
 
   app.post(
     "/public/presentations/share/:token/sessions/:sessionId/transcribe",
-    async (request, reply) => {
+    async (request) => {
       const { token, sessionId } = request.params as { token: string; sessionId: string };
       const row = await loadPresentationByShareToken(token);
-      if (!row) return reply.status(404).send({ detail: "Share link not found" });
+      if (!row) return request.status(404, { detail: "Share link not found" });
       const session = await db.query.presentationSessions.findFirst({
         where: eq(presentationSessions.id, sessionId),
       });
       if (!session || session.presentationId !== row.id) {
-        return reply.status(404).send({ detail: "Session not found" });
+        return request.status(404, { detail: "Session not found" });
       }
       try {
         const text = await transcribeQuestionAudio(
           row.businessId,
           row.language,
-          request.body as { audio_base64?: string; mime_type?: string },
+          request.body,
         );
         return { text };
       } catch (err) {
         const status = (err as Error & { statusCode?: number }).statusCode ?? 500;
-        return reply.status(status).send({
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Transcription failed",
         });
       }
+    },
+    {
+      body: sessionTranscribeBody,
     },
   );
 
   app.get(
     "/public/presentations/share/:token/sessions/:sessionId/analytics",
-    async (request, reply) => {
+    async (request) => {
       const { token, sessionId } = request.params as { token: string; sessionId: string };
       const row = await loadPresentationByShareToken(token);
-      if (!row) return reply.status(404).send({ detail: "Share link not found" });
+      if (!row) return request.status(404, { detail: "Share link not found" });
       const bundle = await getSessionBundle(sessionId);
       if (!bundle || bundle.session.presentationId !== row.id) {
-        return reply.status(404).send({ detail: "Session not found" });
+        return request.status(404, { detail: "Session not found" });
       }
       const { session, questions, slides } = bundle;
       const started = session.startedAt?.getTime() ?? session.createdAt.getTime();

@@ -1,25 +1,24 @@
-import { config } from "dotenv";
 import { setDefaultResultOrder } from "node:dns";
-import { resolve } from "node:path";
 import { z } from "zod";
 
-// Prefer IPv4 so Supabase pooler connects instead of hanging on IPv6.
+// Prefer IPv4 so managed Postgres poolers connect instead of hanging on IPv6.
 setDefaultResultOrder("ipv4first");
 
-config({ path: resolve(process.cwd(), "../../.env") });
-config({ path: resolve(process.cwd(), "../../.env.local"), override: true });
-config();
+// Bun loads .env and .env.local from this workspace automatically, with
+// .env.local taking precedence — keep secrets in apps/server/.env.
 
 const envSchema = z.object({
   DATABASE_URL: z
     .string()
     .default("postgresql://localhost:5432/voicetalk"),
+  /** Rate limits and job locks shared across instances; rediss:// for Upstash. */
+  REDIS_URL: z.string().url(),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default("gemini-3.1-flash-live-preview"),
   JWT_SECRET: z.string().default("dev-secret-change-in-production"),
   JWT_EXPIRE_HOURS: z.coerce.number().default(72),
   API_PORT: z.coerce.number().default(8000),
-  /** Render/Railway set PORT; prefer it over API_PORT in production. */
+  /** Most container hosts inject PORT (Fly, Railway, Cloud Run, Render…). */
   PORT: z.coerce.number().optional(),
   DEFAULT_BUSINESS_SLUG: z.string().default("sunrise-coffee"),
   /** Public marketing hero iframe — pinless access is limited to this slug. */
@@ -32,8 +31,14 @@ const envSchema = z.object({
   PLATFORM_ADMIN_PASSWORD: z.string().default("superadmin123"),
   /** Merchant admin app URL used for impersonation redirects. */
   MERCHANT_ADMIN_URL: z.string().default("http://localhost:6680"),
-  SUPABASE_URL: z.string().optional(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  /** S3-compatible object storage (Cloudflare R2 in production). */
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_BUCKET: z.string().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_REGION: z.string().default("auto"),
+  /** Public base URL objects are served from, e.g. https://media.example.com */
+  S3_PUBLIC_BASE_URL: z.string().url().optional(),
   /** Comma-separated origins for CORS, e.g. https://app.example.com,https://admin.example.com */
   ALLOWED_ORIGINS: z.string().optional(),
   /** Comma-separated production domains always allowed over HTTPS, e.g. lorescale.com */
@@ -46,6 +51,23 @@ const envSchema = z.object({
 
 export const env = envSchema.parse(process.env);
 
+/** Production configuration that has no sane generic default. */
+if (process.env.NODE_ENV === "production") {
+  const missing = (
+    [
+      "S3_ENDPOINT",
+      "S3_BUCKET",
+      "S3_ACCESS_KEY_ID",
+      "S3_SECRET_ACCESS_KEY",
+      "S3_PUBLIC_BASE_URL",
+      "PUBLIC_API_URL",
+    ] as const
+  ).filter((key) => !env[key]);
+  if (missing.length > 0) {
+    throw new Error(`Production configuration incomplete; missing ${missing.join(", ")}`);
+  }
+}
+
 function isLocalhostUrl(url: string): boolean {
   try {
     const host = new URL(url).hostname;
@@ -55,13 +77,16 @@ function isLocalhostUrl(url: string): boolean {
   }
 }
 
-/** Public API phones can reach. Never localhost. */
+/** Public API origin used in server-generated links (QR codes). Never localhost in production. */
 export function getPublicApiBaseUrl(): string {
   const configured = env.PUBLIC_API_URL?.trim();
   if (configured && !isLocalhostUrl(configured)) {
     return configured.replace(/\/+$/, "");
   }
-  return "https://voice-talk-api.onrender.com";
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("PUBLIC_API_URL is required in production");
+  }
+  return `http://localhost:${env.PORT ?? env.API_PORT}`;
 }
 
 /** QR links are scanned on customer phones — never emit localhost. */
@@ -145,6 +170,12 @@ export function isAllowedOrigin(origin: string | undefined): boolean {
   return false;
 }
 
-export function hasSupabaseStorage(): boolean {
-  return Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY);
+export function hasObjectStorage(): boolean {
+  return Boolean(
+    env.S3_ENDPOINT &&
+      env.S3_BUCKET &&
+      env.S3_ACCESS_KEY_ID &&
+      env.S3_SECRET_ACCESS_KEY &&
+      env.S3_PUBLIC_BASE_URL,
+  );
 }

@@ -235,7 +235,7 @@ export async function getAddonStatusForBusiness(
   businessId: string,
   addonCode = SMART_PHOTO_MOMENT_CODE,
 ): Promise<AddonStatusForBusiness> {
-  // Sequential queries — Supabase pooler caps connections low; Promise.all of
+  // Sequential queries — managed poolers cap connections low; Promise.all of
   // 3–4 lookups competes with vision/health and causes CONNECT_TIMEOUT.
   const addon = await getAddonByCode(addonCode);
   if (!addon) throw httpError("Add-on not found", 404);

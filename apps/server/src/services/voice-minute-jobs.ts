@@ -1,5 +1,6 @@
-import type { FastifyInstance } from "fastify";
+import type { Logger } from "../http/logger.js";
 
+import { withJobLock } from "../redis.js";
 import { sweepOrphanVoiceSessions } from "./voice-minutes.js";
 
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
@@ -11,18 +12,20 @@ function isMissingRelation(err: unknown): boolean {
   return /relation .* does not exist/i.test(msg);
 }
 
-export function registerVoiceMinuteJobs(app: FastifyInstance): void {
+export function registerVoiceMinuteJobs(log: Logger): void {
   const run = async () => {
-    try {
-      const n = await sweepOrphanVoiceSessions();
-      if (n > 0) app.log.info({ closed: n }, "Closed orphan voice sessions and debited minutes");
-    } catch (err) {
-      if (isMissingRelation(err)) {
-        app.log.warn?.({ err }, "Voice minute orphan sweep skipped (tables not migrated yet)");
-        return;
+    await withJobLock("voice-minute-sweep", SWEEP_INTERVAL_MS - 30_000, async () => {
+      try {
+        const n = await sweepOrphanVoiceSessions();
+        if (n > 0) log.info({ closed: n }, "Closed orphan voice sessions and debited minutes");
+      } catch (err) {
+        if (isMissingRelation(err)) {
+          log.warn?.({ err }, "Voice minute orphan sweep skipped (tables not migrated yet)");
+          return;
+        }
+        log.error({ err }, "Failed to sweep orphan voice sessions");
       }
-      app.log.error({ err }, "Failed to sweep orphan voice sessions");
-    }
+    });
   };
 
   setTimeout(() => {

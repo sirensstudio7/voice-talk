@@ -1,13 +1,17 @@
 import { eq } from "drizzle-orm";
-import type { FastifyRequest } from "fastify";
 import jwt from "jsonwebtoken";
 import * as OTPAuth from "otpauth";
 import { db } from "../db/client.js";
 import { withLoginDb } from "../db/login-db.js";
 import { auditLogs, platformAdmins, type PlatformAdmin } from "../db/schema.js";
 import { env } from "../env.js";
+import type { AuthContext } from "../http/context.js";
+import { logger } from "../http/logger.js";
+import { rateLimit } from "../redis.js";
 import { hashPassword, verifyPassword } from "./jwt.js";
 import { isPlatformRole, type PlatformRole } from "./platform-rbac.js";
+
+const log = logger.child({ component: "platform" });
 
 const JWT_ALGORITHM = "HS256";
 const PENDING_TTL_SECONDS = 10 * 60;
@@ -56,7 +60,7 @@ export function createPlatformAccessToken(adminId: string, role: string): string
   );
 }
 
-function readBearerToken(request: FastifyRequest): string {
+function readBearerToken(request: AuthContext): string {
   const header = request.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     throw authError("Not authenticated");
@@ -83,7 +87,7 @@ function verifyPlatformToken(
 }
 
 export async function getPlatformAdminFromPending(
-  request: FastifyRequest,
+  request: AuthContext,
 ): Promise<PlatformAdmin> {
   const token = readBearerToken(request);
   const payload = verifyPlatformToken(token, "platform_pending");
@@ -92,7 +96,7 @@ export async function getPlatformAdminFromPending(
       where: eq(platformAdmins.id, payload.sub),
     }),
   );
-  if (!admin || admin.status !== "active") {
+  if (admin?.status !== "active") {
     throw authError("Admin not found or disabled");
   }
   return admin;
@@ -106,7 +110,7 @@ const adminCache = new Map<
 const adminInflight = new Map<string, Promise<PlatformAdmin & { role: PlatformRole }>>();
 
 export async function getCurrentPlatformAdmin(
-  request: FastifyRequest,
+  request: AuthContext,
 ): Promise<PlatformAdmin & { role: PlatformRole }> {
   const token = readBearerToken(request);
   const payload = verifyPlatformToken(token, "platform");
@@ -122,7 +126,7 @@ export async function getCurrentPlatformAdmin(
         where: eq(platformAdmins.id, payload.sub),
       }),
     );
-    if (!admin || admin.status !== "active") {
+    if (admin?.status !== "active") {
       throw authError("Admin not found or disabled");
     }
     if (!isPlatformRole(admin.role)) {
@@ -192,7 +196,7 @@ export async function writeAuditLog(input: {
   entityType?: string;
   entityId?: string;
   metadata?: Record<string, unknown>;
-  request?: FastifyRequest;
+  request?: AuthContext;
 }): Promise<void> {
   const ip =
     (input.request?.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||
@@ -225,20 +229,14 @@ export async function ensurePlatformAdminSeed(): Promise<void> {
     status: "active",
     totpEnabled: false,
   });
-  console.info(`Seeded platform super admin: ${email}`);
+  log.info({ email }, "platform.admin_seeded");
 }
 
-/** Simple in-memory rate limiter for login endpoints. */
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-
-export function checkLoginRateLimit(key: string, limit = 20, windowMs = 15 * 60 * 1000): boolean {
-  const now = Date.now();
-  const entry = loginAttempts.get(key);
-  if (!entry || entry.resetAt < now) {
-    loginAttempts.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-  if (entry.count >= limit) return false;
-  entry.count += 1;
-  return true;
+/** Login limiter backed by Redis so every instance shares one window. */
+export async function checkLoginRateLimit(
+  key: string,
+  limit = 20,
+  windowMs = 15 * 60 * 1000,
+): Promise<boolean> {
+  return rateLimit(key, limit, windowMs);
 }

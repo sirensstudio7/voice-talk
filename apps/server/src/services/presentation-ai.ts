@@ -4,6 +4,9 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { platformSettings } from "../db/schema.js";
 import { env } from "../env.js";
+import { logger } from "../http/logger.js";
+
+const log = logger.child({ component: "presentation" });
 
 // gemini-2.5-flash is blocked for many new API keys; prefer a current flash model.
 const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL ?? "gemini-2.0-flash";
@@ -71,7 +74,7 @@ Return ONLY the spoken narration script, no markdown or labels.`;
     const text = response.text?.trim();
     return text || fallback;
   } catch (err) {
-    console.warn("[presentation-ai] script generation failed", err);
+    log.warn({ err, operation: "script" }, "gemini.failed");
     return fallback;
   }
 }
@@ -161,7 +164,7 @@ Return JSON only: {"greeting":"...","closing":"..."}`,
       };
     }
   } catch (err) {
-    console.warn("[presentation-ai] greeting/closing failed", err);
+    log.warn({ err, operation: "greeting_closing" }, "gemini.failed");
   }
   return { greeting: greetingFallback, closing: closingFallback };
 }
@@ -199,7 +202,7 @@ export async function synthesizeSpeechWav(
     const durationSeconds = Math.max(1, Math.ceil(pcm.length / (sampleRate * 2)));
     return { buffer: wav, durationSeconds };
   } catch (err) {
-    console.warn("[presentation-ai] TTS failed", err);
+    log.warn({ err, operation: "tts" }, "gemini.failed");
     return null;
   }
 }
@@ -272,7 +275,7 @@ Return a concise spoken answer (2-5 sentences).`,
     });
     return { answer: response.text?.trim() || fallback, sources };
   } catch (err) {
-    console.warn("[presentation-ai] Q&A failed", err);
+    log.warn({ err, operation: "qa" }, "gemini.failed");
     return { answer: fallback, sources };
   }
 }
@@ -373,7 +376,7 @@ export async function transcribeAudienceQuestion(input: {
       return text.replace(/^["“”']+|["“”']+$/g, "").trim();
     } catch (err) {
       lastError = err;
-      console.warn("[presentation-ai] transcribe failed", model, err);
+      log.warn({ err, model, operation: "transcribe" }, "gemini.failed");
     }
   }
 

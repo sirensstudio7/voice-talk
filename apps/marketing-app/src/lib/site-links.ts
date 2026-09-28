@@ -47,7 +47,7 @@ export const adminAppUrl = resolvePublicAppUrl(
 
 export const publicApiUrl = resolvePublicAppUrl(
   process.env.NEXT_PUBLIC_API_URL,
-  "https://voice-talk-api.onrender.com",
+  "https://api.lorescale.com",
   "http://localhost:8000",
 );
 

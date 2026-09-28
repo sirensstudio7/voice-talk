@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/uploads
+.git
+.remember
+apps-legacy
+
+# Never bake environment files into the image (apps/server/.env has secrets).
+**/.env
+**/.env.local
+**/.env.*.local

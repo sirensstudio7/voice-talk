@@ -1,5 +1,4 @@
 import { extname } from "node:path";
-import type { FastifyInstance } from "fastify";
 
 import { requireBusinessAccess, sendAuthError } from "../auth/jwt.js";
 import { getBusinessBySlug } from "../services/tenant.js";
@@ -29,6 +28,69 @@ import {
   ALLOWED_IMAGE_TYPES,
   uploadToStorage,
 } from "../storage/index.js";
+import { readUploadedFile } from "../http/multipart.js";
+import { nonEmptyString, optionalBoolean, optionalNullableString, optionalString, queryNumber } from "../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const luckySpinSettingsBody = t.Object({
+  enabled: optionalBoolean,
+  ai_voice_enabled: optionalBoolean,
+});
+
+export const luckySpinCampaignCreateBody = t.Object({
+  name: nonEmptyString,
+  start_at: optionalNullableString,
+  end_at: optionalNullableString,
+  daily_limit: t.Optional(t.Union([t.Number(), t.Null()])),
+  total_limit: t.Optional(t.Union([t.Number(), t.Null()])),
+  one_per_user: optionalBoolean,
+  odds_mode: t.Optional(t.Union([t.Literal("auto"), t.Literal("manual")])),
+  status: optionalString,
+});
+
+export const luckySpinCampaignUpdateBody = t.Object({
+  name: optionalString,
+  start_at: optionalNullableString,
+  end_at: optionalNullableString,
+  daily_limit: t.Optional(t.Union([t.Number(), t.Null()])),
+  total_limit: t.Optional(t.Union([t.Number(), t.Null()])),
+  one_per_user: optionalBoolean,
+  odds_mode: t.Optional(t.Union([t.Literal("auto"), t.Literal("manual")])),
+  status: optionalString,
+});
+
+export const luckySpinPrizeCreateBody = t.Object({
+  name: nonEmptyString,
+  description: optionalString,
+  image_url: optionalNullableString,
+  probability: t.Optional(t.Number()),
+  stock: t.Optional(t.Number()),
+  voucher_prefix: optionalString,
+  expires_at: optionalNullableString,
+  enabled: optionalBoolean,
+});
+
+export const luckySpinPrizeUpdateBody = t.Object({
+  name: optionalString,
+  description: optionalString,
+  image_url: optionalNullableString,
+  probability: t.Optional(t.Number()),
+  stock: t.Optional(t.Number()),
+  voucher_prefix: optionalString,
+  expires_at: optionalNullableString,
+  enabled: optionalBoolean,
+});
+
+export const luckySpinRedeemBody = t.Object({
+  voucher_code: optionalString,
+});
+
+export const luckySpinSpinBody = t.Optional(
+  t.Object({
+    phone: optionalString,
+    name: optionalString,
+  }),
+);
 
 const PRIZE_BUCKET = "lucky-spin-prizes";
 const MAX_PRIZE_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -40,27 +102,25 @@ function statusFromError(err: unknown): number {
   return 500;
 }
 
-export async function registerLuckySpinRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/admin/businesses/:businessId/lucky-spin/settings", async (request, reply) => {
+export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
+  app.get("/admin/businesses/:businessId/lucky-spin/settings", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       const settings = await getOrCreateLuckySpinSettings(businessId);
       return luckySpinSettingsOut(settings);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.patch("/admin/businesses/:businessId/lucky-spin/settings", async (request, reply) => {
+  app.patch("/admin/businesses/:businessId/lucky-spin/settings", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      const body = request.body as { enabled?: boolean; ai_voice_enabled?: boolean };
+      const body = request.body;
       if (typeof body.enabled !== "boolean" && typeof body.ai_voice_enabled !== "boolean") {
-        return reply
-          .status(400)
-          .send({ detail: "enabled or ai_voice_enabled boolean is required" });
+        return request.status(400, { detail: "enabled or ai_voice_enabled boolean is required" });
       }
       const settings = await updateLuckySpinSettings(
         businessId,
@@ -75,65 +135,72 @@ export async function registerLuckySpinRoutes(app: FastifyInstance): Promise<voi
       return luckySpinSettingsOut(settings);
     } catch (err) {
       const status = statusFromError(err);
-      if (status === 401 || status === 403) return sendAuthError(reply, err);
-      return reply.status(status).send({
+      if (status === 401 || status === 403) return sendAuthError(request, err);
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Failed to update settings",
       });
     }
+  }, {
+    body: luckySpinSettingsBody,
   });
 
-  app.get("/admin/businesses/:businessId/lucky-spin/campaigns", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/lucky-spin/campaigns", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       const rows = await listCampaigns(businessId);
       return { items: rows.map(campaignOut) };
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
-  app.post("/admin/businesses/:businessId/lucky-spin/campaigns", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/lucky-spin/campaigns", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const body = request.body as Parameters<typeof createCampaign>[1];
+      const body = request.body;
       const created = await createCampaign(businessId, body);
-      return reply.status(201).send(campaignOut(created));
+      return request.status(201, campaignOut(created));
     } catch (err) {
       const status = statusFromError(err);
-      if (status === 401 || status === 403) return sendAuthError(reply, err);
-      return reply.status(status).send({
+      if (status === 401 || status === 403) return sendAuthError(request, err);
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Failed to create campaign",
       });
     }
+  }, {
+    body: luckySpinCampaignCreateBody,
   });
 
   app.patch(
     "/admin/businesses/:businessId/lucky-spin/campaigns/:campaignId",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, campaignId } = request.params as {
           businessId: string;
           campaignId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const body = request.body as Parameters<typeof updateCampaign>[2];
+        const body = request.body;
         const updated = await updateCampaign(businessId, campaignId, body);
         return campaignOut(updated);
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to update campaign",
         });
       }
+    },
+    {
+      body: luckySpinCampaignUpdateBody,
     },
   );
 
   app.delete(
     "/admin/businesses/:businessId/lucky-spin/campaigns/:campaignId",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, campaignId } = request.params as {
           businessId: string;
@@ -141,11 +208,11 @@ export async function registerLuckySpinRoutes(app: FastifyInstance): Promise<voi
         };
         await requireBusinessAccess(request, businessId);
         await deleteCampaign(businessId, campaignId);
-        return reply.status(204).send();
+        return request.status(204, );
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to delete campaign",
         });
       }
@@ -154,7 +221,7 @@ export async function registerLuckySpinRoutes(app: FastifyInstance): Promise<voi
 
   app.get(
     "/admin/businesses/:businessId/lucky-spin/campaigns/:campaignId/prizes",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, campaignId } = request.params as {
           businessId: string;
@@ -165,36 +232,39 @@ export async function registerLuckySpinRoutes(app: FastifyInstance): Promise<voi
         const total = await sumEnabledProbability(campaignId);
         return { items: prizes.map(prizeOut), probability_total: total };
       } catch (err) {
-        return sendAuthError(reply, err);
+        return sendAuthError(request, err);
       }
     },
   );
 
   app.post(
     "/admin/businesses/:businessId/lucky-spin/campaigns/:campaignId/prizes",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, campaignId } = request.params as {
           businessId: string;
           campaignId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const body = request.body as Parameters<typeof createPrize>[2];
+        const body = request.body;
         const created = await createPrize(businessId, campaignId, body);
-        return reply.status(201).send(prizeOut(created));
+        return request.status(201, prizeOut(created));
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to create prize",
         });
       }
+    },
+    {
+      body: luckySpinPrizeCreateBody,
     },
   );
 
   app.patch(
     "/admin/businesses/:businessId/lucky-spin/campaigns/:campaignId/prizes/:prizeId",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, campaignId, prizeId } = request.params as {
           businessId: string;
@@ -202,22 +272,25 @@ export async function registerLuckySpinRoutes(app: FastifyInstance): Promise<voi
           prizeId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const body = request.body as Parameters<typeof updatePrize>[3];
+        const body = request.body;
         const updated = await updatePrize(businessId, campaignId, prizeId, body);
         return prizeOut(updated);
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to update prize",
         });
       }
+    },
+    {
+      body: luckySpinPrizeUpdateBody,
     },
   );
 
   app.delete(
     "/admin/businesses/:businessId/lucky-spin/campaigns/:campaignId/prizes/:prizeId",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, campaignId, prizeId } = request.params as {
           businessId: string;
@@ -226,11 +299,11 @@ export async function registerLuckySpinRoutes(app: FastifyInstance): Promise<voi
         };
         await requireBusinessAccess(request, businessId);
         await deletePrize(businessId, campaignId, prizeId);
-        return reply.status(204).send();
+        return request.status(204, );
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to delete prize",
         });
       }
@@ -239,7 +312,7 @@ export async function registerLuckySpinRoutes(app: FastifyInstance): Promise<voi
 
   app.post(
     "/admin/businesses/:businessId/lucky-spin/campaigns/:campaignId/prizes/:prizeId/image",
-    async (request, reply) => {
+    async (request) => {
       try {
         const { businessId, campaignId, prizeId } = request.params as {
           businessId: string;
@@ -247,14 +320,14 @@ export async function registerLuckySpinRoutes(app: FastifyInstance): Promise<voi
           prizeId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const file = await request.file();
-        if (!file) return reply.status(400).send({ detail: "Image file is required" });
+        const file = readUploadedFile(request.body);
+        if (!file) return request.status(400, { detail: "Image file is required" });
         if (!(file.mimetype in ALLOWED_IMAGE_TYPES) || file.mimetype === "image/gif") {
-          return reply.status(400).send({ detail: "Use PNG, JPG, or WEBP" });
+          return request.status(400, { detail: "Use PNG, JPG, or WEBP" });
         }
         const buffer = await file.toBuffer();
         if (buffer.byteLength > MAX_PRIZE_IMAGE_BYTES) {
-          return reply.status(400).send({ detail: "Image must be 2MB or smaller" });
+          return request.status(400, { detail: "Image must be 2MB or smaller" });
         }
         const ext = extname(file.filename || "").toLowerCase() || ".png";
         const path = `${businessId}/${campaignId}/${prizeId}${ext}`;
@@ -263,35 +336,41 @@ export async function registerLuckySpinRoutes(app: FastifyInstance): Promise<voi
         return prizeOut(updated);
       } catch (err) {
         const status = statusFromError(err);
-        if (status === 401 || status === 403) return sendAuthError(reply, err);
-        return reply.status(status).send({
+        if (status === 401 || status === 403) return sendAuthError(request, err);
+        return request.status(status, {
           detail: err instanceof Error ? err.message : "Failed to upload image",
         });
       }
     },
   );
 
-  app.get("/admin/businesses/:businessId/lucky-spin/winners", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/lucky-spin/winners", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const query = request.query as { search?: string; limit?: string; offset?: string };
+      const query = request.query;
       const result = await listWinners(businessId, {
         search: query.search,
-        limit: query.limit ? Number(query.limit) : undefined,
-        offset: query.offset ? Number(query.offset) : undefined,
+        limit: query.limit,
+        offset: query.offset,
       });
       return result;
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({
+      search: optionalString,
+      limit: queryNumber,
+      offset: queryNumber,
+    }),
   });
 
-  app.post("/admin/businesses/:businessId/lucky-spin/redeem", async (request, reply) => {
+  app.post("/admin/businesses/:businessId/lucky-spin/redeem", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const body = request.body as { voucher_code?: string };
+      const body = request.body;
       const result = await redeemVoucher({
         businessId,
         voucherCode: body.voucher_code ?? "",
@@ -299,43 +378,45 @@ export async function registerLuckySpinRoutes(app: FastifyInstance): Promise<voi
       return result;
     } catch (err) {
       const status = statusFromError(err);
-      if (status === 401 || status === 403) return sendAuthError(reply, err);
-      return reply.status(status).send({
+      if (status === 401 || status === 403) return sendAuthError(request, err);
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Failed to redeem voucher",
       });
     }
+  }, {
+    body: luckySpinRedeemBody,
   });
 
-  app.get("/admin/businesses/:businessId/lucky-spin/analytics", async (request, reply) => {
+  app.get("/admin/businesses/:businessId/lucky-spin/analytics", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       return await getLuckySpinAnalytics(businessId);
     } catch (err) {
-      return sendAuthError(reply, err);
+      return sendAuthError(request, err);
     }
   });
 
   // Public kiosk endpoints
-  app.get("/public/lucky-spin/:slug/state", async (request, reply) => {
+  app.get("/public/lucky-spin/:slug/state", async (request) => {
     try {
       const { slug } = request.params as { slug: string };
       const tenant = await getBusinessBySlug(slug);
-      if (!tenant) return reply.status(404).send({ detail: "Business not found" });
+      if (!tenant) return request.status(404, { detail: "Business not found" });
       return await getLuckySpinPublicConfig(tenant.id);
     } catch (err) {
-      return reply.status(500).send({
+      return request.status(500, {
         detail: err instanceof Error ? err.message : "Failed to load Lucky Spin",
       });
     }
   });
 
-  app.post("/public/lucky-spin/:slug/spin", async (request, reply) => {
+  app.post("/public/lucky-spin/:slug/spin", async (request) => {
     try {
       const { slug } = request.params as { slug: string };
       const tenant = await getBusinessBySlug(slug);
-      if (!tenant) return reply.status(404).send({ detail: "Business not found" });
-      const body = (request.body as { phone?: string; name?: string } | null) ?? {};
+      if (!tenant) return request.status(404, { detail: "Business not found" });
+      const body: { phone?: string; name?: string } = request.body ?? {};
       const result = await performSpin({
         businessId: tenant.id,
         phone: body.phone,
@@ -349,9 +430,11 @@ export async function registerLuckySpinRoutes(app: FastifyInstance): Promise<voi
       };
     } catch (err) {
       const status = statusFromError(err);
-      return reply.status(status).send({
+      return request.status(status, {
         detail: err instanceof Error ? err.message : "Spin failed",
       });
     }
+  }, {
+    body: luckySpinSpinBody,
   });
 }

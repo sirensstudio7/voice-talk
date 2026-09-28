@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { config } from "dotenv";
 import { eq, inArray, sql } from "drizzle-orm";
-import { resolve } from "node:path";
 import { db, closeDb } from "../src/db/client.js";
 import {
   businesses,
@@ -12,10 +10,6 @@ import {
   voiceSessions,
 } from "../src/db/schema.js";
 import { PRODUCTS } from "../src/seed-data.js";
-
-config({ path: resolve(process.cwd(), "../../.env") });
-config({ path: resolve(process.cwd(), "../../.env.local"), override: true });
-config();
 
 const CUSTOMER_NAMES = [
   "Rina",
@@ -117,13 +111,13 @@ async function seedDemoAnalytics() {
   });
 
   if (!business) {
-    console.error("Business sunrise-coffee not found. Run npm run seed:db first.");
+    console.error("Business sunrise-coffee not found. Run bun run seed:db first.");
     process.exit(1);
   }
 
   await syncProductPrices(business.id);
 
-  let catalog = await db.query.products.findMany({
+  const catalog = await db.query.products.findMany({
     where: eq(products.businessId, business.id),
   });
 
@@ -139,7 +133,7 @@ async function seedDemoAnalytics() {
   }
 
   if (catalog.length === 0) {
-    console.error("No products found. Run npm run seed:db first.");
+    console.error("No products found. Run bun run seed:db first.");
     process.exit(1);
   }
 
