@@ -1,7 +1,7 @@
 import { buildApp, MAX_BODY_BYTES } from "./app.js";
 import { closeDb, startDbPoolWatchdog } from "./db/client.js";
 import { warmDbConnection } from "./db/health.js";
-import { env, getProductionDomains } from "./env.js";
+import { env, getProductionDomains, hasObjectStorage } from "./env.js";
 import { logger } from "./http/logger.js";
 import { closeRedis } from "./redis.js";
 import { startPhotoMomentJobs } from "./services/photo-jobs.js";
@@ -18,7 +18,7 @@ const start = async () => {
   console.info(`Gemini model default: ${env.GEMINI_MODEL}`);
   console.info(`API key configured: ${Boolean(env.GEMINI_API_KEY)}`);
   console.info(`Default business slug: ${env.DEFAULT_BUSINESS_SLUG}`);
-  console.info(`Supabase storage: ${env.SUPABASE_URL ? "true" : "false"}`);
+  console.info(`Object storage: ${hasObjectStorage() ? "s3" : "local disk"}`);
   console.info(`CORS allowed origins: ${allowedOrigins || "(all)"}`);
   console.info(`CORS production domains: ${productionDomains.join(", ") || "(none)"}`);
 

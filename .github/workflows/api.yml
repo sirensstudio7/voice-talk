@@ -92,6 +92,10 @@ jobs:
             -e DATABASE_URL="$DATABASE_URL" \
             -e REDIS_URL="$REDIS_URL" \
             -e PORT=8098 \
+            -e S3_ENDPOINT=http://127.0.0.1:9 \
+            -e S3_ACCESS_KEY_ID=ci \
+            -e S3_SECRET_ACCESS_KEY=ci \
+            -e S3_PUBLIC_BASE_URL=http://127.0.0.1:9 \
             -e PLATFORM_ADMIN_EMAIL="$PLATFORM_ADMIN_EMAIL" \
             -e PLATFORM_ADMIN_PASSWORD="$PLATFORM_ADMIN_PASSWORD" \
             voicetalk-api:ci

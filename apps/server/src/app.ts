@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { cors } from "@elysiajs/cors";
 import { staticPlugin } from "@elysiajs/static";
 import { Elysia } from "elysia";
-import { hasSupabaseStorage, isAllowedOrigin } from "./env.js";
+import { hasObjectStorage, isAllowedOrigin } from "./env.js";
 import { validationDetail } from "./http/validation.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerCampaignBannerRoutes } from "./routes/campaign-banner.js";
@@ -43,7 +43,7 @@ export async function buildApp(): Promise<Elysia> {
     ip: server?.requestIP(request)?.address ?? "",
   }));
 
-  if (!hasSupabaseStorage()) {
+  if (!hasObjectStorage()) {
     const uploadRoot = getUploadRoot();
     await mkdir(uploadRoot, { recursive: true });
     app.use(staticPlugin({ assets: uploadRoot, prefix: "/uploads", indexHTML: false }));

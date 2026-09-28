@@ -15,13 +15,13 @@
     "seed:demo-analytics": "bun scripts/seed-demo-analytics.ts",
     "seed:demo-analytics:force": "bun scripts/seed-demo-analytics.ts --force",
     "db:migrate": "bun scripts/migrate.ts",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "storage:migrate": "bun scripts/migrate-storage-to-r2.ts"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.4.2",
     "@elysiajs/static": "^1.4.10",
     "@google/genai": "^1.0.0",
-    "@supabase/supabase-js": "^2.49.8",
     "@voicetalk/shared": "*",
     "drizzle-orm": "^0.44.2",
     "elysia": "^1.4.30",

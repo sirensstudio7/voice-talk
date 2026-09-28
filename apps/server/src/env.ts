@@ -1,7 +1,7 @@
 import { setDefaultResultOrder } from "node:dns";
 import { z } from "zod";
 
-// Prefer IPv4 so Supabase pooler connects instead of hanging on IPv6.
+// Prefer IPv4 so managed Postgres poolers connect instead of hanging on IPv6.
 setDefaultResultOrder("ipv4first");
 
 // Bun loads .env and .env.local from this workspace automatically, with
@@ -31,8 +31,13 @@ const envSchema = z.object({
   PLATFORM_ADMIN_PASSWORD: z.string().default("superadmin123"),
   /** Merchant admin app URL used for impersonation redirects. */
   MERCHANT_ADMIN_URL: z.string().default("http://localhost:6680"),
-  SUPABASE_URL: z.string().optional(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  /** S3-compatible object storage (Cloudflare R2 in production). */
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_REGION: z.string().default("auto"),
+  /** Public base URL objects are served from, e.g. https://media.example.com */
+  S3_PUBLIC_BASE_URL: z.string().url().optional(),
   /** Comma-separated origins for CORS, e.g. https://app.example.com,https://admin.example.com */
   ALLOWED_ORIGINS: z.string().optional(),
   /** Comma-separated production domains always allowed over HTTPS, e.g. lorescale.com */
@@ -44,6 +49,16 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
+
+/** Object storage is mandatory in production: Render's disk is ephemeral. */
+if (process.env.NODE_ENV === "production") {
+  const missing = (
+    ["S3_ENDPOINT", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_PUBLIC_BASE_URL"] as const
+  ).filter((key) => !env[key]);
+  if (missing.length > 0) {
+    throw new Error(`Object storage is required in production; missing ${missing.join(", ")}`);
+  }
+}
 
 function isLocalhostUrl(url: string): boolean {
   try {
@@ -144,6 +159,8 @@ export function isAllowedOrigin(origin: string | undefined): boolean {
   return false;
 }
 
-export function hasSupabaseStorage(): boolean {
-  return Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY);
+export function hasObjectStorage(): boolean {
+  return Boolean(
+    env.S3_ENDPOINT && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY && env.S3_PUBLIC_BASE_URL,
+  );
 }
