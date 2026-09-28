@@ -38,8 +38,23 @@ afterEach(() => {
 /** `onAfterResponse` runs from a setImmediate; give it a macrotask to land. */
 const flush = () => new Promise((resolve) => setTimeout(resolve, 25));
 
-function find(msg: string, extra?: (entry: Entry) => boolean): Entry {
-  const entry = all().find((e) => e.msg === msg && (!extra || extra(e)));
+/**
+ * Polls for a log line instead of asserting immediately: access lines are
+ * written from `onAfterResponse`, which can land after the client already has
+ * the response (notably on slower CI runners and on error responses). A fixed
+ * delay raced it; polling removes the flake.
+ */
+async function find(
+  msg: string,
+  extra?: (entry: Entry) => boolean,
+  timeoutMs = 2000,
+): Promise<Entry> {
+  const deadline = Date.now() + timeoutMs;
+  let entry = all().find((e) => e.msg === msg && (!extra || extra(e)));
+  while (!entry && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    entry = all().find((e) => e.msg === msg && (!extra || extra(e)));
+  }
   expect(entry).toBeDefined();
   return entry!;
 }
@@ -69,30 +84,30 @@ describe("logger", () => {
     expect(entries[0]!.severity).toBe("WARNING");
   });
 
-  test("child bindings and request context merge into the line", () => {
+  test("child bindings and request context merge into the line", async () => {
     const child = logger.child({ component: "live" });
     logContext.run({ requestId: "req-123" }, () => {
       child.error({ err: new Error("boom") }, "gemini.failed");
     });
 
-    const entry = find("gemini.failed");
+    const entry = await find("gemini.failed");
     expect(entry.component).toBe("live");
     expect(entry.requestId).toBe("req-123");
     expect(entry.err).toMatchObject({ type: "Error", message: "boom" });
     expect(typeof (entry.err as Entry).stack).toBe("string");
   });
 
-  test("serializes an error cause chain", () => {
+  test("serializes an error cause chain", async () => {
     const err = new Error("query failed", { cause: new Error("connection reset") });
     logger.error({ err }, "http.error");
 
-    const entry = find("http.error");
+    const entry = await find("http.error");
     expect((entry.err as { cause?: { message?: string } }).cause?.message).toBe(
       "connection reset",
     );
   });
 
-  test("redacts secret-named fields at any depth", () => {
+  test("redacts secret-named fields at any depth", async () => {
     logger.info(
       {
         password: "hunter2",
@@ -102,21 +117,21 @@ describe("logger", () => {
       "auth.debug",
     );
 
-    const entry = find("auth.debug");
+    const entry = await find("auth.debug");
     expect(entry.password).toBe("[redacted]");
     expect(entry.api_key).toBe("[redacted]");
     expect((entry.nested as Entry).authorization).toBe("[redacted]");
     expect((entry.nested as Entry).keep).toBe("visible");
   });
 
-  test("never throws on unserializable fields", () => {
+  test("never throws on unserializable fields", async () => {
     logger.info({ big: 1n }, "bigint.probe");
 
-    const entry = find("bigint.probe");
+    const entry = await find("bigint.probe");
     expect(entry.msg).toBe("bigint.probe");
   });
 
-  test("includes the deploy marker when GIT_SHA is set", () => {
+  test("includes the deploy marker when GIT_SHA is set", async () => {
     process.env.GIT_SHA = "abc1234";
     try {
       logger.info({}, "server.listening");
@@ -124,7 +139,7 @@ describe("logger", () => {
       delete process.env.GIT_SHA;
     }
 
-    expect(find("server.listening").version).toBe("abc1234");
+    expect((await find("server.listening")).version).toBe("abc1234");
   });
 });
 
@@ -180,10 +195,10 @@ describe("request logging hooks", () => {
       expect(response.headers.get("x-request-id")).toBe("test-request-1");
 
       // The deep service log picked the id up from the request context.
-      const probe = find("probe.log");
+      const probe = await find("probe.log");
       expect(probe.requestId).toBe("test-request-1");
 
-      const access = find("http.request", (e) => e.path === "/probe");
+      const access = await find("http.request", (e) => e.path === "/probe");
       expect(access.requestId).toBe("test-request-1");
       expect(access.method).toBe("GET");
       expect(access.status).toBe(200);
@@ -208,7 +223,7 @@ describe("request logging hooks", () => {
       const response = await fetch(`${baseUrl}/explode`);
       expect(response.status).toBe(500);
 
-      const access = find("http.request", (e) => e.path === "/explode");
+      const access = await find("http.request", (e) => e.path === "/explode");
       expect(access.status).toBe(500);
       expect(access.level).toBe(50);
       expect(access.severity).toBe("ERROR");
@@ -218,6 +233,8 @@ describe("request logging hooks", () => {
   test("skips health checks", async () => {
     await withApp(async (baseUrl) => {
       await fetch(`${baseUrl}/health`);
+      // Absence assertion: give the access logger a beat so a stray line would surface.
+      await new Promise((resolve) => setTimeout(resolve, 75));
       expect(all().some((e) => e.msg === "http.request" && e.path === "/health")).toBe(false);
     });
   });
@@ -227,7 +244,7 @@ describe("request logging hooks", () => {
       const response = await fetch(`${baseUrl}/missing`);
       expect(response.status).toBe(404);
 
-      const access = find("http.request", (e) => e.path === "/missing");
+      const access = await find("http.request", (e) => e.path === "/missing");
       expect(access.level).toBe(20);
       expect(access.severity).toBe("DEBUG");
     });
@@ -237,6 +254,7 @@ describe("request logging hooks", () => {
     await withApp(async (baseUrl) => {
       __setLogLevel("info");
       await fetch(`${baseUrl}/missing`);
+      await new Promise((resolve) => setTimeout(resolve, 75));
       expect(all().some((e) => e.msg === "http.request" && e.path === "/missing")).toBe(false);
     });
   });
