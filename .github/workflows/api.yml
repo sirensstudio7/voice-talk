@@ -1,0 +1,74 @@
+name: API
+
+on:
+  push:
+    paths:
+      - "apps/server/**"
+      - "packages/shared/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/api.yml"
+  pull_request:
+    paths:
+      - "apps/server/**"
+      - "packages/shared/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/api.yml"
+
+concurrency:
+  group: api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, typecheck, tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: voicetalk
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d voicetalk"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/voicetalk
+      REDIS_URL: redis://127.0.0.1:6379
+      SMOKE_TESTS: "1"
+      PLATFORM_ADMIN_EMAIL: superadmin@lorescale.com
+      PLATFORM_ADMIN_PASSWORD: superadmin123
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Lint
+        run: bun run --filter server lint
+      - name: Typecheck
+        run: bun run --filter server typecheck
+      - name: Migrate and seed
+        working-directory: apps/server
+        run: |
+          bun scripts/migrate.ts
+          bun scripts/seed.ts
+      - name: Tests
+        working-directory: apps/server
+        run: bun test
