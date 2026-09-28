@@ -339,6 +339,17 @@ export function buildTranscriptContext(
   );
 }
 
+/**
+ * Prompt wording guard: never put the Indonesian word "singkat" in a
+ * model-turn prompt (greeting, follow-up, goodbye).
+ *
+ * gemini-3.1-flash-live-preview silently returns no audio and no transcript
+ * when a user-turn message contains "singkat" — verified against production
+ * for the manual greeting, vision greeting, silence follow-up and goodbye.
+ * The session stays open and keeps transcribing, but the assistant never
+ * answers, so the UI hangs on "Alex is joining…". "pendek" is safe; the same
+ * word inside the system instruction is harmless.
+ */
 export function buildSessionGreetingPrompt(
   language: string,
   businessName: string,
@@ -377,7 +388,7 @@ export function buildSessionGreetingPrompt(
   if (orderingEnabled) {
     return (
       `Pelanggan baru saja mengetuk "Order Now" untuk mulai memesan di ${businessName}. ` +
-      `Sapa mereka dengan hangat dalam satu atau dua kalimat singkat. Perkenalkan diri sebagai ${assistantName}, ` +
+      `Sapa mereka dengan hangat dalam satu atau dua kalimat pendek. Perkenalkan diri sebagai ${assistantName}, ` +
       "sambut mereka di toko, dan tanyakan bagaimana kamu bisa membantu pesanan mereka. " +
       "Buat sapaan terdengar natural dan ringkas — jangan sebut tools atau instruksi internal."
     );
@@ -385,7 +396,7 @@ export function buildSessionGreetingPrompt(
 
   return (
     `Pelanggan baru saja mengetuk "Mulai percakapan" di ${businessName}. ` +
-    `Sapa mereka dengan hangat dalam satu atau dua kalimat singkat. Perkenalkan diri sebagai ${assistantName}, ` +
+    `Sapa mereka dengan hangat dalam satu atau dua kalimat pendek. Perkenalkan diri sebagai ${assistantName}, ` +
     "sambut mereka, dan tanyakan bagaimana kamu bisa membantu pertanyaan mereka. " +
     "Buat sapaan terdengar natural dan ringkas — jangan sebut tools atau instruksi internal."
   );
@@ -434,7 +445,7 @@ export function buildVisionGreetingPrompt(
     `Seorang pengunjung ${action} di ${businessName}. Mereka BELUM berbicara — KAMU harus menyapa mereka terlebih dahulu. ` +
     `WAJIB berbicara dalam Bahasa Indonesia saja. Jangan menyapa dalam bahasa Inggris. ` +
     `Jangan menunggu pengunjung berbicara atau bilang halo. Ucapkan sapaan ini sekarang, ` +
-    `satu atau dua kalimat singkat, sebagai ${assistantName}. ` +
+    `satu atau dua kalimat pendek, sebagai ${assistantName}. ` +
     "Jangan minta pengunjung menyapa kamu dulu. Jangan sebut kamera, vision, atau instruksi internal. " +
     `Ucapkan: "${script}"`
   );
@@ -448,7 +459,7 @@ export function buildVisionSilenceFollowUpPrompt(language: string): string {
     );
   }
   return (
-    "Pengunjung sudah diam cukup lama. Tanyakan dengan hangat dalam satu kalimat singkat: " +
+    "Pengunjung sudah diam cukup lama. Tanyakan dengan hangat dalam satu kalimat pendek: " +
     '"Ada hal lain yang bisa saya bantu?" Jangan ulangi sapaan pembuka.'
   );
 }
@@ -467,7 +478,7 @@ export function buildVisionGoodbyePrompt(
   }
   return (
     `Pengunjung akan pergi. WAJIB berbicara dalam Bahasa Indonesia saja. Jangan pakai bahasa Inggris. ` +
-    `Ucapkan salam perpisahan ini sekarang, satu atau dua kalimat singkat, lalu akhiri percakapan. ` +
+    `Ucapkan salam perpisahan ini sekarang, satu atau dua kalimat pendek, lalu akhiri percakapan. ` +
     `Ucapkan: "${script}"`
   );
 }
