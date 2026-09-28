@@ -6,6 +6,7 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "typecheck": "tsc --noEmit",
+    "bench:db": "bun scripts/bench-db.ts",
     "seed": "bun scripts/seed.ts",
     "seed:booking": "bun scripts/seed-booking.ts",
     "seed:demo-analytics": "bun scripts/seed-demo-analytics.ts",
