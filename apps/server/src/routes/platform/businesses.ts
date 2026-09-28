@@ -5,8 +5,12 @@ import { requirePermission } from "../../auth/platform-rbac.js";
 import { db } from "../../db/client.js";
 import { aiRules, businessMembers, businesses, products, subscriptions, users, voiceSessions } from "../../db/schema.js";
 import { env } from "../../env.js";
-import type { Elysia } from "elysia";
+import { t, type Elysia } from "elysia";
 import { parsePagination, ensureSubscriptionForBusiness } from "./shared.js";
+
+export const businessStatusBody = t.Object({
+  status: t.Union([t.Literal("active"), t.Literal("disabled")]),
+});
 
 export async function registerPlatformBusinessRoutes(app: Elysia): Promise<void> {
   app.get("/platform/businesses", async (request) => {
@@ -162,11 +166,8 @@ export async function registerPlatformBusinessRoutes(app: Elysia): Promise<void>
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "businesses:write");
       const { id } = request.params as { id: string };
-      const body = request.body as { status?: string };
+      const body = request.body;
       const isActive = body.status === "active";
-      if (body.status !== "active" && body.status !== "disabled") {
-        return request.status(400, { detail: "status must be active or disabled" });
-      }
 
       const business = await db.query.businesses.findFirst({ where: eq(businesses.id, id) });
       if (!business) return request.status(404, { detail: "Business not found" });
@@ -185,6 +186,8 @@ export async function registerPlatformBusinessRoutes(app: Elysia): Promise<void>
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: businessStatusBody,
   });
 
   app.post("/platform/businesses/:id/impersonate", async (request) => {

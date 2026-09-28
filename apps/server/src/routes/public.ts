@@ -1,4 +1,4 @@
-import type { Elysia } from "elysia";
+import { t, type Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import {
   normalizeVoiceGender,
@@ -43,6 +43,66 @@ import {
 } from "../services/photo-moment.js";
 import { MAX_PHOTO_UPLOAD_BYTES } from "../storage/index.js";
 import { readUploadedFile } from "../http/multipart.js";
+import { nonEmptyString, numberLike, optionalString } from "../http/validation.js";
+
+export const kioskUnlockBody = t.Object({
+  business: optionalString,
+  kiosk: optionalString,
+  pin: optionalString,
+});
+
+export const kioskReleaseBody = t.Object({
+  business: optionalString,
+  kiosk: optionalString,
+  token: optionalString,
+});
+
+export const orderConfirmBody = t.Object({
+  items: t.Array(
+    t.Object({
+      product_id: nonEmptyString,
+      quantity: t.Number(),
+    }),
+  ),
+});
+
+export const appointmentCreateBody = t.Object({
+  product_id: optionalString,
+  customer_name: optionalString,
+  customer_phone: optionalString,
+  starts_at: optionalString,
+  staff_id: optionalString,
+});
+
+export const demoRequestBody = t.Object({
+  email: optionalString,
+  phone: optionalString,
+  company_name: optionalString,
+  city: optionalString,
+  country: optionalString,
+  business_industry: optionalString,
+  branch_total: t.Optional(numberLike),
+  preferred_date: optionalString,
+  preferred_time: optionalString,
+});
+
+export const photoSessionStartBody = t.Object({
+  businessId: optionalString,
+  slug: optionalString,
+  orderId: optionalString,
+});
+
+export const photoSessionResponseBody = t.Object({
+  response: optionalString,
+});
+
+export const photoEventBody = t.Object({
+  businessId: optionalString,
+  slug: optionalString,
+  eventName: optionalString,
+  photoSessionId: optionalString,
+  metadata: t.Optional(t.Record(t.String(), t.Unknown())),
+});
 
 function orderToOut(order: {
   id: string;
@@ -85,7 +145,7 @@ export { orderToOut };
 
 export async function registerPublicRoutes(app: Elysia): Promise<void> {
   app.post("/public/kiosks/unlock", async (request) => {
-    const body = (request.body ?? {}) as { business?: string; kiosk?: string; pin?: string };
+    const body = request.body;
     const business = body.business?.trim() ?? "";
     const pin = body.pin ?? "";
     if (!business || !pin) {
@@ -116,10 +176,12 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
         detail: err instanceof Error ? err.message : "Unlock failed.",
       });
     }
+  }, {
+    body: kioskUnlockBody,
   });
 
   app.post("/public/kiosks/release", async (request) => {
-    const body = (request.body ?? {}) as { business?: string; kiosk?: string; token?: string };
+    const body = request.body;
     const business = body.business?.trim() ?? "";
     const authHeader = request.headers.authorization ?? "";
     const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
@@ -144,6 +206,8 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
         detail: err instanceof Error ? err.message : "Release failed.",
       });
     }
+  }, {
+    body: kioskReleaseBody,
   });
 
   app.get("/businesses/:slug", async (request) => {
@@ -162,7 +226,7 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
 
   app.post("/businesses/:slug/orders/confirm", async (request) => {
     const { slug } = request.params as { slug: string };
-    const body = request.body as { items: Array<{ product_id: string; quantity: number }> };
+    const body = request.body;
     const business = await getBusinessBySlug(slug);
     if (!business) return request.status(404, { detail: "Business not found" });
 
@@ -185,6 +249,8 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
       }
       throw exc;
     }
+  }, {
+    body: orderConfirmBody,
   });
 
   app.get("/menu", async (request) => {
@@ -271,13 +337,7 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
 
   app.post("/businesses/:slug/appointments", async (request) => {
     const { slug } = request.params as { slug: string };
-    const body = request.body as {
-      product_id?: string;
-      customer_name?: string;
-      customer_phone?: string;
-      starts_at?: string;
-      staff_id?: string;
-    };
+    const body = request.body;
     const business = await getBusinessBySlug(slug);
     if (!business) return request.status(404, { detail: "Business not found" });
 
@@ -301,20 +361,12 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
         detail: error instanceof Error ? error.message : "Could not create appointment.",
       });
     }
+  }, {
+    body: appointmentCreateBody,
   });
 
   app.post("/public/demo-requests", async (request) => {
-    const body = request.body as {
-      email?: string;
-      phone?: string;
-      company_name?: string;
-      city?: string;
-      country?: string;
-      business_industry?: string;
-      branch_total?: number | string;
-      preferred_date?: string;
-      preferred_time?: string;
-    };
+    const body = request.body;
 
     const email = body.email?.toLowerCase().trim() ?? "";
     const phone = body.phone?.trim() ?? "";
@@ -389,14 +441,12 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
       .returning({ id: demoRequests.id, status: demoRequests.status });
 
     return request.status(201, { id: created!.id, status: created!.status });
+  }, {
+    body: demoRequestBody,
   });
 
   app.post("/public/photo/session/start", async (request) => {
-    const body = request.body as {
-      businessId?: string;
-      slug?: string;
-      orderId?: string;
-    };
+    const body = request.body;
 
     let businessId = body.businessId?.trim() ?? "";
     if (!businessId && body.slug) {
@@ -427,17 +477,21 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
       }
       throw err;
     }
+  }, {
+    body: photoSessionStartBody,
   });
 
   app.post("/public/photo/session/:id/response", async (request) => {
     const { id } = request.params as { id: string };
-    const body = request.body as { response?: string };
+    const body = request.body;
     const response = body.response?.trim().toLowerCase();
     if (response !== "yes" && response !== "no" && response !== "timeout") {
       return request.status(400, { detail: "response must be yes, no, or timeout" });
     }
     await markPhotoOfferResponse(id, response);
     return { ok: true };
+  }, {
+    body: photoSessionResponseBody,
   });
 
   app.post("/public/photo/session/:id/upload", async (request) => {
@@ -503,13 +557,7 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   });
 
   app.post("/public/photo/events", async (request) => {
-    const body = request.body as {
-      businessId?: string;
-      slug?: string;
-      eventName?: string;
-      photoSessionId?: string;
-      metadata?: Record<string, unknown>;
-    };
+    const body = request.body;
 
     let businessId = body.businessId?.trim() ?? "";
     if (!businessId && body.slug) {
@@ -528,5 +576,7 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
       metadata: body.metadata,
     });
     return { ok: true };
+  }, {
+    body: photoEventBody,
   });
 }

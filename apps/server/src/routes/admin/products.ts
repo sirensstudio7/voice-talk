@@ -3,9 +3,36 @@ import { and, eq } from "drizzle-orm";
 import { requireBusinessAccess, sendAuthError } from "../../auth/jwt.js";
 import { db } from "../../db/client.js";
 import { products } from "../../db/schema.js";
+import { nonEmptyString, numberLike, optionalBoolean, optionalNonEmptyString, optionalNumberLike, optionalString } from "../../http/validation.js";
 import { ALLOWED_IMAGE_TYPES, MAX_UPLOAD_BYTES, uploadToStorage } from "../../storage/index.js";
 import { readUploadedFile } from "../../http/multipart.js";
-import type { Elysia } from "elysia";
+import { t, type Elysia } from "elysia";
+
+export const productCreateBody = t.Object({
+  product_id: nonEmptyString,
+  name: nonEmptyString,
+  price: numberLike,
+  discount_percent: optionalNumberLike,
+  category: nonEmptyString,
+  description: optionalString,
+  image_url: optionalString,
+  is_active: optionalBoolean,
+  sort_order: optionalNumberLike,
+  duration_min: optionalNumberLike,
+});
+
+export const productUpdateBody = t.Object({
+  product_id: optionalNonEmptyString,
+  name: optionalNonEmptyString,
+  price: optionalNumberLike,
+  discount_percent: optionalNumberLike,
+  category: optionalNonEmptyString,
+  description: optionalString,
+  image_url: optionalString,
+  is_active: optionalBoolean,
+  sort_order: optionalNumberLike,
+  duration_min: optionalNumberLike,
+});
 
 export function productOut(p: typeof products.$inferSelect) {
   return {
@@ -44,7 +71,7 @@ export async function registerAdminProductRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const body = request.body as Record<string, unknown>;
+      const body = request.body;
       const [product] = await db
         .insert(products)
         .values({
@@ -65,6 +92,8 @@ export async function registerAdminProductRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: productCreateBody,
   });
 
   app.patch("/admin/businesses/:businessId/products/:productRowId", async (request) => {
@@ -78,7 +107,7 @@ export async function registerAdminProductRoutes(app: Elysia): Promise<void> {
       if (!product || product.businessId !== businessId) {
         return request.status(404, { detail: "Product not found" });
       }
-      const body = request.body as Record<string, unknown>;
+      const body = request.body;
       const updates: Partial<typeof products.$inferInsert> = {};
       if (body.product_id !== undefined) updates.productId = String(body.product_id);
       if (body.name !== undefined) updates.name = String(body.name);
@@ -100,6 +129,8 @@ export async function registerAdminProductRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: productUpdateBody,
   });
 
   app.delete("/admin/businesses/:businessId/products/:productRowId", async (request) => {

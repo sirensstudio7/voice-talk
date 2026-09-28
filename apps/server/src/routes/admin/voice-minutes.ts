@@ -2,7 +2,15 @@ import { getCurrentUser, sendAuthError } from "../../auth/jwt.js";
 import { createTopupOrder, getVoiceMinuteWallet, listActiveTopupPackages, listUserTopupOrders, orderOut, packageOut } from "../../services/voice-minutes.js";
 import { ALLOWED_IMAGE_TYPES, MAX_UPLOAD_BYTES, uploadToStorage } from "../../storage/index.js";
 import { readUploadedFile } from "../../http/multipart.js";
-import type { Elysia } from "elysia";
+import { nonEmptyString, optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const voiceMinuteOrderBody = t.Object({
+  package_id: nonEmptyString,
+  payment_method: optionalString,
+  payment_proof_url: optionalString,
+  notes: optionalString,
+});
 
 export async function registerAdminVoiceMinuteRoutes(app: Elysia): Promise<void> {
   app.get("/admin/voice-minutes/wallet", async (request) => {
@@ -64,15 +72,7 @@ export async function registerAdminVoiceMinuteRoutes(app: Elysia): Promise<void>
   app.post("/admin/voice-minutes/orders", async (request) => {
     try {
       const user = await getCurrentUser(request);
-      const body = (request.body ?? {}) as {
-        package_id?: string;
-        payment_method?: string;
-        payment_proof_url?: string;
-        notes?: string;
-      };
-      if (!body.package_id) {
-        return request.status(400, { detail: "package_id is required." });
-      }
+      const body = request.body;
       const order = await createTopupOrder({
         userId: user.id,
         packageId: body.package_id,
@@ -89,5 +89,7 @@ export async function registerAdminVoiceMinuteRoutes(app: Elysia): Promise<void>
       }
       return sendAuthError(request, err);
     }
+  }, {
+    body: voiceMinuteOrderBody,
   });
 }

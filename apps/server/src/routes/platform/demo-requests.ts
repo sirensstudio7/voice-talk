@@ -4,8 +4,14 @@ import { getCurrentPlatformAdmin, writeAuditLog } from "../../auth/platform-auth
 import { requirePermission } from "../../auth/platform-rbac.js";
 import { db } from "../../db/client.js";
 import { demoRequests } from "../../db/schema.js";
-import type { Elysia } from "elysia";
+import { optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
 import { parsePagination } from "./shared.js";
+
+export const demoRequestUpdateBody = t.Object({
+  status: optionalString,
+  notes: optionalString,
+});
 
 export async function registerPlatformDemoRequestRoutes(app: Elysia): Promise<void> {
   app.get("/platform/demo-requests", async (request) => {
@@ -80,7 +86,7 @@ export async function registerPlatformDemoRequestRoutes(app: Elysia): Promise<vo
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "demo_requests:write");
       const { id } = request.params as { id: string };
-      const body = request.body as { status?: string; notes?: string };
+      const body = request.body;
 
       const existing = await db.query.demoRequests.findFirst({
         where: eq(demoRequests.id, id),
@@ -132,5 +138,7 @@ export async function registerPlatformDemoRequestRoutes(app: Elysia): Promise<vo
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: demoRequestUpdateBody,
   });
 }

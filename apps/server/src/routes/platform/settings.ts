@@ -3,8 +3,10 @@ import { getCurrentPlatformAdmin, writeAuditLog } from "../../auth/platform-auth
 import { requirePermission } from "../../auth/platform-rbac.js";
 import { db } from "../../db/client.js";
 import { platformSettings } from "../../db/schema.js";
-import type { Elysia } from "elysia";
+import { t, type Elysia } from "elysia";
 import { type ProviderApiKey, parseProviderApiKeys, withLegacyProviderKeys, redactSettings, getSettingsMap } from "./shared.js";
+
+export const platformSettingsBody = t.Object({}, { additionalProperties: t.Unknown() });
 
 export const SECRET_SETTING_KEYS = new Set([
   "elevenlabs_api_key",
@@ -51,8 +53,8 @@ export async function registerPlatformSettingsRoutes(app: Elysia): Promise<void>
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "settings:write");
-      const body = request.body as Record<string, string>;
-      if (!body || typeof body !== "object") {
+      const body: unknown = request.body;
+      if (typeof body !== "object" || body === null || Array.isArray(body)) {
         return request.status(400, { detail: "Expected settings object" });
       }
 
@@ -108,5 +110,7 @@ export async function registerPlatformSettingsRoutes(app: Elysia): Promise<void>
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: platformSettingsBody,
   });
 }

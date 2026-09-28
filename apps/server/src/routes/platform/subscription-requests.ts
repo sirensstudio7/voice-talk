@@ -5,8 +5,20 @@ import { requirePermission } from "../../auth/platform-rbac.js";
 import { db } from "../../db/client.js";
 import { plans, accountSubscriptions, subscriptionRequests, users } from "../../db/schema.js";
 import { activateSubscriptionRequest, getEntitlementSnapshot, listPaidPlans, rejectSubscriptionRequest } from "../../services/entitlement.js";
-import type { Elysia } from "elysia";
+import { optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
 import { parsePagination } from "./shared.js";
+
+export const subscriptionRequestActivateBody = t.Object({
+  plan_code: optionalString,
+  duration_months: t.Optional(t.Number()),
+  custom_ends_at: optionalString,
+  notes: optionalString,
+});
+
+export const subscriptionRequestRejectBody = t.Object({
+  notes: optionalString,
+});
 
 export async function registerPlatformSubscriptionRequestRoutes(app: Elysia): Promise<void> {
   app.get("/platform/subscription-requests", async (request) => {
@@ -152,12 +164,7 @@ export async function registerPlatformSubscriptionRequestRoutes(app: Elysia): Pr
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
       const { id } = request.params as { id: string };
-      const body = request.body as {
-        plan_code?: string;
-        duration_months?: number;
-        custom_ends_at?: string;
-        notes?: string;
-      };
+      const body = request.body;
 
       let customEndsAt: Date | null = null;
       if (body.custom_ends_at) {
@@ -201,6 +208,8 @@ export async function registerPlatformSubscriptionRequestRoutes(app: Elysia): Pr
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: subscriptionRequestActivateBody,
   });
 
   app.post("/platform/subscription-requests/:id/reject", async (request) => {
@@ -208,7 +217,7 @@ export async function registerPlatformSubscriptionRequestRoutes(app: Elysia): Pr
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
       const { id } = request.params as { id: string };
-      const body = request.body as { notes?: string };
+      const body = request.body;
 
       try {
         await rejectSubscriptionRequest({
@@ -238,5 +247,7 @@ export async function registerPlatformSubscriptionRequestRoutes(app: Elysia): Pr
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: subscriptionRequestRejectBody,
   });
 }

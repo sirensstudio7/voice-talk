@@ -95,3 +95,8 @@ export async function checkRedisHealth(force = false): Promise<RedisHealth> {
   cachedAt = Date.now();
   return cachedHealth;
 }
+
+/** Closes the shared Redis connection during shutdown. */
+export function closeRedis(): void {
+  redis.close();
+}

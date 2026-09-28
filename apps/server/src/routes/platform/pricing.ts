@@ -4,7 +4,30 @@ import { getCurrentPlatformAdmin, writeAuditLog } from "../../auth/platform-auth
 import { requirePermission } from "../../auth/platform-rbac.js";
 import { db, withDbTimeout } from "../../db/client.js";
 import { addons, plans, topupPackages } from "../../db/schema.js";
-import type { Elysia } from "elysia";
+import { optionalNumberLike } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const planPricingBody = t.Object({
+  monthly_price_idr: optionalNumberLike,
+  yearly_price_idr: optionalNumberLike,
+  yearly_discount_percent: optionalNumberLike,
+  monthly_voice_minutes: optionalNumberLike,
+  workspace_limit: optionalNumberLike,
+  kiosk_display_limit: optionalNumberLike,
+});
+
+export const addonPricingBody = t.Object({
+  monthly_price_idr: optionalNumberLike,
+  discount_3m_percent: optionalNumberLike,
+  discount_6m_percent: optionalNumberLike,
+  discount_12m_percent: optionalNumberLike,
+});
+
+export const topupPricingBody = t.Object({
+  price_idr: optionalNumberLike,
+  minutes: optionalNumberLike,
+  discount_percent: optionalNumberLike,
+});
 
 export function formatAddonPriceDisplay(amountIdr: number) {
   return `Rp${amountIdr.toLocaleString("id-ID")}/month`;
@@ -100,14 +123,7 @@ export async function registerPlatformPricingRoutes(app: Elysia): Promise<void> 
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
       const { code } = request.params as { code: string };
-      const body = (request.body ?? {}) as {
-        monthly_price_idr?: number;
-        yearly_price_idr?: number;
-        yearly_discount_percent?: number;
-        monthly_voice_minutes?: number;
-        workspace_limit?: number;
-        kiosk_display_limit?: number;
-      };
+      const body = request.body;
       const plan = await db.query.plans.findFirst({ where: eq(plans.code, code) });
       if (!plan) {
         return request.status(404, { detail: "Plan not found." });
@@ -175,6 +191,8 @@ export async function registerPlatformPricingRoutes(app: Elysia): Promise<void> 
       }
       return sendAuthError(request, err);
     }
+  }, {
+    body: planPricingBody,
   });
 
   app.patch("/platform/pricing/addons/:code", async (request) => {
@@ -182,12 +200,7 @@ export async function registerPlatformPricingRoutes(app: Elysia): Promise<void> 
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
       const { code } = request.params as { code: string };
-      const body = (request.body ?? {}) as {
-        monthly_price_idr?: number;
-        discount_3m_percent?: number;
-        discount_6m_percent?: number;
-        discount_12m_percent?: number;
-      };
+      const body = request.body;
       const addon = await db.query.addons.findFirst({ where: eq(addons.code, code) });
       if (!addon) {
         return request.status(404, { detail: "Add-on not found." });
@@ -238,6 +251,8 @@ export async function registerPlatformPricingRoutes(app: Elysia): Promise<void> 
       }
       return sendAuthError(request, err);
     }
+  }, {
+    body: addonPricingBody,
   });
 
   app.patch("/platform/pricing/topup-packages/:id", async (request) => {
@@ -245,11 +260,7 @@ export async function registerPlatformPricingRoutes(app: Elysia): Promise<void> 
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
       const { id } = request.params as { id: string };
-      const body = (request.body ?? {}) as {
-        price_idr?: number;
-        minutes?: number;
-        discount_percent?: number;
-      };
+      const body = request.body;
       const pkg = await db.query.topupPackages.findFirst({ where: eq(topupPackages.id, id) });
       if (!pkg) {
         return request.status(404, { detail: "Top-up package not found." });
@@ -307,5 +318,7 @@ export async function registerPlatformPricingRoutes(app: Elysia): Promise<void> 
       }
       return sendAuthError(request, err);
     }
+  }, {
+    body: topupPricingBody,
   });
 }

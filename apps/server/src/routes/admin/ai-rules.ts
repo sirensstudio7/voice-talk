@@ -9,8 +9,22 @@ import { getBusinessWithRelations } from "../../services/tenant.js";
 import { ALLOWED_IMAGE_TYPES, deleteFromStorage, MAX_UPLOAD_BYTES, uploadToStorage } from "../../storage/index.js";
 import { assertLanguageAllowed } from "../../services/addon-entitlement.js";
 import { readUploadedFile } from "../../http/multipart.js";
-import type { Elysia } from "elysia";
+import { optionalNumberLike, optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
 import { aiRulesOut } from "./shared.js";
+
+export const aiRulesUpdateBody = t.Object({
+  assistant_name: optionalString,
+  avatar_model_path: optionalString,
+  personality: optionalString,
+  tone: optionalString,
+  language: optionalString,
+  behavioral_rules: optionalString,
+  tool_instructions: optionalString,
+  idle_timeout_seconds: optionalNumberLike,
+  voice_preset: optionalString,
+  voice_gender: optionalString,
+});
 
 export async function registerAdminAiRulesRoutes(app: Elysia): Promise<void> {
   app.get("/admin/businesses/:businessId/ai-rules", async (request) => {
@@ -57,7 +71,7 @@ export async function registerAdminAiRulesRoutes(app: Elysia): Promise<void> {
           )
           .returning();
       }
-      const body = request.body as Record<string, unknown>;
+      const body = request.body;
       const updates: Partial<typeof aiRules.$inferInsert> = {};
       if (body.assistant_name !== undefined) updates.assistantName = String(body.assistant_name);
       if (body.avatar_model_path !== undefined) {
@@ -89,6 +103,8 @@ export async function registerAdminAiRulesRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: aiRulesUpdateBody,
   });
 
   app.post("/admin/businesses/:businessId/ai-rules/avatar", async (request) => {

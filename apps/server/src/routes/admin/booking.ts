@@ -1,7 +1,53 @@
 import { requireBusinessAccess, sendAuthError } from "../../auth/jwt.js";
-import { cancelAppointment, listAppointments, listBusinessHours, saveBusinessHours, type BusinessHourInput } from "../../services/appointments.js";
+import { cancelAppointment, listAppointments, listBusinessHours, saveBusinessHours } from "../../services/appointments.js";
 import { assertBookingAddon, bookingSettingsOut, createService, createStaff, deleteService, deleteStaff, getOrCreateBookingSettings, listServices, listStaff, listStaffHours, saveStaffHours, updateBookingSettings, updateService, updateStaff } from "../../services/booking.js";
-import type { Elysia } from "elysia";
+import { optionalBoolean, optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+const businessHour = t.Object({
+  day_of_week: t.Number({ minimum: 0, maximum: 6 }),
+  open_time: t.String(),
+  close_time: t.String(),
+  is_closed: t.Boolean(),
+});
+
+export const businessHoursBody = t.Object({
+  hours: t.Optional(t.Array(businessHour)),
+});
+
+export const bookingSettingsBody = t.Object({
+  enabled: t.Boolean(),
+});
+
+export const staffCreateBody = t.Object({
+  name: optionalString,
+  specialty: optionalString,
+  photo_url: optionalString,
+  hours: t.Optional(t.Array(businessHour)),
+});
+
+export const staffUpdateBody = t.Object({
+  name: optionalString,
+  specialty: optionalString,
+  photo_url: optionalString,
+  is_active: optionalBoolean,
+  sort_order: t.Optional(t.Number()),
+});
+
+export const serviceCreateBody = t.Object({
+  name: optionalString,
+  duration_min: t.Optional(t.Number()),
+  price: t.Optional(t.Number()),
+  description: optionalString,
+});
+
+export const serviceUpdateBody = t.Object({
+  name: optionalString,
+  duration_min: t.Optional(t.Number()),
+  price: t.Optional(t.Number()),
+  description: optionalString,
+  is_active: optionalBoolean,
+});
 
 export async function registerAdminBookingRoutes(app: Elysia): Promise<void> {
   app.get("/admin/businesses/:businessId/appointments", async (request) => {
@@ -42,11 +88,13 @@ export async function registerAdminBookingRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const body = request.body as { hours: BusinessHourInput[] };
+      const body = request.body;
       return saveBusinessHours(businessId, body.hours ?? []);
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: businessHoursBody,
   });
 
   app.get("/admin/businesses/:businessId/booking/settings", async (request) => {
@@ -66,15 +114,14 @@ export async function registerAdminBookingRoutes(app: Elysia): Promise<void> {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
       await assertBookingAddon(businessId);
-      const body = request.body as { enabled?: boolean };
-      if (typeof body.enabled !== "boolean") {
-        return request.status(400, { detail: "enabled boolean is required" });
-      }
+      const body = request.body;
       const settings = await updateBookingSettings(businessId, { enabled: body.enabled }, business.slug);
       return bookingSettingsOut(settings);
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: bookingSettingsBody,
   });
 
   app.get("/admin/businesses/:businessId/booking/staff", async (request) => {
@@ -93,12 +140,7 @@ export async function registerAdminBookingRoutes(app: Elysia): Promise<void> {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       await assertBookingAddon(businessId);
-      const body = request.body as {
-        name?: string;
-        specialty?: string;
-        photo_url?: string;
-        hours?: BusinessHourInput[];
-      };
+      const body = request.body;
       const staff = await createStaff(businessId, {
         name: String(body.name ?? ""),
         specialty: body.specialty,
@@ -109,6 +151,8 @@ export async function registerAdminBookingRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: staffCreateBody,
   });
 
   app.patch("/admin/businesses/:businessId/booking/staff/:staffId", async (request) => {
@@ -116,17 +160,13 @@ export async function registerAdminBookingRoutes(app: Elysia): Promise<void> {
       const { businessId, staffId } = request.params as { businessId: string; staffId: string };
       await requireBusinessAccess(request, businessId);
       await assertBookingAddon(businessId);
-      const body = request.body as {
-        name?: string;
-        specialty?: string;
-        photo_url?: string;
-        is_active?: boolean;
-        sort_order?: number;
-      };
+      const body = request.body;
       return updateStaff(businessId, staffId, body);
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: staffUpdateBody,
   });
 
   app.delete("/admin/businesses/:businessId/booking/staff/:staffId", async (request) => {
@@ -156,11 +196,13 @@ export async function registerAdminBookingRoutes(app: Elysia): Promise<void> {
       const { businessId, staffId } = request.params as { businessId: string; staffId: string };
       await requireBusinessAccess(request, businessId);
       await assertBookingAddon(businessId);
-      const body = request.body as { hours: BusinessHourInput[] };
+      const body = request.body;
       return saveStaffHours(businessId, staffId, body.hours ?? []);
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: businessHoursBody,
   });
 
   app.get("/admin/businesses/:businessId/booking/services", async (request) => {
@@ -179,12 +221,7 @@ export async function registerAdminBookingRoutes(app: Elysia): Promise<void> {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       await assertBookingAddon(businessId);
-      const body = request.body as {
-        name?: string;
-        duration_min?: number;
-        price?: number;
-        description?: string;
-      };
+      const body = request.body;
       const service = await createService(businessId, {
         name: String(body.name ?? ""),
         duration_min: body.duration_min,
@@ -195,6 +232,8 @@ export async function registerAdminBookingRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: serviceCreateBody,
   });
 
   app.patch("/admin/businesses/:businessId/booking/services/:serviceId", async (request) => {
@@ -205,17 +244,13 @@ export async function registerAdminBookingRoutes(app: Elysia): Promise<void> {
       };
       await requireBusinessAccess(request, businessId);
       await assertBookingAddon(businessId);
-      const body = request.body as {
-        name?: string;
-        duration_min?: number;
-        price?: number;
-        description?: string;
-        is_active?: boolean;
-      };
+      const body = request.body;
       return updateService(businessId, serviceId, body);
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: serviceUpdateBody,
   });
 
   app.delete("/admin/businesses/:businessId/booking/services/:serviceId", async (request) => {

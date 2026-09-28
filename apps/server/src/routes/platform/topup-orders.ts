@@ -2,7 +2,12 @@ import { sendAuthError } from "../../auth/jwt.js";
 import { getCurrentPlatformAdmin, writeAuditLog } from "../../auth/platform-auth.js";
 import { requirePermission } from "../../auth/platform-rbac.js";
 import { approveTopupOrder, listPlatformTopupOrders, orderOut, rejectTopupOrder } from "../../services/voice-minutes.js";
-import type { Elysia } from "elysia";
+import { optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const topupOrderRejectBody = t.Object({
+  notes: optionalString,
+});
 
 export async function registerPlatformTopupOrderRoutes(app: Elysia): Promise<void> {
   app.get("/platform/topup-orders", async (request) => {
@@ -56,7 +61,7 @@ export async function registerPlatformTopupOrderRoutes(app: Elysia): Promise<voi
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
       const { id } = request.params as { id: string };
-      const body = request.body as { notes?: string };
+      const body = request.body;
       await rejectTopupOrder(id, admin.id, body.notes);
       await writeAuditLog({
         adminId: admin.id,
@@ -75,5 +80,7 @@ export async function registerPlatformTopupOrderRoutes(app: Elysia): Promise<voi
       }
       return sendAuthError(request, err);
     }
+  }, {
+    body: topupOrderRejectBody,
   });
 }

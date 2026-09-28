@@ -1,5 +1,17 @@
 import { requireBusinessAccess, sendAuthError } from "../../auth/jwt.js";
-import type { Elysia } from "elysia";
+import { nonEmptyString, optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const kioskCreateBody = t.Object({
+  name: optionalString,
+  slug: optionalString,
+  pin: nonEmptyString,
+});
+
+export const kioskUpdateBody = t.Object({
+  name: optionalString,
+  pin: optionalString,
+});
 
 export async function registerAdminKioskRoutes(app: Elysia): Promise<void> {
   app.get("/admin/businesses/:businessId/kiosks", async (request) => {
@@ -17,10 +29,7 @@ export async function registerAdminKioskRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const body = (request.body ?? {}) as { name?: string; slug?: string; pin?: string };
-      if (!body.pin) {
-        return request.status(400, { detail: "PIN is required." });
-      }
+      const body = request.body;
       const { createKioskDisplay } = await import("../../services/kiosk-displays.js");
       const created = await createKioskDisplay(businessId, {
         name: body.name,
@@ -36,13 +45,15 @@ export async function registerAdminKioskRoutes(app: Elysia): Promise<void> {
       }
       return sendAuthError(request, err);
     }
+  }, {
+    body: kioskCreateBody,
   });
 
   app.patch("/admin/businesses/:businessId/kiosks/:displayId", async (request) => {
     try {
       const { businessId, displayId } = request.params as { businessId: string; displayId: string };
       await requireBusinessAccess(request, businessId);
-      const body = (request.body ?? {}) as { name?: string; pin?: string };
+      const body = request.body;
       const { updateKioskDisplay } = await import("../../services/kiosk-displays.js");
       return updateKioskDisplay(businessId, displayId, body);
     } catch (err) {
@@ -53,6 +64,8 @@ export async function registerAdminKioskRoutes(app: Elysia): Promise<void> {
       }
       return sendAuthError(request, err);
     }
+  }, {
+    body: kioskUpdateBody,
   });
 
   app.delete("/admin/businesses/:businessId/kiosks/:displayId", async (request) => {

@@ -2,7 +2,13 @@ import { sendAuthError } from "../../auth/jwt.js";
 import { getCurrentPlatformAdmin, writeAuditLog } from "../../auth/platform-auth.js";
 import { requirePermission } from "../../auth/platform-rbac.js";
 import { applyAdminAdjustment, getVoiceMinuteWallet, listMinuteLedger } from "../../services/voice-minutes.js";
-import type { Elysia } from "elysia";
+import { numberLike, optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const voiceMinutesAdjustBody = t.Object({
+  seconds: numberLike,
+  note: optionalString,
+});
 
 export async function registerPlatformVoiceMinuteRoutes(app: Elysia): Promise<void> {
   app.get("/platform/users/:id/voice-minutes", async (request) => {
@@ -25,7 +31,7 @@ export async function registerPlatformVoiceMinuteRoutes(app: Elysia): Promise<vo
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
       const { id } = request.params as { id: string };
-      const body = request.body as { seconds?: number; note?: string };
+      const body = request.body;
       const wallet = await applyAdminAdjustment({
         userId: id,
         seconds: Number(body.seconds),
@@ -49,5 +55,7 @@ export async function registerPlatformVoiceMinuteRoutes(app: Elysia): Promise<vo
       }
       return sendAuthError(request, err);
     }
+  }, {
+    body: voiceMinutesAdjustBody,
   });
 }

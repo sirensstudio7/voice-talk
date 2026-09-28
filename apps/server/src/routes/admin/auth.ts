@@ -5,7 +5,23 @@ import { withLoginDb } from "../../db/login-db.js";
 import { platformSettings, users } from "../../db/schema.js";
 import { ensureTrialEntitlement } from "../../services/entitlement.js";
 import { listBusinessesForUser } from "../../services/user-businesses.js";
-import type { Elysia } from "elysia";
+import { t, type Elysia } from "elysia";
+
+export const adminLoginBody = t.Object({
+  email: t.String({ minLength: 1 }),
+  password: t.String({ minLength: 1 }),
+});
+
+export const adminSignupBody = t.Object({
+  email: t.Optional(t.String()),
+  password: t.Optional(t.String()),
+  name: t.Optional(t.String()),
+  country: t.Optional(t.String()),
+});
+
+export const adminProfileBody = t.Object({
+  country: t.Optional(t.String()),
+});
 
 export async function isRegistrationApprovalRequired(): Promise<boolean> {
   const row = await db.query.platformSettings.findFirst({
@@ -16,7 +32,7 @@ export async function isRegistrationApprovalRequired(): Promise<boolean> {
 
 export async function registerAdminAuthRoutes(app: Elysia): Promise<void> {
   app.post("/admin/auth/login", async (request) => {
-    const body = request.body as { email: string; password: string };
+    const body = request.body;
     try {
       const normalizedEmail = body.email.toLowerCase().trim();
       const user = await withLoginDb((loginDb) =>
@@ -50,15 +66,12 @@ export async function registerAdminAuthRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: adminLoginBody,
   });
 
   app.post("/admin/auth/signup", async (request) => {
-    const body = request.body as {
-      email?: string;
-      password?: string;
-      name?: string;
-      country?: string;
-    };
+    const body = request.body;
     const email = body.email?.toLowerCase().trim() ?? "";
     const password = body.password ?? "";
     const country = (body.country ?? "").trim().toUpperCase().slice(0, 2);
@@ -108,12 +121,14 @@ export async function registerAdminAuthRoutes(app: Elysia): Promise<void> {
       token_type: "bearer",
       user: userOut(user!),
     });
+  }, {
+    body: adminSignupBody,
   });
 
   app.patch("/admin/auth/me", async (request) => {
     try {
       const user = await getCurrentUser(request);
-      const body = request.body as { country?: string };
+      const body = request.body;
       const country = (body.country ?? "").trim().toUpperCase().slice(0, 2);
       if (country && !/^[A-Z]{2}$/.test(country)) {
         return request.status(400, { detail: "country must be a 2-letter ISO code." });
@@ -131,6 +146,8 @@ export async function registerAdminAuthRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: adminProfileBody,
   });
 
   app.get("/admin/auth/me", async (request) => {

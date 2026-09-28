@@ -4,7 +4,17 @@ import { ALLOWED_IMAGE_TYPES, MAX_UPLOAD_BYTES, PHOTO_BRANDING_BUCKET, uploadToS
 import { getAddonStatusForBusiness, getOrCreatePhotoSettings, photoSettingsOut, SMART_PHOTO_MOMENT_CODE } from "../../services/addon-entitlement.js";
 import { deletePhotoSession, getPhotoAnalytics, listPhotoGallery, updatePhotoSettings } from "../../services/photo-moment.js";
 import { readUploadedFile } from "../../http/multipart.js";
-import type { Elysia } from "elysia";
+import { optionalBoolean, optionalNullableString, optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const photoSettingsUpdateBody = t.Object({
+  enabled: optionalBoolean,
+  voice_prompt: optionalString,
+  countdown_seconds: t.Optional(t.Number()),
+  qr_expiry_hours: t.Optional(t.Number()),
+  campaign_text: optionalNullableString,
+  auto_delete_days: t.Optional(t.Number()),
+});
 
 export async function registerAdminPhotoRoutes(app: Elysia): Promise<void> {
   app.get("/admin/businesses/:businessId/photo/settings", async (request) => {
@@ -23,14 +33,7 @@ export async function registerAdminPhotoRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const body = request.body as {
-        enabled?: boolean;
-        voice_prompt?: string;
-        countdown_seconds?: number;
-        qr_expiry_hours?: number;
-        campaign_text?: string | null;
-        auto_delete_days?: number;
-      };
+      const body = request.body;
       const updated = await updatePhotoSettings(businessId, {
         enabled: body.enabled,
         voicePrompt: body.voice_prompt,
@@ -48,6 +51,8 @@ export async function registerAdminPhotoRoutes(app: Elysia): Promise<void> {
       }
       return sendAuthError(request, err);
     }
+  }, {
+    body: photoSettingsUpdateBody,
   });
 
   app.post("/admin/businesses/:businessId/photo/branding/:kind", async (request) => {

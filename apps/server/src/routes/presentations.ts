@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Elysia } from "elysia";
+import { t, type Elysia } from "elysia";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import {
@@ -57,6 +57,64 @@ import {
   uploadToStorage,
 } from "../storage/index.js";
 import { readUploadedFile } from "../http/multipart.js";
+import { nonEmptyString, optionalBoolean, optionalNonEmptyString, optionalNumberLike, optionalString } from "../http/validation.js";
+
+export const presentationCreateBody = t.Object({
+  title: nonEmptyString,
+  description: optionalString,
+  language: optionalString,
+  category: optionalString,
+});
+
+export const presentationUpdateBody = t.Object({
+  title: optionalString,
+  description: optionalString,
+  language: optionalString,
+  category: optionalString,
+});
+
+export const presentationSessionBody = t.Object({
+  name: optionalString,
+  enable_qna: optionalBoolean,
+  auto_start: optionalBoolean,
+});
+
+export const presentationKnowledgeCreateBody = t.Object({
+  title: optionalString,
+  content: nonEmptyString,
+  sort_order: optionalNumberLike,
+});
+
+export const presentationKnowledgeUpdateBody = t.Object({
+  title: optionalString,
+  content: optionalNonEmptyString,
+  sort_order: optionalNumberLike,
+});
+
+export const sessionControlBody = t.Object({
+  action: t.Union([
+    t.Literal("start"),
+    t.Literal("pause"),
+    t.Literal("resume"),
+    t.Literal("next"),
+    t.Literal("previous"),
+    t.Literal("end"),
+    t.Literal("finish_stage"),
+  ]),
+});
+
+export const sessionQuestionBody = t.Object({
+  question: nonEmptyString,
+});
+
+export const sessionTranscribeBody = t.Object({
+  audio_base64: nonEmptyString,
+  mime_type: optionalString,
+});
+
+export const sessionAudienceCountBody = t.Object({
+  audience_count: t.Optional(t.Number()),
+});
 
 async function requirePresenterAccess(
   request: Parameters<typeof requireBusinessAccess>[0],
@@ -244,9 +302,8 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
       const { businessId } = request.params as { businessId: string };
       await requirePresenterAccess(request, businessId);
       const userId = getAuthUserId(request);
-      const body = request.body as Record<string, unknown>;
-      const title = String(body.title ?? "").trim();
-      if (!title) return request.status(400, { detail: "Title is required" });
+      const body = request.body;
+      const title = body.title.trim();
 
       const [row] = await db
         .insert(presentations)
@@ -264,6 +321,8 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: presentationCreateBody,
   });
 
   app.get("/admin/businesses/:businessId/presentations/:presentationId", async (request) => {
@@ -348,9 +407,8 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
         const row = await loadPresentationForBusiness(businessId, presentationId);
         if (!row) return request.status(404, { detail: "Presentation not found" });
 
-        const body = request.body as Record<string, unknown>;
-        const content = String(body.content ?? "").trim();
-        if (!content) return request.status(400, { detail: "Content is required" });
+        const body = request.body;
+        const content = body.content.trim();
 
         const [entry] = await db
           .insert(presentationKnowledgeEntries)
@@ -367,6 +425,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
       } catch (err) {
         return sendAuthError(request, err);
       }
+    },
+    {
+      body: presentationKnowledgeCreateBody,
     },
   );
 
@@ -391,7 +452,7 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
         });
         if (!existing) return request.status(404, { detail: "Knowledge entry not found" });
 
-        const body = request.body as Record<string, unknown>;
+        const body = request.body;
         const updates: Partial<typeof presentationKnowledgeEntries.$inferInsert> = {
           updatedAt: new Date(),
         };
@@ -410,6 +471,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
       } catch (err) {
         return sendAuthError(request, err);
       }
+    },
+    {
+      body: presentationKnowledgeUpdateBody,
     },
   );
 
@@ -454,7 +518,7 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
       await requirePresenterAccess(request, businessId);
       const row = await loadPresentationForBusiness(businessId, presentationId);
       if (!row) return request.status(404, { detail: "Presentation not found" });
-      const body = request.body as Record<string, unknown>;
+      const body = request.body;
       const updates: Partial<typeof presentations.$inferInsert> = { updatedAt: new Date() };
       if (body.title !== undefined) updates.title = String(body.title);
       if (body.description !== undefined) updates.description = String(body.description);
@@ -471,6 +535,8 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: presentationUpdateBody,
   });
 
   app.delete("/admin/businesses/:businessId/presentations/:presentationId", async (request) => {
@@ -743,7 +809,7 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
           return request.status(400, { detail: "Presentation must be ready before launching a session" });
         }
 
-        const body = (request.body ?? {}) as Record<string, unknown>;
+        const body = request.body;
         const [session] = await db
           .insert(presentationSessions)
           .values({
@@ -764,6 +830,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
       } catch (err) {
         return sendAuthError(request, err);
       }
+    },
+    {
+      body: presentationSessionBody,
     },
   );
 
@@ -843,17 +912,15 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
         if (!session || session.businessId !== businessId) {
           return request.status(404, { detail: "Session not found" });
         }
-        const body = request.body as { action?: string };
-        const action = String(body.action ?? "");
-        const allowed = ["start", "pause", "resume", "next", "previous", "end", "finish_stage"] as const;
-        if (!allowed.includes(action as (typeof allowed)[number])) {
-          return request.status(400, { detail: "Invalid action" });
-        }
-        const updated = await advanceSession(sessionId, action as (typeof allowed)[number]);
+        const body = request.body;
+        const updated = await advanceSession(sessionId, body.action);
         return sessionOut(updated!);
       } catch (err) {
         return sendAuthError(request, err);
       }
+    },
+    {
+      body: sessionControlBody,
     },
   );
 
@@ -872,14 +939,17 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
         if (!session || session.businessId !== businessId) {
           return request.status(404, { detail: "Session not found" });
         }
-        const body = request.body as { question?: string };
-        const question = String(body.question ?? "").trim();
+        const body = request.body;
+        const question = body.question.trim();
         if (!question) return request.status(400, { detail: "Question is required" });
         const row = await submitSessionQuestion(sessionId, question);
         return request.status(201, questionOut(row!));
       } catch (err) {
         return sendAuthError(request, err);
       }
+    },
+    {
+      body: sessionQuestionBody,
     },
   );
 
@@ -904,12 +974,15 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
         const text = await transcribeQuestionAudio(
           businessId,
           presentation?.language,
-          request.body as { audio_base64?: string; mime_type?: string },
+          request.body,
         );
         return { text };
       } catch (err) {
         return sendAuthError(request, err);
       }
+    },
+    {
+      body: sessionTranscribeBody,
     },
   );
 
@@ -966,7 +1039,7 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
           sessionId: string;
         };
         await requirePresenterAccess(request, businessId);
-        const body = request.body as { audience_count?: number };
+        const body = request.body;
         const [updated] = await db
           .update(presentationSessions)
           .set({
@@ -985,6 +1058,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
       } catch (err) {
         return sendAuthError(request, err);
       }
+    },
+    {
+      body: sessionAudienceCountBody,
     },
   );
 
@@ -1141,14 +1217,12 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
       if (!session || session.presentationId !== row.id) {
         return request.status(404, { detail: "Session not found" });
       }
-      const body = request.body as { action?: string };
-      const action = String(body.action ?? "");
-      const allowed = ["start", "pause", "resume", "next", "previous", "end", "finish_stage"] as const;
-      if (!allowed.includes(action as (typeof allowed)[number])) {
-        return request.status(400, { detail: "Invalid action" });
-      }
-      const updated = await advanceSession(sessionId, action as (typeof allowed)[number]);
+      const body = request.body;
+      const updated = await advanceSession(sessionId, body.action);
       return sessionOut(updated!);
+    },
+    {
+      body: sessionControlBody,
     },
   );
 
@@ -1164,11 +1238,14 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
       if (!session || session.presentationId !== row.id) {
         return request.status(404, { detail: "Session not found" });
       }
-      const body = request.body as { question?: string };
-      const question = String(body.question ?? "").trim();
+      const body = request.body;
+      const question = body.question.trim();
       if (!question) return request.status(400, { detail: "Question is required" });
       const created = await submitSessionQuestion(sessionId, question);
       return request.status(201, questionOut(created!));
+    },
+    {
+      body: sessionQuestionBody,
     },
   );
 
@@ -1188,7 +1265,7 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
         const text = await transcribeQuestionAudio(
           row.businessId,
           row.language,
-          request.body as { audio_base64?: string; mime_type?: string },
+          request.body,
         );
         return { text };
       } catch (err) {
@@ -1197,6 +1274,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
           detail: err instanceof Error ? err.message : "Transcription failed",
         });
       }
+    },
+    {
+      body: sessionTranscribeBody,
     },
   );
 

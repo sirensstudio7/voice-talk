@@ -1,5 +1,4 @@
 import { extname } from "node:path";
-import type { Elysia } from "elysia";
 import sharp from "sharp";
 
 import { getAuthUserId, requireBusinessAccess, sendAuthError } from "../auth/jwt.js";
@@ -23,6 +22,36 @@ import {
 import { getBusinessBySlug } from "../services/tenant.js";
 import { ALLOWED_IMAGE_TYPES, uploadToStorage } from "../storage/index.js";
 import { readUploadedFile } from "../http/multipart.js";
+import { optionalBoolean, optionalNullableString, optionalString } from "../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const campaignBannerSettingsBody = t.Object({
+  enabled: optionalBoolean,
+  layout: optionalString,
+});
+
+export const bannerReorderBody = t.Object({
+  ordered_ids: t.Array(t.String()),
+});
+
+export const bannerBody = t.Object({
+  title: optionalString,
+  target_url: optionalString,
+  qr_url: optionalString,
+  duration_sec: t.Optional(t.Number()),
+  display_order: t.Optional(t.Number()),
+  is_active: optionalBoolean,
+  start_at: optionalNullableString,
+  end_at: optionalNullableString,
+});
+
+export const campaignBannerEventBody = t.Object({
+  businessId: optionalString,
+  slug: optionalString,
+  bannerId: optionalString,
+  eventName: optionalString,
+  metadata: t.Optional(t.Record(t.String(), t.Unknown())),
+});
 
 function statusFromError(err: unknown): number {
   if (err && typeof err === "object" && "statusCode" in err) {
@@ -78,7 +107,7 @@ export async function registerCampaignBannerRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      const body = request.body as { enabled?: boolean; layout?: string };
+      const body = request.body;
       if (typeof body.enabled !== "boolean" && body.layout === undefined) {
         return request.status(400, { detail: "enabled or layout is required" });
       }
@@ -98,6 +127,8 @@ export async function registerCampaignBannerRoutes(app: Elysia): Promise<void> {
         detail: err instanceof Error ? err.message : "Failed to update settings",
       });
     }
+  }, {
+    body: campaignBannerSettingsBody,
   });
 
   app.get("/admin/businesses/:businessId/campaign-banner/banners", async (request) => {
@@ -116,7 +147,7 @@ export async function registerCampaignBannerRoutes(app: Elysia): Promise<void> {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
       const userId = getAuthUserId(request);
-      const body = request.body as Record<string, unknown>;
+      const body = request.body;
       const created = await createBanner(businessId, body, userId);
       return request.status(201, bannerOut(created));
     } catch (err) {
@@ -126,6 +157,8 @@ export async function registerCampaignBannerRoutes(app: Elysia): Promise<void> {
         detail: err instanceof Error ? err.message : "Failed to create banner",
       });
     }
+  }, {
+    body: bannerBody,
   });
 
   app.patch(
@@ -137,7 +170,7 @@ export async function registerCampaignBannerRoutes(app: Elysia): Promise<void> {
           bannerId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const body = request.body as Record<string, unknown>;
+        const body = request.body;
         const updated = await updateBanner(businessId, bannerId, body);
         return bannerOut(updated);
       } catch (err) {
@@ -147,6 +180,9 @@ export async function registerCampaignBannerRoutes(app: Elysia): Promise<void> {
           detail: err instanceof Error ? err.message : "Failed to update banner",
         });
       }
+    },
+    {
+      body: bannerBody,
     },
   );
 
@@ -177,10 +213,7 @@ export async function registerCampaignBannerRoutes(app: Elysia): Promise<void> {
       try {
         const { businessId } = request.params as { businessId: string };
         await requireBusinessAccess(request, businessId);
-        const body = request.body as { ordered_ids?: string[] };
-        if (!Array.isArray(body.ordered_ids)) {
-          return request.status(400, { detail: "ordered_ids array is required" });
-        }
+        const body = request.body;
         const rows = await reorderBanners(businessId, body.ordered_ids.map(String));
         return { items: rows.map(bannerOut) };
       } catch (err) {
@@ -190,6 +223,9 @@ export async function registerCampaignBannerRoutes(app: Elysia): Promise<void> {
           detail: err instanceof Error ? err.message : "Failed to reorder banners",
         });
       }
+    },
+    {
+      body: bannerReorderBody,
     },
   );
 
@@ -253,13 +289,7 @@ export async function registerCampaignBannerRoutes(app: Elysia): Promise<void> {
 
   app.post("/public/campaign-banner/events", async (request) => {
     try {
-      const body = request.body as {
-        businessId?: string;
-        slug?: string;
-        bannerId?: string;
-        eventName?: string;
-        metadata?: Record<string, unknown>;
-      };
+      const body = request.body;
 
       let businessId = body.businessId?.trim() ?? "";
       if (!businessId && body.slug) {
@@ -292,5 +322,7 @@ export async function registerCampaignBannerRoutes(app: Elysia): Promise<void> {
         detail: err instanceof Error ? err.message : "Failed to track event",
       });
     }
+  }, {
+    body: campaignBannerEventBody,
   });
 }

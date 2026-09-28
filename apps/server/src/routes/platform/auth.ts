@@ -5,7 +5,17 @@ import { authenticatePlatformPassword, checkLoginRateLimit, createPlatformAccess
 import { db } from "../../db/client.js";
 import { withLoginDb } from "../../db/login-db.js";
 import { platformAdmins } from "../../db/schema.js";
-import type { Elysia } from "elysia";
+import { optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const platformLoginBody = t.Object({
+  email: optionalString,
+  password: optionalString,
+});
+
+export const platformVerify2faBody = t.Object({
+  code: optionalString,
+});
 
 export function clientKey(request: AuthContext): string {
   return (
@@ -22,7 +32,7 @@ export async function registerPlatformAuthRoutes(app: Elysia): Promise<void> {
       return request.status(429, { detail: "Too many login attempts. Try again later." });
     }
 
-    const body = request.body as { email?: string; password?: string };
+    const body = request.body;
     try {
       const admin = await authenticatePlatformPassword(body.email ?? "", body.password ?? "");
       const now = new Date();
@@ -50,6 +60,8 @@ export async function registerPlatformAuthRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: platformLoginBody,
   });
 
   app.post("/platform/auth/setup-2fa", async (request) => {
@@ -70,7 +82,7 @@ export async function registerPlatformAuthRoutes(app: Elysia): Promise<void> {
   });
 
   app.post("/platform/auth/verify-2fa", async (request) => {
-    const body = request.body as { code?: string };
+    const body = request.body;
     const code = body.code?.trim() ?? "";
     try {
       const admin = await getPlatformAdminFromPending(request);
@@ -109,6 +121,8 @@ export async function registerPlatformAuthRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: platformVerify2faBody,
   });
 
   app.post("/platform/auth/logout", async (request) => {

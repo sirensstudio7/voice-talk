@@ -7,8 +7,16 @@ import { db } from "../../db/client.js";
 import { auditLogs, businessMembers, businesses, subscriptions, users } from "../../db/schema.js";
 import { ensureTrialEntitlement } from "../../services/entitlement.js";
 import { listPlatformProviderKeys, listUserApiKeys, publicPlatformProviderKeys, setUserAssignedProviderKey, userAssignment } from "../../services/user-api-keys.js";
-import type { Elysia } from "elysia";
+import { t, type Elysia } from "elysia";
 import { parsePagination, enrichUsers, safeJson } from "./shared.js";
+
+export const userStatusBody = t.Object({
+  status: t.Union([t.Literal("active"), t.Literal("suspended")]),
+});
+
+export const userApiKeysBody = t.Object({
+  source_id: t.Optional(t.Union([t.String(), t.Null()])),
+});
 
 export async function registerPlatformUserRoutes(app: Elysia): Promise<void> {
   app.get("/platform/users", async (request) => {
@@ -150,7 +158,7 @@ export async function registerPlatformUserRoutes(app: Elysia): Promise<void> {
       const user = await db.query.users.findFirst({ where: eq(users.id, id) });
       if (!user) return request.status(404, { detail: "User not found" });
 
-      const body = (request.body ?? {}) as { source_id?: string | null };
+      const body = request.body;
       const sourceId =
         typeof body.source_id === "string" ? body.source_id.trim() || null : body.source_id === null ? null : undefined;
       if (sourceId === undefined) {
@@ -177,6 +185,8 @@ export async function registerPlatformUserRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: userApiKeysBody,
   });
 
   app.patch("/platform/users/:id/status", async (request) => {
@@ -184,11 +194,8 @@ export async function registerPlatformUserRoutes(app: Elysia): Promise<void> {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "users:write");
       const { id } = request.params as { id: string };
-      const body = request.body as { status?: string };
-      const status = body.status?.trim();
-      if (status !== "active" && status !== "suspended") {
-        return request.status(400, { detail: "status must be active or suspended" });
-      }
+      const body = request.body;
+      const status = body.status;
 
       const user = await db.query.users.findFirst({ where: eq(users.id, id) });
       if (!user) return request.status(404, { detail: "User not found" });
@@ -222,6 +229,8 @@ export async function registerPlatformUserRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: userStatusBody,
   });
 
   app.post("/platform/users/:id/reset-password", async (request) => {

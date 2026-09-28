@@ -2,7 +2,22 @@ import { eq } from "drizzle-orm";
 import { requireBusinessAccess, sendAuthError } from "../../auth/jwt.js";
 import { db } from "../../db/client.js";
 import { knowledgeEntries } from "../../db/schema.js";
-import type { Elysia } from "elysia";
+import { nonEmptyString, optionalNonEmptyString, optionalNumberLike, optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const knowledgeCreateBody = t.Object({
+  category: optionalString,
+  title: optionalString,
+  content: nonEmptyString,
+  sort_order: optionalNumberLike,
+});
+
+export const knowledgeUpdateBody = t.Object({
+  category: optionalString,
+  title: optionalString,
+  content: optionalNonEmptyString,
+  sort_order: optionalNumberLike,
+});
 
 export function knowledgeOut(e: typeof knowledgeEntries.$inferSelect) {
   return {
@@ -34,7 +49,7 @@ export async function registerAdminKnowledgeRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const body = request.body as Record<string, unknown>;
+      const body = request.body;
       const [entry] = await db
         .insert(knowledgeEntries)
         .values({
@@ -49,6 +64,8 @@ export async function registerAdminKnowledgeRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: knowledgeCreateBody,
   });
 
   app.patch("/admin/businesses/:businessId/knowledge/:entryId", async (request) => {
@@ -61,7 +78,7 @@ export async function registerAdminKnowledgeRoutes(app: Elysia): Promise<void> {
       if (!entry || entry.businessId !== businessId) {
         return request.status(404, { detail: "Knowledge entry not found" });
       }
-      const body = request.body as Record<string, unknown>;
+      const body = request.body;
       const updates: Partial<typeof knowledgeEntries.$inferInsert> = {};
       if (body.category !== undefined) updates.category = String(body.category);
       if (body.title !== undefined) updates.title = String(body.title).trim() || null;
@@ -77,6 +94,8 @@ export async function registerAdminKnowledgeRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: knowledgeUpdateBody,
   });
 
   app.delete("/admin/businesses/:businessId/knowledge/:entryId", async (request) => {

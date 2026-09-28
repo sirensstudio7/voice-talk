@@ -4,7 +4,23 @@ import { db } from "../../db/client.js";
 import { visionSettings } from "../../db/schema.js";
 import { DEFAULT_VISION_SETTINGS, normalizeAutoGoodbyeTimeoutSeconds, normalizeCooldownSeconds, normalizeDetectionDistanceM, normalizeGreetingDelaySeconds, normalizeGreetingTriggerMode, normalizeStartHotkey, normalizeVisionSource, normalizeLostTimeoutSeconds, normalizeSilenceTimeoutSeconds, normalizeVisionScript, visionSettingsOut } from "../../services/vision-settings.js";
 import { broadcastVisionConfig, getOrCreateVisionSettings, getVisionHub, getVisionMetrics, refreshHubSettings } from "../../services/vision-orchestrator.js";
-import type { Elysia } from "elysia";
+import { optionalBoolean, optionalNumberLike, optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const visionSettingsUpdateBody = t.Object({
+  camera_trigger_enabled: optionalBoolean,
+  start_hotkey: optionalString,
+  vision_source: optionalString,
+  greeting_trigger_mode: optionalString,
+  greeting_delay_seconds: optionalNumberLike,
+  detection_distance_m: optionalNumberLike,
+  cooldown_seconds: optionalNumberLike,
+  lost_timeout_seconds: optionalNumberLike,
+  silence_timeout_seconds: optionalNumberLike,
+  auto_goodbye_timeout_seconds: optionalNumberLike,
+  greeting_script: optionalString,
+  goodbye_script: optionalString,
+});
 
 export async function registerAdminVisionRoutes(app: Elysia): Promise<void> {
   app.get("/admin/businesses/:businessId/vision-settings", async (request) => {
@@ -23,7 +39,7 @@ export async function registerAdminVisionRoutes(app: Elysia): Promise<void> {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
       await getOrCreateVisionSettings(businessId);
-      const body = request.body as Record<string, unknown>;
+      const body = request.body;
       const updates: Partial<typeof visionSettings.$inferInsert> = {
         updatedAt: new Date(),
       };
@@ -94,6 +110,8 @@ export async function registerAdminVisionRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: visionSettingsUpdateBody,
   });
 
   app.get("/admin/businesses/:businessId/vision-metrics", async (request) => {

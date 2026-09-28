@@ -4,8 +4,18 @@ import { getCurrentPlatformAdmin, writeAuditLog } from "../../auth/platform-auth
 import { requirePermission } from "../../auth/platform-rbac.js";
 import { db } from "../../db/client.js";
 import { businesses, plans, subscriptions, voiceSessions } from "../../db/schema.js";
-import type { Elysia } from "elysia";
+import { optionalNullableString, optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
 import { parsePagination, resolveUsdIdrQuote, ensureSubscriptionForBusiness } from "./shared.js";
+
+export const subscriptionUpdateBody = t.Object({
+  plan_name: optionalString,
+  billing_cycle: optionalString,
+  status: optionalString,
+  start_date: optionalNullableString,
+  end_date: optionalNullableString,
+  notes: optionalString,
+});
 
 export async function ensureAllBusinessSubscriptions(): Promise<void> {
   const missing = await db
@@ -202,14 +212,7 @@ export async function registerPlatformSubscriptionRoutes(app: Elysia): Promise<v
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
       const { id } = request.params as { id: string };
-      const body = request.body as {
-        plan_name?: string;
-        billing_cycle?: string;
-        status?: string;
-        start_date?: string | null;
-        end_date?: string | null;
-        notes?: string;
-      };
+      const body = request.body;
 
       const existing = await db.query.subscriptions.findFirst({
         where: eq(subscriptions.id, id),
@@ -262,5 +265,7 @@ export async function registerPlatformSubscriptionRoutes(app: Elysia): Promise<v
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: subscriptionUpdateBody,
   });
 }

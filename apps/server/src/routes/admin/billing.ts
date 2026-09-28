@@ -1,4 +1,3 @@
-import type { Elysia } from "elysia";
 import { desc, eq } from "drizzle-orm";
 import { getCurrentUser, requireBusinessAccess, sendAuthError } from "../../auth/jwt.js";
 import { db } from "../../db/client.js";
@@ -7,7 +6,27 @@ import { createSubscriptionRequest, getEntitlementSnapshot, listPaidPlans } from
 import { ALLOWED_IMAGE_TYPES, MAX_UPLOAD_BYTES, uploadToStorage } from "../../storage/index.js";
 import { createAddonRequest, getAddonStatusForBusiness, listAddonStatusesForBusiness, listAddons } from "../../services/addon-entitlement.js";
 import { readUploadedFile } from "../../http/multipart.js";
+import { optionalNumberLike, optionalString } from "../../http/validation.js";
 import { ADDON_MONTHLY_IDR, ADDON_DURATION_DISCOUNTS } from "./shared.js";
+import { t, type Elysia } from "elysia";
+
+export const subscriptionRequestBody = t.Object({
+  plan_code: optionalString,
+});
+
+export const addonRequestBody = t.Object({
+  duration_months: optionalNumberLike,
+  payment_method: optionalString,
+  billing_name: optionalString,
+  billing_email: optionalString,
+  billing_phone: optionalString,
+  company: optionalString,
+  notes: optionalString,
+  payment_proof_url: optionalString,
+  transaction_code: optionalString,
+  amount_display: optionalString,
+  amount_idr: optionalNumberLike,
+});
 
 export /** Prefer checkout Amount in notes; otherwise derive from Duration. */
 function amountLabelFromAddonNotes(notes: string): string {
@@ -155,7 +174,7 @@ export async function registerAdminBillingRoutes(app: Elysia): Promise<void> {
   app.post("/admin/subscription/request", async (request) => {
     try {
       const user = await getCurrentUser(request);
-      const body = request.body as { plan_code?: string };
+      const body = request.body;
       const planCode = body.plan_code?.trim().toLowerCase() ?? "";
       if (!planCode) {
         return request.status(400, { detail: "plan_code is required" });
@@ -186,6 +205,8 @@ export async function registerAdminBillingRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: subscriptionRequestBody,
   });
 
   app.get("/admin/addons", async (request) => {
@@ -272,19 +293,7 @@ export async function registerAdminBillingRoutes(app: Elysia): Promise<void> {
       const user = await getCurrentUser(request);
       const { businessId, code } = request.params as { businessId: string; code: string };
       await requireBusinessAccess(request, businessId);
-      const body = (request.body ?? {}) as {
-        duration_months?: number;
-        payment_method?: string;
-        billing_name?: string;
-        billing_email?: string;
-        billing_phone?: string;
-        company?: string;
-        notes?: string;
-        payment_proof_url?: string;
-        transaction_code?: string;
-        amount_display?: string;
-        amount_idr?: number;
-      };
+      const body = request.body;
       const noteParts = [
         body.amount_display
           ? `Amount: ${body.amount_display}`
@@ -330,5 +339,7 @@ export async function registerAdminBillingRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: addonRequestBody,
   });
 }

@@ -1,5 +1,4 @@
 import { extname } from "node:path";
-import type { Elysia } from "elysia";
 
 import { requireBusinessAccess, sendAuthError } from "../auth/jwt.js";
 import { getBusinessBySlug } from "../services/tenant.js";
@@ -30,6 +29,68 @@ import {
   uploadToStorage,
 } from "../storage/index.js";
 import { readUploadedFile } from "../http/multipart.js";
+import { nonEmptyString, optionalBoolean, optionalNullableString, optionalString } from "../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const luckySpinSettingsBody = t.Object({
+  enabled: optionalBoolean,
+  ai_voice_enabled: optionalBoolean,
+});
+
+export const luckySpinCampaignCreateBody = t.Object({
+  name: nonEmptyString,
+  start_at: optionalNullableString,
+  end_at: optionalNullableString,
+  daily_limit: t.Optional(t.Union([t.Number(), t.Null()])),
+  total_limit: t.Optional(t.Union([t.Number(), t.Null()])),
+  one_per_user: optionalBoolean,
+  odds_mode: t.Optional(t.Union([t.Literal("auto"), t.Literal("manual")])),
+  status: optionalString,
+});
+
+export const luckySpinCampaignUpdateBody = t.Object({
+  name: optionalString,
+  start_at: optionalNullableString,
+  end_at: optionalNullableString,
+  daily_limit: t.Optional(t.Union([t.Number(), t.Null()])),
+  total_limit: t.Optional(t.Union([t.Number(), t.Null()])),
+  one_per_user: optionalBoolean,
+  odds_mode: t.Optional(t.Union([t.Literal("auto"), t.Literal("manual")])),
+  status: optionalString,
+});
+
+export const luckySpinPrizeCreateBody = t.Object({
+  name: nonEmptyString,
+  description: optionalString,
+  image_url: optionalNullableString,
+  probability: t.Optional(t.Number()),
+  stock: t.Optional(t.Number()),
+  voucher_prefix: optionalString,
+  expires_at: optionalNullableString,
+  enabled: optionalBoolean,
+});
+
+export const luckySpinPrizeUpdateBody = t.Object({
+  name: optionalString,
+  description: optionalString,
+  image_url: optionalNullableString,
+  probability: t.Optional(t.Number()),
+  stock: t.Optional(t.Number()),
+  voucher_prefix: optionalString,
+  expires_at: optionalNullableString,
+  enabled: optionalBoolean,
+});
+
+export const luckySpinRedeemBody = t.Object({
+  voucher_code: optionalString,
+});
+
+export const luckySpinSpinBody = t.Optional(
+  t.Object({
+    phone: optionalString,
+    name: optionalString,
+  }),
+);
 
 const PRIZE_BUCKET = "lucky-spin-prizes";
 const MAX_PRIZE_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -57,7 +118,7 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      const body = request.body as { enabled?: boolean; ai_voice_enabled?: boolean };
+      const body = request.body;
       if (typeof body.enabled !== "boolean" && typeof body.ai_voice_enabled !== "boolean") {
         return request.status(400, { detail: "enabled or ai_voice_enabled boolean is required" });
       }
@@ -79,6 +140,8 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
         detail: err instanceof Error ? err.message : "Failed to update settings",
       });
     }
+  }, {
+    body: luckySpinSettingsBody,
   });
 
   app.get("/admin/businesses/:businessId/lucky-spin/campaigns", async (request) => {
@@ -96,7 +159,7 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const body = request.body as Parameters<typeof createCampaign>[1];
+      const body = request.body;
       const created = await createCampaign(businessId, body);
       return request.status(201, campaignOut(created));
     } catch (err) {
@@ -106,6 +169,8 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
         detail: err instanceof Error ? err.message : "Failed to create campaign",
       });
     }
+  }, {
+    body: luckySpinCampaignCreateBody,
   });
 
   app.patch(
@@ -117,7 +182,7 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
           campaignId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const body = request.body as Parameters<typeof updateCampaign>[2];
+        const body = request.body;
         const updated = await updateCampaign(businessId, campaignId, body);
         return campaignOut(updated);
       } catch (err) {
@@ -127,6 +192,9 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
           detail: err instanceof Error ? err.message : "Failed to update campaign",
         });
       }
+    },
+    {
+      body: luckySpinCampaignUpdateBody,
     },
   );
 
@@ -178,7 +246,7 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
           campaignId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const body = request.body as Parameters<typeof createPrize>[2];
+        const body = request.body;
         const created = await createPrize(businessId, campaignId, body);
         return request.status(201, prizeOut(created));
       } catch (err) {
@@ -188,6 +256,9 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
           detail: err instanceof Error ? err.message : "Failed to create prize",
         });
       }
+    },
+    {
+      body: luckySpinPrizeCreateBody,
     },
   );
 
@@ -201,7 +272,7 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
           prizeId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const body = request.body as Parameters<typeof updatePrize>[3];
+        const body = request.body;
         const updated = await updatePrize(businessId, campaignId, prizeId, body);
         return prizeOut(updated);
       } catch (err) {
@@ -211,6 +282,9 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
           detail: err instanceof Error ? err.message : "Failed to update prize",
         });
       }
+    },
+    {
+      body: luckySpinPrizeUpdateBody,
     },
   );
 
@@ -290,7 +364,7 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const body = request.body as { voucher_code?: string };
+      const body = request.body;
       const result = await redeemVoucher({
         businessId,
         voucherCode: body.voucher_code ?? "",
@@ -303,6 +377,8 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
         detail: err instanceof Error ? err.message : "Failed to redeem voucher",
       });
     }
+  }, {
+    body: luckySpinRedeemBody,
   });
 
   app.get("/admin/businesses/:businessId/lucky-spin/analytics", async (request) => {
@@ -334,7 +410,7 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
       const { slug } = request.params as { slug: string };
       const tenant = await getBusinessBySlug(slug);
       if (!tenant) return request.status(404, { detail: "Business not found" });
-      const body = (request.body as { phone?: string; name?: string } | null) ?? {};
+      const body: { phone?: string; name?: string } = request.body ?? {};
       const result = await performSpin({
         businessId: tenant.id,
         phone: body.phone,
@@ -352,5 +428,7 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
         detail: err instanceof Error ? err.message : "Spin failed",
       });
     }
+  }, {
+    body: luckySpinSpinBody,
   });
 }

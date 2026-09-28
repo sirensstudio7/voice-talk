@@ -1,15 +1,50 @@
-import type { Elysia } from "elysia";
+import { t, type Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { businessOut, clearBusinessAccessCache, getAuthUserId, getCurrentUser, requireBusinessAccess, sendAuthError } from "../../auth/jwt.js";
 import { db } from "../../db/client.js";
 import { aiRules, businesses, businessMembers } from "../../db/schema.js";
+import { nonEmptyString, optionalBoolean, optionalString } from "../../http/validation.js";
 import { deleteBusinessAsOwner } from "../../services/delete-business.js";
 import { assertCanCreateWorkspace } from "../../services/entitlement.js";
-import { buildOnboardingAiRules, DEFAULT_ASSISTANT_AVATAR_MODEL, DEFAULT_ASSISTANT_NAME, DEFAULT_VOICE_GENDER, DEFAULT_VOICE_PRESET, defaultAiRulesValues, isValidSlug, slugSuggestions, type BusinessType, type OnboardingLanguage, type PrimaryUseCase } from "../../services/onboarding.js";
+import { buildOnboardingAiRules, DEFAULT_ASSISTANT_AVATAR_MODEL, DEFAULT_ASSISTANT_NAME, DEFAULT_VOICE_GENDER, DEFAULT_VOICE_PRESET, defaultAiRulesValues, isValidSlug, slugSuggestions } from "../../services/onboarding.js";
 import { listBusinessesForUser } from "../../services/user-businesses.js";
 import { ALLOWED_IMAGE_TYPES, deleteFromStorage, MAX_UPLOAD_BYTES, uploadToStorage } from "../../storage/index.js";
 import { readUploadedFile } from "../../http/multipart.js";
 import { aiRulesOut } from "./shared.js";
+
+export const businessCreateBody = t.Object({
+  slug: nonEmptyString,
+  name: nonEmptyString,
+  tagline: optionalString,
+  voice_name: optionalString,
+  gemini_model: optionalString,
+});
+
+export const businessOnboardingBody = t.Object({
+  business_type: t.Union([
+    t.Literal("restaurant"),
+    t.Literal("cafe"),
+    t.Literal("retail"),
+    t.Literal("salon"),
+    t.Literal("clinic"),
+    t.Literal("other"),
+  ]),
+  primary_use_case: t.Union([
+    t.Literal("orders"),
+    t.Literal("faqs"),
+    t.Literal("both"),
+    t.Literal("appointments"),
+  ]),
+  language: t.Optional(t.Union([t.Literal("id"), t.Literal("en")])),
+});
+
+export const businessUpdateBody = t.Object({
+  name: optionalString,
+  tagline: optionalString,
+  voice_name: optionalString,
+  gemini_model: optionalString,
+  is_active: optionalBoolean,
+});
 
 export async function registerAdminBusinessRoutes(app: Elysia): Promise<void> {
   app.get("/admin/businesses", async (request) => {
@@ -54,13 +89,7 @@ export async function registerAdminBusinessRoutes(app: Elysia): Promise<void> {
         }
         throw err;
       }
-      const body = request.body as {
-        slug: string;
-        name: string;
-        tagline?: string;
-        voice_name?: string;
-        gemini_model?: string;
-      };
+      const body = request.body;
       const slug = body.slug.toLowerCase().trim();
       if (!isValidSlug(slug)) {
         return request.status(400, { detail: "Invalid slug format." });
@@ -100,23 +129,15 @@ export async function registerAdminBusinessRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: businessCreateBody,
   });
 
   app.patch("/admin/businesses/:businessId/onboarding", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      const body = request.body as {
-        business_type?: BusinessType;
-        primary_use_case?: PrimaryUseCase;
-        language?: OnboardingLanguage;
-      };
-
-      if (!body.business_type || !body.primary_use_case) {
-        return request.status(400, {
-          detail: "Business type and primary use case are required to complete onboarding.",
-        });
-      }
+      const body = request.body;
 
       const businessUpdates: Partial<typeof businesses.$inferInsert> = {
         businessType: body.business_type,
@@ -176,13 +197,15 @@ export async function registerAdminBusinessRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: businessOnboardingBody,
   });
 
   app.patch("/admin/businesses/:businessId", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      const body = request.body as Record<string, unknown>;
+      const body = request.body;
       const updates: Partial<typeof businesses.$inferInsert> = {};
       if (body.name !== undefined) updates.name = String(body.name);
       if (body.tagline !== undefined) updates.tagline = String(body.tagline);
@@ -199,6 +222,8 @@ export async function registerAdminBusinessRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: businessUpdateBody,
   });
 
   app.delete("/admin/businesses/:businessId", async (request) => {

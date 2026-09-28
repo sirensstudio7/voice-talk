@@ -2,8 +2,19 @@ import { sendAuthError } from "../../auth/jwt.js";
 import { getCurrentPlatformAdmin, writeAuditLog } from "../../auth/platform-auth.js";
 import { requirePermission } from "../../auth/platform-rbac.js";
 import { approveAddonRequest, listAddonRequestRows, rejectAddonRequest, suspendAddon } from "../../services/addon-entitlement.js";
-import type { Elysia } from "elysia";
+import { optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
 import { parsePagination } from "./shared.js";
+
+export const addonRequestApproveBody = t.Object({
+  duration_months: t.Optional(t.Number()),
+  custom_ends_at: optionalString,
+  notes: optionalString,
+});
+
+export const addonRequestNotesBody = t.Object({
+  notes: optionalString,
+});
 
 export async function registerPlatformAddonRequestRoutes(app: Elysia): Promise<void> {
   app.get("/platform/addon-requests", async (request) => {
@@ -50,11 +61,7 @@ export async function registerPlatformAddonRequestRoutes(app: Elysia): Promise<v
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
       const { id } = request.params as { id: string };
-      const body = request.body as {
-        duration_months?: number;
-        custom_ends_at?: string;
-        notes?: string;
-      };
+      const body = request.body;
 
       let customEndsAt: Date | null = null;
       if (body.custom_ends_at) {
@@ -106,6 +113,8 @@ export async function registerPlatformAddonRequestRoutes(app: Elysia): Promise<v
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: addonRequestApproveBody,
   });
 
   app.post("/platform/addon-requests/:id/reject", async (request) => {
@@ -113,7 +122,7 @@ export async function registerPlatformAddonRequestRoutes(app: Elysia): Promise<v
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
       const { id } = request.params as { id: string };
-      const body = request.body as { notes?: string };
+      const body = request.body;
 
       try {
         await rejectAddonRequest({
@@ -143,6 +152,8 @@ export async function registerPlatformAddonRequestRoutes(app: Elysia): Promise<v
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: addonRequestNotesBody,
   });
 
   app.post("/platform/addon-requests/:id/suspend", async (request) => {
@@ -150,7 +161,7 @@ export async function registerPlatformAddonRequestRoutes(app: Elysia): Promise<v
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:write");
       const { id } = request.params as { id: string };
-      const body = request.body as { notes?: string };
+      const body = request.body;
 
       const { items } = await listAddonRequestRows({ limit: 500, offset: 0 });
       const found = items.find((r) => r.id === id);
@@ -185,5 +196,7 @@ export async function registerPlatformAddonRequestRoutes(app: Elysia): Promise<v
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    body: addonRequestNotesBody,
   });
 }

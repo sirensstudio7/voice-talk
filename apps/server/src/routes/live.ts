@@ -1,4 +1,44 @@
-import type { Elysia } from "elysia";
+import { nonEmptyString, optionalNumberLike, optionalString } from "../http/validation.js";
+import { t, type Elysia } from "elysia";
+
+export const liveSessionCreateBody = t.Object({
+  title: optionalString,
+  product_ids: t.Optional(t.Array(t.String())),
+});
+
+export const liveProductBody = t.Object({
+  name: optionalString,
+  price: optionalNumberLike,
+  product_id: optionalString,
+  discount_percent: optionalNumberLike,
+  category: optionalString,
+  description: optionalString,
+  image_url: optionalString,
+});
+
+export const liveSessionProductsBody = t.Object({
+  product_ids: t.Optional(t.Array(t.String())),
+});
+
+export const liveKnowledgeBody = t.Object({
+  title: optionalString,
+  content: optionalString,
+});
+
+export const liveOrderBody = t.Object({
+  items: t.Optional(
+    t.Array(
+      t.Object({
+        product_id: nonEmptyString,
+        quantity: t.Number(),
+      }),
+    ),
+  ),
+  customer_name: optionalString,
+  customer_phone: optionalString,
+  customer_address: optionalString,
+  customer_notes: optionalString,
+});
 
 import { requireBusinessAccess, sendAuthError } from "../auth/jwt.js";
 import {
@@ -44,7 +84,7 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const body = (request.body ?? {}) as { title?: string; product_ids?: string[] };
+      const body = request.body;
       const created = await createLiveSession(businessId, {
         title: String(body.title ?? ""),
         product_ids: body.product_ids,
@@ -57,6 +97,8 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
         detail: err instanceof Error ? err.message : "Failed to create LIVE",
       });
     }
+  }, {
+    body: liveSessionCreateBody,
   });
 
   app.get("/admin/businesses/:businessId/live/catalog", async (request) => {
@@ -107,15 +149,7 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
           sessionId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const body = (request.body ?? {}) as {
-          name?: string;
-          price?: number;
-          product_id?: string;
-          discount_percent?: number;
-          category?: string;
-          description?: string;
-          image_url?: string;
-        };
+        const body = request.body;
         const next = await createLiveDedicatedProduct(businessId, sessionId, {
           name: String(body.name ?? ""),
           price: Number(body.price),
@@ -134,6 +168,9 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
         });
       }
     },
+    {
+      body: liveProductBody,
+    },
   );
 
   app.patch("/admin/businesses/:businessId/live/catalog/:productRowId", async (request) => {
@@ -143,15 +180,7 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
         productRowId: string;
       };
       await requireBusinessAccess(request, businessId);
-      const body = (request.body ?? {}) as {
-        name?: string;
-        price?: number;
-        product_id?: string;
-        discount_percent?: number;
-        category?: string;
-        description?: string;
-        image_url?: string;
-      };
+      const body = request.body;
       return updateLiveDedicatedProduct(businessId, productRowId, {
         name: String(body.name ?? ""),
         price: Number(body.price),
@@ -168,6 +197,8 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
         detail: err instanceof Error ? err.message : "Failed to update LIVE product",
       });
     }
+  }, {
+    body: liveProductBody,
   });
 
   app.delete("/admin/businesses/:businessId/live/catalog/:productRowId", async (request) => {
@@ -197,7 +228,7 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
           sessionId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const body = (request.body ?? {}) as { product_ids?: string[] };
+        const body = request.body;
         return setLiveSessionProducts(businessId, sessionId, body.product_ids ?? []);
       } catch (err) {
         const status = statusFromError(err);
@@ -206,6 +237,9 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
           detail: err instanceof Error ? err.message : "Failed to update products",
         });
       }
+    },
+    {
+      body: liveSessionProductsBody,
     },
   );
 
@@ -291,7 +325,7 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
           sessionId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const body = (request.body ?? {}) as { title?: string; content?: string };
+        const body = request.body;
         const created = await createLiveKnowledge(businessId, sessionId, {
           title: body.title,
           content: String(body.content ?? ""),
@@ -305,6 +339,9 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
         });
       }
     },
+    {
+      body: liveKnowledgeBody,
+    },
   );
 
   app.patch(
@@ -317,7 +354,7 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
           entryId: string;
         };
         await requireBusinessAccess(request, businessId);
-        const body = (request.body ?? {}) as { title?: string; content?: string };
+        const body = request.body;
         return updateLiveKnowledge(businessId, sessionId, entryId, body);
       } catch (err) {
         const status = statusFromError(err);
@@ -326,6 +363,9 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
           detail: err instanceof Error ? err.message : "Failed to update talking point",
         });
       }
+    },
+    {
+      body: liveKnowledgeBody,
     },
   );
 
@@ -364,13 +404,7 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
   app.post("/live/sessions/:sessionId/orders", async (request) => {
     try {
       const { sessionId } = request.params as { sessionId: string };
-      const body = (request.body ?? {}) as {
-        items?: Array<{ product_id: string; quantity: number }>;
-        customer_name?: string;
-        customer_phone?: string;
-        customer_address?: string;
-        customer_notes?: string;
-      };
+      const body = request.body;
       const created = await confirmLiveOrder(sessionId, {
         items: Array.isArray(body.items) ? body.items : [],
         customer_name: body.customer_name,
@@ -385,5 +419,7 @@ export async function registerLiveRoutes(app: Elysia): Promise<void> {
         detail: err instanceof Error ? err.message : "Failed to confirm LIVE order",
       });
     }
+  }, {
+    body: liveOrderBody,
   });
 }

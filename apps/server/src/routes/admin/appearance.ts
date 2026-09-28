@@ -5,8 +5,15 @@ import { businesses } from "../../db/schema.js";
 import { ALLOWED_IMAGE_TYPES, deleteFromStorage, MAX_UPLOAD_BYTES, uploadToStorage } from "../../storage/index.js";
 import { logger } from "../../http/logger.js";
 import { readUploadedFile } from "../../http/multipart.js";
-import type { Elysia } from "elysia";
+import { optionalNullableString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
 import { HEX_COLOR_RE, DISPLAY_ORIENTATIONS, KIOSK_UI_MODES, normalizeKioskUiMode } from "./shared.js";
+
+export const appearanceUpdateBody = t.Object({
+  gradient_color: optionalNullableString,
+  display_orientation: optionalNullableString,
+  kiosk_ui_mode: optionalNullableString,
+});
 
 export function normalizeGradientColor(value: string | undefined | null): string {
   if (value == null) return "";
@@ -73,11 +80,7 @@ export async function registerAdminAppearanceRoutes(app: Elysia): Promise<void> 
     try {
       const { businessId } = request.params as { businessId: string };
       const business = await requireBusinessAccess(request, businessId);
-      const body = request.body as {
-        gradient_color?: string | null;
-        display_orientation?: string | null;
-        kiosk_ui_mode?: string | null;
-      };
+      const body = request.body;
       let gradientColor = business.gradientColor;
       let displayOrientation = business.displayOrientation;
       let kioskUiMode = business.kioskUiMode || "classic";
@@ -104,6 +107,8 @@ export async function registerAdminAppearanceRoutes(app: Elysia): Promise<void> 
       }
       return sendAuthError(request, err);
     }
+  }, {
+    body: appearanceUpdateBody,
   });
 
   app.post("/admin/businesses/:businessId/appearance/background", async (request) => {
