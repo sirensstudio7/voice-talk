@@ -17,3 +17,9 @@ export function rememberAddonStatus(
 ): void {
   cache.set(cacheKey(businessId, code), status);
 }
+
+export function rememberAddonStatuses(businessId: string, statuses: AddonStatus[]): void {
+  for (const status of statuses) {
+    rememberAddonStatus(businessId, status.addon.code, status);
+  }
+}

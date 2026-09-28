@@ -184,12 +184,17 @@ export function buildPresenterWsUrl(
   token: string,
   businessId: string,
   sessionId: string,
+  opts?: { share?: boolean },
 ): string {
   const api = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
   const url = new URL(api);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.pathname = "/ws/presentation-session";
-  url.searchParams.set("token", token);
+  if (opts?.share) {
+    url.searchParams.set("shareToken", token);
+  } else {
+    url.searchParams.set("token", token);
+  }
   url.searchParams.set("businessId", businessId);
   url.searchParams.set("sessionId", sessionId);
   return url.toString();

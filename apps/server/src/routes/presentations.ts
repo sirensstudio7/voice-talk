@@ -37,6 +37,14 @@ import {
   submitSessionQuestion,
 } from "../services/presentation-session.js";
 import { serializeUtcDatetime } from "../services/pricing.js";
+import {
+  assertSharedPresenterActive,
+  ensurePresentationShareToken,
+  loadPresentationByShareToken,
+  presentationSharePageUrl,
+} from "../services/presentation-share.js";
+import { transcribeAudienceQuestion } from "../services/presentation-ai.js";
+import { resolveGeminiApiKeyForBusiness } from "../services/user-api-keys.js";
 import { detectPresentationFileType } from "../services/pptx-parser.js";
 import {
   enqueueMissingThumbnails,
@@ -62,6 +70,33 @@ async function requirePresenterAccess(
     err.statusCode = 403;
     throw err;
   }
+}
+
+async function transcribeQuestionAudio(
+  businessId: string,
+  language: string | null | undefined,
+  body: { audio_base64?: string; mime_type?: string },
+): Promise<string> {
+  const audioBase64 = String(body.audio_base64 ?? "")
+    .replace(/^data:.*?;base64,/, "")
+    .trim();
+  if (audioBase64.length < 80) {
+    const err = new Error("Audio is too short") as Error & { statusCode: number };
+    err.statusCode = 400;
+    throw err;
+  }
+  if (audioBase64.length > 4_000_000) {
+    const err = new Error("Audio is too long") as Error & { statusCode: number };
+    err.statusCode = 413;
+    throw err;
+  }
+  const apiKey = await resolveGeminiApiKeyForBusiness(businessId);
+  return transcribeAudienceQuestion({
+    apiKey,
+    language: language ?? "id",
+    mimeType: String(body.mime_type ?? "audio/webm"),
+    audioBase64,
+  });
 }
 
 function presentationOut(row: typeof presentations.$inferSelect) {
@@ -848,6 +883,36 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
     },
   );
 
+  app.post(
+    "/admin/businesses/:businessId/sessions/:sessionId/transcribe",
+    async (request) => {
+      try {
+        const { businessId, sessionId } = request.params as {
+          businessId: string;
+          sessionId: string;
+        };
+        await requirePresenterAccess(request, businessId);
+        const session = await db.query.presentationSessions.findFirst({
+          where: eq(presentationSessions.id, sessionId),
+        });
+        if (!session || session.businessId !== businessId) {
+          return request.status(404, { detail: "Session not found" });
+        }
+        const presentation = await db.query.presentations.findFirst({
+          where: eq(presentations.id, session.presentationId),
+        });
+        const text = await transcribeQuestionAudio(
+          businessId,
+          presentation?.language,
+          request.body as { audio_base64?: string; mime_type?: string },
+        );
+        return { text };
+      } catch (err) {
+        return sendAuthError(request, err);
+      }
+    },
+  );
+
   app.get(
     "/admin/businesses/:businessId/sessions/:sessionId/analytics",
     async (request) => {
@@ -920,6 +985,255 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
       } catch (err) {
         return sendAuthError(request, err);
       }
+    },
+  );
+
+  app.post(
+    "/admin/businesses/:businessId/presentations/:presentationId/share",
+    async (request) => {
+      try {
+        const { businessId, presentationId } = request.params as {
+          businessId: string;
+          presentationId: string;
+        };
+        await requirePresenterAccess(request, businessId);
+        const row = await loadPresentationForBusiness(businessId, presentationId);
+        if (!row) return request.status(404, { detail: "Presentation not found" });
+        if (row.status !== "ready" && row.status !== "completed") {
+          return request.status(400, { detail: "Prepare the presentation before sharing it" });
+        }
+        const shared = await ensurePresentationShareToken(presentationId);
+        if (!shared?.shareToken) {
+          return request.status(500, { detail: "Could not create a share link" });
+        }
+        return {
+          share_token: shared.shareToken,
+          share_url: presentationSharePageUrl(shared.shareToken),
+        };
+      } catch (err) {
+        return sendAuthError(request, err);
+      }
+    },
+  );
+
+  app.get("/public/presentations/share/:token", async (request) => {
+    const { token } = request.params as { token: string };
+    const row = await loadPresentationByShareToken(token);
+    if (!row) return request.status(404, { detail: "Share link not found" });
+    if (row.status !== "ready" && row.status !== "completed") {
+      return request.status(409, { detail: "This presentation is not ready yet" });
+    }
+    try {
+      await assertSharedPresenterActive(row.businessId);
+    } catch (err) {
+      return sendAuthError(request, err);
+    }
+    return {
+      title: row.title,
+      description: row.description,
+      language: row.language,
+      total_slides: row.totalSlides,
+      estimated_duration: row.estimatedDuration,
+      thumbnail_url: row.thumbnailUrl || "",
+    };
+  });
+
+  app.get("/public/presentations/share/:token/pptx", async (request) => {
+    const { token } = request.params as { token: string };
+    const row = await loadPresentationByShareToken(token);
+    if (!row) return request.status(404, { detail: "Share link not found" });
+    const files = await db
+      .select()
+      .from(presentationFiles)
+      .where(eq(presentationFiles.presentationId, row.id));
+    const pptx = files.find((f) => f.fileType === "pptx");
+    if (!pptx) return request.status(404, { detail: "PPTX not found" });
+    const buffer = await downloadFromStorage(PRESENTATION_BUCKET, pptx.storagePath);
+    if (!buffer) return request.status(404, { detail: "PPTX file missing from storage" });
+
+    return new Response(buffer as unknown as BodyInit, {
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "Content-Disposition": `inline; filename="${pptx.fileName || "deck.pptx"}"`,
+      },
+    });
+  });
+
+  app.post("/public/presentations/share/:token/start", async (request) => {
+    const { token } = request.params as { token: string };
+    const row = await loadPresentationByShareToken(token);
+    if (!row) return request.status(404, { detail: "Share link not found" });
+    if (row.status !== "ready" && row.status !== "completed") {
+      return request.status(409, { detail: "This presentation is not ready yet" });
+    }
+    try {
+      await assertSharedPresenterActive(row.businessId);
+    } catch (err) {
+      return sendAuthError(request, err);
+    }
+    const [session] = await db
+      .insert(presentationSessions)
+      .values({
+        presentationId: row.id,
+        businessId: row.businessId,
+        name: row.title,
+        enableQna: true,
+        autoStart: true,
+        status: "initializing",
+      })
+      .returning();
+    const started = session!.autoStart
+      ? await advanceSession(session!.id, "start")
+      : session!;
+    return request.status(201, sessionOut(started!));
+  });
+
+  app.get(
+    "/public/presentations/share/:token/sessions/:sessionId",
+    async (request) => {
+      const { token, sessionId } = request.params as { token: string; sessionId: string };
+      const row = await loadPresentationByShareToken(token);
+      if (!row) return request.status(404, { detail: "Share link not found" });
+      const bundle = await getSessionBundle(sessionId);
+      if (!bundle || bundle.session.presentationId !== row.id) {
+        return request.status(404, { detail: "Session not found" });
+      }
+      const slideIds = bundle.slides.map((s) => s.id);
+      const audio =
+        slideIds.length === 0
+          ? []
+          : await db
+              .select()
+              .from(presentationAudioAssets)
+              .where(inArray(presentationAudioAssets.slideId, slideIds));
+      const files = await db
+        .select()
+        .from(presentationFiles)
+        .where(eq(presentationFiles.presentationId, bundle.session.presentationId));
+      const pptxFile = files.find((f) => f.fileType === "pptx");
+      return {
+        session: sessionOut(bundle.session),
+        presentation: bundle.presentation ? presentationOut(bundle.presentation) : null,
+        slides: bundle.slides.map(slideOut),
+        questions: bundle.questions.map(questionOut),
+        pptx_url: pptxFile?.storagePath ?? null,
+        audio_assets: audio.map((a) => ({
+          id: a.id,
+          slide_id: a.slideId,
+          kind: a.kind,
+          storage_path: a.storagePath,
+          duration_seconds: a.durationSeconds,
+        })),
+      };
+    },
+  );
+
+  app.post(
+    "/public/presentations/share/:token/sessions/:sessionId/control",
+    async (request) => {
+      const { token, sessionId } = request.params as { token: string; sessionId: string };
+      const row = await loadPresentationByShareToken(token);
+      if (!row) return request.status(404, { detail: "Share link not found" });
+      const session = await db.query.presentationSessions.findFirst({
+        where: eq(presentationSessions.id, sessionId),
+      });
+      if (!session || session.presentationId !== row.id) {
+        return request.status(404, { detail: "Session not found" });
+      }
+      const body = request.body as { action?: string };
+      const action = String(body.action ?? "");
+      const allowed = ["start", "pause", "resume", "next", "previous", "end", "finish_stage"] as const;
+      if (!allowed.includes(action as (typeof allowed)[number])) {
+        return request.status(400, { detail: "Invalid action" });
+      }
+      const updated = await advanceSession(sessionId, action as (typeof allowed)[number]);
+      return sessionOut(updated!);
+    },
+  );
+
+  app.post(
+    "/public/presentations/share/:token/sessions/:sessionId/questions",
+    async (request) => {
+      const { token, sessionId } = request.params as { token: string; sessionId: string };
+      const row = await loadPresentationByShareToken(token);
+      if (!row) return request.status(404, { detail: "Share link not found" });
+      const session = await db.query.presentationSessions.findFirst({
+        where: eq(presentationSessions.id, sessionId),
+      });
+      if (!session || session.presentationId !== row.id) {
+        return request.status(404, { detail: "Session not found" });
+      }
+      const body = request.body as { question?: string };
+      const question = String(body.question ?? "").trim();
+      if (!question) return request.status(400, { detail: "Question is required" });
+      const created = await submitSessionQuestion(sessionId, question);
+      return request.status(201, questionOut(created!));
+    },
+  );
+
+  app.post(
+    "/public/presentations/share/:token/sessions/:sessionId/transcribe",
+    async (request) => {
+      const { token, sessionId } = request.params as { token: string; sessionId: string };
+      const row = await loadPresentationByShareToken(token);
+      if (!row) return request.status(404, { detail: "Share link not found" });
+      const session = await db.query.presentationSessions.findFirst({
+        where: eq(presentationSessions.id, sessionId),
+      });
+      if (!session || session.presentationId !== row.id) {
+        return request.status(404, { detail: "Session not found" });
+      }
+      try {
+        const text = await transcribeQuestionAudio(
+          row.businessId,
+          row.language,
+          request.body as { audio_base64?: string; mime_type?: string },
+        );
+        return { text };
+      } catch (err) {
+        const status = (err as Error & { statusCode?: number }).statusCode ?? 500;
+        return request.status(status, {
+          detail: err instanceof Error ? err.message : "Transcription failed",
+        });
+      }
+    },
+  );
+
+  app.get(
+    "/public/presentations/share/:token/sessions/:sessionId/analytics",
+    async (request) => {
+      const { token, sessionId } = request.params as { token: string; sessionId: string };
+      const row = await loadPresentationByShareToken(token);
+      if (!row) return request.status(404, { detail: "Share link not found" });
+      const bundle = await getSessionBundle(sessionId);
+      if (!bundle || bundle.session.presentationId !== row.id) {
+        return request.status(404, { detail: "Session not found" });
+      }
+      const { session, questions, slides } = bundle;
+      const started = session.startedAt?.getTime() ?? session.createdAt.getTime();
+      const ended = session.endedAt?.getTime() ?? Date.now();
+      const durationSeconds = Math.max(0, Math.round((ended - started) / 1000));
+      const answered = questions.filter((q) => q.status === "answered").length;
+      const blocked = questions.filter((q) => q.status === "blocked").length;
+      const completionRate =
+        session.status === "completed"
+          ? 100
+          : slides.length === 0
+            ? 0
+            : Math.min(99, Math.round((session.currentSlideNumber / slides.length) * 100));
+      return {
+        session_id: session.id,
+        status: session.status,
+        audience_count: session.audienceCount,
+        question_count: session.questionCount,
+        answered_count: answered,
+        blocked_count: blocked,
+        session_duration_seconds: durationSeconds,
+        completion_rate: completionRate,
+        total_slides: slides.length,
+        current_slide_number: session.currentSlideNumber,
+      };
     },
   );
 }

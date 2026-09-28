@@ -5,6 +5,7 @@ import { use, useCallback, useEffect, useState } from "react";
 
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import { UserApiSettingsDialog } from "@/components/user-api-settings-dialog";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -15,9 +16,11 @@ export default function UserDetailPage({
 }) {
   const { id } = use(params);
   const { token, admin } = useAuth();
+  const canWriteApiKeys = admin?.role === "super";
   const [user, setUser] = useState<Awaited<ReturnType<typeof api.getUser>> | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!token || !id) return;
@@ -110,6 +113,9 @@ export default function UserDetailPage({
               Reactivate
             </Button>
           )}
+          <Button variant="outline" onClick={() => setSettingsOpen(true)}>
+            API settings
+          </Button>
           <Button variant="outline" onClick={() => void resetPassword()}>
             Reset password
           </Button>
@@ -118,6 +124,18 @@ export default function UserDetailPage({
 
       {message ? <p className="rounded-lg bg-muted px-3 py-2 text-sm">{message}</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+      {token ? (
+        <UserApiSettingsDialog
+          userId={id}
+          userName={user.name}
+          userEmail={user.email}
+          token={token}
+          canWrite={canWriteApiKeys}
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-border bg-card p-5">

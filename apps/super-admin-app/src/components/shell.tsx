@@ -18,6 +18,7 @@ import {
   EyeIcon,
   PresentationChartBarIcon,
   PuzzlePieceIcon,
+  ShareIcon,
   Squares2X2Icon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
@@ -115,6 +116,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Platform",
     items: [
       { href: "/pricing", label: "Pricing", icon: CurrencyDollarIcon },
+      { href: "/kiosk-rules", label: "Kiosk rules", icon: ShareIcon },
       { href: "/avatar-pose", label: "Avatar pose", icon: CubeTransparentIcon },
       { href: "/vision", label: "Vision", icon: EyeIcon },
       { href: "/settings", label: "Settings", icon: Cog6ToothIcon },
@@ -133,6 +135,11 @@ const ROUTE_LABELS: Record<string, string> = {
   "/topup-orders": "Minute top-ups",
   "/demo-requests": "Demo requests",
   "/pricing": "Pricing",
+  "/kiosk-rules": "Kiosk rules",
+  "/kiosk-rules/ordering": "Orders",
+  "/kiosk-rules/booking": "Booking",
+  "/kiosk-rules/faq": "FAQ",
+  "/kiosk-rules/vision": "Session",
   "/avatar-pose": "Avatar pose",
   "/vision": "Vision",
   "/settings": "Settings",

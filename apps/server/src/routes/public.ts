@@ -1,7 +1,6 @@
 import type { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import {
-  getBusinessCapabilities,
   normalizeVoiceGender,
   normalizeVoicePreset,
 } from "@voicetalk/shared";
@@ -33,6 +32,8 @@ import {
 } from "../services/addon-entitlement.js";
 import { getLuckySpinPublicConfig } from "../services/lucky-spin.js";
 import { getCampaignBannerPublicConfig } from "../services/campaign-banner.js";
+import { resolveCapabilities } from "../services/capabilities.js";
+import { getBookingPublicConfig } from "../services/booking.js";
 import {
   completePhotoSession,
   markPhotoOfferResponse,
@@ -84,6 +85,68 @@ function orderToOut(order: {
 export { orderToOut };
 
 export async function registerPublicRoutes(app: Elysia): Promise<void> {
+  app.post("/public/kiosks/unlock", async (request) => {
+    const body = (request.body ?? {}) as { business?: string; kiosk?: string; pin?: string };
+    const business = body.business?.trim() ?? "";
+    const pin = body.pin ?? "";
+    if (!business || !pin) {
+      return request.status(400, { detail: "business and pin are required." });
+    }
+    const { checkKioskUnlockRateLimit, unlockKioskDisplay } = await import(
+      "../services/kiosk-displays.js"
+    );
+    const forwardedFor = (request.headers["x-forwarded-for"] ?? "").split(",")[0]?.trim();
+    const clientIp =
+      forwardedFor || request.server?.requestIP(request.request)?.address || "unknown";
+    const key = `${clientIp}:${business}`;
+    if (!checkKioskUnlockRateLimit(key)) {
+      return request.status(429, { detail: "Too many PIN attempts. Try again later." });
+    }
+    try {
+      return await unlockKioskDisplay({
+        businessSlug: business,
+        kioskSlug: body.kiosk,
+        pin,
+      });
+    } catch (err) {
+      const status =
+        err instanceof Error && "statusCode" in err
+          ? (err as Error & { statusCode: number }).statusCode
+          : 500;
+      return request.status(status, {
+        detail: err instanceof Error ? err.message : "Unlock failed.",
+      });
+    }
+  });
+
+  app.post("/public/kiosks/release", async (request) => {
+    const body = (request.body ?? {}) as { business?: string; kiosk?: string; token?: string };
+    const business = body.business?.trim() ?? "";
+    const authHeader = request.headers.authorization ?? "";
+    const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    const token = (body.token ?? bearer).trim();
+    if (!business || !token) {
+      return request.status(400, { detail: "business and token are required." });
+    }
+    const { releaseKioskDisplayByToken } = await import("../services/kiosk-displays.js");
+    try {
+      await releaseKioskDisplayByToken({
+        businessSlug: business,
+        kioskSlug: body.kiosk,
+        token,
+      });
+      return request.status(204);
+    } catch (err) {
+      const status =
+        err instanceof Error && "statusCode" in err
+          ? (err as Error & { statusCode: number }).statusCode
+          : 500;
+      return request.status(status, {
+        detail: err instanceof Error ? err.message : "Release failed.",
+      });
+    }
+  });
+
   app.get("/businesses/:slug", async (request) => {
     const { slug } = request.params as { slug: string };
     const business = await getBusinessBySlug(slug);
@@ -104,7 +167,7 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
     const business = await getBusinessBySlug(slug);
     if (!business) return request.status(404, { detail: "Business not found" });
 
-    const capabilities = getBusinessCapabilities(business.primaryUseCase, business.businessType);
+    const { capabilities } = await resolveCapabilities(business);
     if (!capabilities.ordering_enabled) {
       return request.status(403, { detail: "Ordering is not enabled for this business." });
     }
@@ -131,13 +194,14 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
     const tenant = await getBusinessBySlug(slug);
     if (!tenant) return request.status(404, { detail: "Business not found" });
 
-    const capabilities = getBusinessCapabilities(tenant.primaryUseCase, tenant.businessType);
+    const { capabilities } = await resolveCapabilities(tenant);
     const productList = capabilities.menu_enabled ? getActiveProducts(tenant) : [];
     const vision = await getOrCreateVisionSettings(tenant.id);
     const smartPhotoMoment = await getSmartPhotoMomentPublicConfig(tenant.id);
     const luckySpin = await getLuckySpinPublicConfig(tenant.id);
     const campaignBanner = await getCampaignBannerPublicConfig(tenant.id);
     const languagePack = await getLanguagePackPublicConfig(tenant.id);
+    const booking = await getBookingPublicConfig(tenant.id);
     return {
       business: tenant.name,
       slug: tenant.slug,
@@ -149,6 +213,7 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
       background_url: tenant.backgroundUrl || "",
       gradient_color: tenant.gradientColor || "",
       display_orientation: tenant.displayOrientation || "landscape",
+      kiosk_ui_mode: tenant.kioskUiMode === "studio" ? "studio" : "classic",
       voice_preset: normalizeVoicePreset(tenant.aiRules?.voicePreset),
       voice_gender: normalizeVoiceGender(tenant.aiRules?.voiceGender),
       capabilities,
@@ -157,6 +222,7 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
       lucky_spin: luckySpin,
       campaign_banner: campaignBanner,
       languages: languagePack,
+      booking,
       products: productList.map((p) => ({
         id: p.productId,
         name: p.name,
@@ -173,9 +239,10 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
 
   app.get("/businesses/:slug/availability", async (request) => {
     const { slug } = request.params as { slug: string };
-    const { product_id: productId, date } = request.query as {
+    const { product_id: productId, date, staff_id: staffId } = request.query as {
       product_id?: string;
       date?: string;
+      staff_id?: string;
     };
     const business = await getBusinessBySlug(slug);
     if (!business) return request.status(404, { detail: "Business not found" });
@@ -183,11 +250,17 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
       return request.status(400, { detail: "product_id and date are required." });
     }
 
+    const { capabilities } = await resolveCapabilities(business);
+    if (!capabilities.booking_enabled) {
+      return request.status(403, { detail: "Booking is not enabled for this business." });
+    }
+
     try {
       const slots = await getAvailableSlots({
         businessId: business.id,
         productId,
         date,
+        staffId,
       });
       return { slots };
     } catch (error) {
@@ -204,11 +277,12 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
       customer_name?: string;
       customer_phone?: string;
       starts_at?: string;
+      staff_id?: string;
     };
     const business = await getBusinessBySlug(slug);
     if (!business) return request.status(404, { detail: "Business not found" });
 
-    const capabilities = getBusinessCapabilities(business.primaryUseCase, business.businessType);
+    const { capabilities } = await resolveCapabilities(business);
     if (!capabilities.booking_enabled) {
       return request.status(403, { detail: "Booking is not enabled for this business." });
     }
@@ -220,6 +294,7 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
         customerName: String(body.customer_name ?? ""),
         customerPhone: String(body.customer_phone ?? ""),
         startsAt: String(body.starts_at ?? ""),
+        staffId: body.staff_id ? String(body.staff_id) : null,
       });
       return request.status(201, appointment);
     } catch (error) {

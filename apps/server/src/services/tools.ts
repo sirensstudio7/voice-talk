@@ -1,6 +1,6 @@
 import { Type } from "@google/genai";
 import type { OrderStore } from "./order-store.js";
-import { effectivePrice } from "./pricing.js";
+import { effectivePrice, formatIdr, formatOrderReadBack } from "./pricing.js";
 import { buildBookingToolDeclarations } from "./booking-tools.js";
 import { buildFaqToolDeclarations } from "./faq-tools.js";
 
@@ -17,6 +17,20 @@ export interface ProductInfo {
 
 function salePrice(product: ProductInfo): number {
   return effectivePrice(product.price, product.discount_percent);
+}
+
+function withSpokenRecall(
+  result: Record<string, unknown>,
+  nextStep: string,
+): Record<string, unknown> {
+  const order = (result.order as Record<string, unknown> | undefined) ?? undefined;
+  const say = formatOrderReadBack(order);
+  if (!say) return result;
+  return {
+    ...result,
+    say,
+    next_step: nextStep,
+  };
 }
 
 function findProduct(query: string, productList: ProductInfo[]) {
@@ -78,10 +92,11 @@ export function buildToolDeclarations(
     bookingEnabled?: boolean;
     faqEnabled?: boolean;
     photoMomentEnabled?: boolean;
+    bookingStaff?: boolean;
   } = {},
 ) {
   if (options.bookingEnabled) {
-    return buildBookingToolDeclarations();
+    return buildBookingToolDeclarations({ includeStaff: Boolean(options.bookingStaff) });
   }
 
   if (options.faqEnabled) {
@@ -127,7 +142,7 @@ export function buildToolDeclarations(
     {
       name: "add_to_order",
       description:
-        "Add a menu item to the customer's order. Call only after the customer clearly confirms the item by voice. Do not call for items the customer added via the menu screen.",
+        "Add a menu item to the customer's order. Call only after the customer clearly confirms the item by voice. Do not call for items the customer added via the menu screen. After success, speak the item name, its price, and the running total from the `say` field — never omit the price.",
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -161,7 +176,8 @@ export function buildToolDeclarations(
     },
     {
       name: "get_order_summary",
-      description: "Get the current order items and total.",
+      description:
+        "Get the current order items and total. Speak every item with its price and the total from the `say` field.",
       parameters: { type: Type.OBJECT, properties: {} },
     },
     {
@@ -285,12 +301,21 @@ export function buildToolMapping(
           return { error: `Unknown product '${String(args.product_id)}'.` };
         }
       }
-      return orderStore.addItem(
+      const added = orderStore.addItem(
         product!.id,
         product!.name,
         salePrice(product!),
         Math.max(1, Number(args.quantity ?? 1)),
         product!.image_url,
+      );
+      if ("error" in added) return added;
+      const qty = Math.max(1, Number(args.quantity ?? 1));
+      const unit = formatIdr(salePrice(product!));
+      return withSpokenRecall(
+        added,
+        `Speak the added item WITH its price and the running total. ` +
+          `Just added: ${qty}x ${product!.name} ${unit}. ` +
+          `Read the \`say\` field out loud. Do not skip prices. Then ask if they want anything else.`,
       );
     },
     remove_from_order: (args) => {
@@ -299,10 +324,19 @@ export function buildToolMapping(
       if (!productId) {
         return { error: `Could not find '${query}' in the current order.` };
       }
-      return orderStore.removeItem(productId, args.quantity as number | undefined);
+      const removed = orderStore.removeItem(productId, args.quantity as number | undefined);
+      if ("error" in removed) return removed;
+      return withSpokenRecall(
+        removed,
+        "Speak the updated basket WITH each item price and the new total from the `say` field.",
+      );
     },
     cancel_order: () => orderStore.cancelOrder(),
-    get_order_summary: () => orderStore.snapshot() as Record<string, unknown>,
+    get_order_summary: () =>
+      withSpokenRecall(
+        { success: true, order: orderStore.snapshot() },
+        "Read back every item WITH its price, then the total. Use the `say` field. Do not skip prices.",
+      ),
     confirm_order: () => {
       const snapshot = orderStore.snapshot();
       if (snapshot.status === "confirmed") {

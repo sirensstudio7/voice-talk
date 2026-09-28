@@ -29,6 +29,7 @@ export const LUCKY_SPIN_CODE = "lucky_spin";
 export const AI_PRESENTER_CODE = "ai_presenter";
 export const CAMPAIGN_BANNER_CODE = "campaign_banner";
 export const LANGUAGE_PACK_CODE = "language_pack";
+export const BOOKING_CODE = "booking";
 export const LIVE_CODE = "live";
 
 export const DEFAULT_PHOTO_VOICE_PROMPT =
@@ -187,6 +188,49 @@ export function photoSettingsOut(settings: PhotoSettings) {
   };
 }
 
+const STUB_PHOTO_SETTINGS: ReturnType<typeof photoSettingsOut> = {
+  enabled: false,
+  voice_prompt: "",
+  countdown_seconds: 3,
+  qr_expiry_hours: 24,
+  logo_url: "",
+  frame_url: "",
+  campaign_text: "",
+  auto_delete_days: 7,
+  updated_at: new Date(0).toISOString(),
+};
+
+function toAddonStatusPayload(
+  addon: Addon,
+  sub: AddonSubscription | undefined,
+  pending: AddonRequest | undefined,
+  settings: ReturnType<typeof photoSettingsOut>,
+): AddonStatusForBusiness {
+  return {
+    addon: {
+      code: addon.code,
+      name: addon.name,
+      description: addon.description,
+      price_display: addon.priceDisplay,
+      monthly_price_idr: addon.monthlyPriceIdr,
+      discount_3m_percent: addon.discount3mPercent,
+      discount_6m_percent: addon.discount6mPercent,
+      discount_12m_percent: addon.discount12mPercent,
+    },
+    subscription_status: sub?.status ?? "inactive",
+    starts_at: sub?.startsAt?.toISOString() ?? null,
+    ends_at: sub?.endsAt?.toISOString() ?? null,
+    pending_request: pending
+      ? {
+          id: pending.id,
+          status: pending.status,
+          created_at: pending.createdAt.toISOString(),
+        }
+      : null,
+    settings,
+  };
+}
+
 export async function getAddonStatusForBusiness(
   businessId: string,
   addonCode = SMART_PHOTO_MOMENT_CODE,
@@ -221,46 +265,50 @@ export async function getAddonStatusForBusiness(
 
   // Only SPM status includes photo settings. Other add-ons get a stub so the
   // response shape stays stable without creating photo_settings rows.
-  let settings: ReturnType<typeof photoSettingsOut>;
-  if (addonCode === SMART_PHOTO_MOMENT_CODE) {
-    settings = photoSettingsOut(await getOrCreatePhotoSettings(businessId));
-  } else {
-    settings = {
-      enabled: false,
-      voice_prompt: "",
-      countdown_seconds: 3,
-      qr_expiry_hours: 24,
-      logo_url: "",
-      frame_url: "",
-      campaign_text: "",
-      auto_delete_days: 7,
-      updated_at: new Date(0).toISOString(),
-    };
+  const settings =
+    addonCode === SMART_PHOTO_MOMENT_CODE
+      ? photoSettingsOut(await getOrCreatePhotoSettings(businessId))
+      : STUB_PHOTO_SETTINGS;
+
+  return toAddonStatusPayload(addon, sub, pending, settings);
+}
+
+export async function listAddonStatusesForBusiness(
+  businessId: string,
+): Promise<AddonStatusForBusiness[]> {
+  const catalog = await listAddons();
+  const subs = await db
+    .select()
+    .from(addonSubscriptions)
+    .where(eq(addonSubscriptions.businessId, businessId));
+  const pendingRows = await db
+    .select()
+    .from(addonRequests)
+    .where(
+      and(eq(addonRequests.businessId, businessId), eq(addonRequests.status, "pending")),
+    );
+
+  const photoSettings = catalog.some((addon) => addon.code === SMART_PHOTO_MOMENT_CODE)
+    ? photoSettingsOut(await getOrCreatePhotoSettings(businessId))
+    : STUB_PHOTO_SETTINGS;
+
+  const subByCode = new Map(subs.map((sub) => [sub.addonCode, sub]));
+  const pendingByCode = new Map<string, AddonRequest>();
+  for (const row of pendingRows) {
+    const existing = pendingByCode.get(row.addonCode);
+    if (!existing || row.createdAt.getTime() > existing.createdAt.getTime()) {
+      pendingByCode.set(row.addonCode, row);
+    }
   }
 
-  return {
-    addon: {
-      code: addon.code,
-      name: addon.name,
-      description: addon.description,
-      price_display: addon.priceDisplay,
-      monthly_price_idr: addon.monthlyPriceIdr,
-      discount_3m_percent: addon.discount3mPercent,
-      discount_6m_percent: addon.discount6mPercent,
-      discount_12m_percent: addon.discount12mPercent,
-    },
-    subscription_status: sub?.status ?? "inactive",
-    starts_at: sub?.startsAt?.toISOString() ?? null,
-    ends_at: sub?.endsAt?.toISOString() ?? null,
-    pending_request: pending
-      ? {
-          id: pending.id,
-          status: pending.status,
-          created_at: pending.createdAt.toISOString(),
-        }
-      : null,
-    settings,
-  };
+  return catalog.map((addon) =>
+    toAddonStatusPayload(
+      addon,
+      subByCode.get(addon.code),
+      pendingByCode.get(addon.code),
+      addon.code === SMART_PHOTO_MOMENT_CODE ? photoSettings : STUB_PHOTO_SETTINGS,
+    ),
+  );
 }
 
 export async function createAddonRequest(

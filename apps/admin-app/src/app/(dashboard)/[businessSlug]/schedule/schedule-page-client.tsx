@@ -83,7 +83,7 @@ export function SchedulePageClient() {
         subtitle={
           loading
             ? "Loading business hours…"
-            : "Set when customers can book appointments. Slots are generated from these hours."
+            : "Set when customers can book appointments. If you use the Booking add-on, set hours per doctor on Add On → Booking."
         }
         action={
           <button

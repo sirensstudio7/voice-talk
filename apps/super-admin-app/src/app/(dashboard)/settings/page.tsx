@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { EyeIcon, EyeSlashIcon, PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { EllipsisVerticalIcon, EyeIcon, EyeSlashIcon, PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 import { PageHeader } from "@/components/ui-blocks";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -32,6 +38,7 @@ const TTS_MODELS = [
 const VOICE_PROVIDERS = ["gemini", "elevenlabs", "custom"];
 
 const KEY_PROVIDERS = [
+  { id: "gemini", label: "Gemini" },
   { id: "elevenlabs", label: "ElevenLabs" },
   { id: "openai", label: "OpenAI" },
   { id: "deepgram", label: "Deepgram" },
@@ -106,83 +113,253 @@ function providerLabel(provider: string, customLabel: string) {
   return KEY_PROVIDERS.find((item) => item.id === provider)?.label ?? provider;
 }
 
-function ProviderKeyRowFields({
-  row,
+function isMaskedKey(value: string) {
+  return /^•+/.test(value.trim());
+}
+
+function keySuffix(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.length < 4) return "";
+  return trimmed.slice(-4);
+}
+
+function ProviderKeyList({
+  rows,
   canWrite,
-  onChange,
+  onEdit,
   onRemove,
 }: {
-  row: ProviderKeyRow;
+  rows: ProviderKeyRow[];
   canWrite: boolean;
-  onChange: (patch: Partial<ProviderKeyRow>) => void;
-  onRemove: () => void;
+  onEdit: (id: string) => void;
+  onRemove: (id: string) => void;
 }) {
-  const [visible, setVisible] = useState(false);
-  const masked = /^•+/.test(row.key);
-  const configured = row.set === true || masked;
   return (
-    <div className="grid gap-2 rounded-xl border border-border bg-muted/20 p-3 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_auto]">
-      <div className="flex flex-col gap-2">
-        <select
-          className={selectClass}
-          value={KEY_PROVIDERS.some((item) => item.id === row.provider) ? row.provider : "custom"}
-          disabled={!canWrite}
-          onChange={(e) => onChange({ provider: e.target.value })}
-        >
-          {KEY_PROVIDERS.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-        {row.provider === "custom" ? (
-          <input
-            className={inputClass}
-            value={row.label}
-            disabled={!canWrite}
-            placeholder="Provider name"
-            onChange={(e) => onChange({ label: e.target.value })}
-          />
-        ) : null}
+    <table className="w-full text-left text-sm">
+      <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+        <tr>
+          <th className="px-6 py-2.5 font-medium">Name</th>
+          <th className="px-4 py-2.5 font-medium">Provider</th>
+          <th className="px-4 py-2.5 font-medium">Key</th>
+          {canWrite ? (
+            <th className="w-12 px-3 py-2.5">
+              <span className="sr-only">Actions</span>
+            </th>
+          ) : null}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => {
+          const name = row.label.trim() || providerLabel(row.provider, row.label);
+          const saved = isMaskedKey(row.key);
+          const suffix = keySuffix(row.key);
+          return (
+            <tr key={row.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+              <td className="px-6 py-3">
+                {canWrite ? (
+                  <button
+                    type="button"
+                    className="font-medium hover:text-primary"
+                    onClick={() => onEdit(row.id)}
+                  >
+                    {name}
+                  </button>
+                ) : (
+                  <span className="font-medium">{name}</span>
+                )}
+                {!saved ? <span className="ml-2 text-xs text-amber-700">Unsaved</span> : null}
+              </td>
+              <td className="px-4 py-3 text-muted-foreground">
+                {providerLabel(row.provider, row.label)}
+              </td>
+              <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                {suffix ? `••••${suffix}` : "—"}
+              </td>
+              {canWrite ? (
+                <td className="px-3 py-3">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-muted-foreground"
+                        aria-label={`Actions for ${name}`}
+                      >
+                        <EllipsisVerticalIcon className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-36">
+                      <DropdownMenuItem onSelect={() => onEdit(row.id)}>Edit</DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onSelect={() => onRemove(row.id)}
+                      >
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </td>
+              ) : null}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function ProviderKeyDialog({
+  open,
+  editing,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  editing: ProviderKeyRow | null;
+  onClose: () => void;
+  onSubmit: (row: Omit<ProviderKeyRow, "id" | "set">) => void;
+}) {
+  const [provider, setProvider] = useState<string>("gemini");
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [visible, setVisible] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isEdit = Boolean(editing);
+
+  useEffect(() => {
+    if (!open) return;
+    setProvider(editing?.provider || "gemini");
+    setLabel(editing?.label ?? "");
+    setKey("");
+    setVisible(false);
+    setError(null);
+  }, [open, editing]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  function submit() {
+    if (!isEdit && !key.trim()) {
+      setError("Paste an API key to continue.");
+      return;
+    }
+    onSubmit({
+      provider,
+      label: label.trim(),
+      key: key.trim() || editing?.key || "",
+    });
+    onClose();
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
+      <button
+        type="button"
+        className="absolute inset-0 cursor-default"
+        aria-label="Close API key dialog"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="provider-key-dialog-title"
+        className="relative z-10 w-full max-w-lg rounded-xl border border-border bg-card shadow-xl"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+          <div>
+            <h2 id="provider-key-dialog-title" className="text-lg font-semibold">
+              {isEdit ? "Edit API key" : "Add API key"}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {isEdit
+                ? "Update the name or paste a new key to replace the saved one."
+                : "Save a named key, then assign it to a customer from Users."}
+            </p>
+          </div>
+          <Button variant="ghost" size="icon" className="size-8" onClick={onClose} aria-label="Close">
+            <XMarkIcon className="size-4" />
+          </Button>
+        </div>
+
+        <div className="flex flex-col gap-4 px-5 py-4">
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          <Field label="Provider">
+            <select
+              className={`${selectClass} h-10`}
+              value={KEY_PROVIDERS.some((item) => item.id === provider) ? provider : "custom"}
+              onChange={(e) => setProvider(e.target.value)}
+            >
+              {KEY_PROVIDERS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Name">
+            <input
+              className={`${inputClass} h-10`}
+              value={label}
+              placeholder="e.g. Production Gemini"
+              onChange={(e) => setLabel(e.target.value)}
+            />
+          </Field>
+          <Field label="API key">
+            <div className="relative">
+              <input
+                type={visible ? "text" : "password"}
+                autoComplete="off"
+                spellCheck={false}
+                className={`${inputClass} h-10 pr-10 font-mono`}
+                value={key}
+                placeholder={isEdit ? "Paste a new key to replace" : "Paste API key"}
+                onChange={(e) => {
+                  setKey(e.target.value);
+                  if (error) setError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40"
+                disabled={!key}
+                onClick={() => setVisible((prev) => !prev)}
+                aria-label={visible ? "Hide API key" : "Show API key"}
+              >
+                {visible ? <EyeSlashIcon className="size-4" /> : <EyeIcon className="size-4" />}
+              </button>
+            </div>
+            {isEdit ? (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Leave blank to keep the current key.
+              </p>
+            ) : null}
+          </Field>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={submit}>
+            {isEdit ? "Save key" : "Add key"}
+          </Button>
+        </div>
       </div>
-      <div className="relative min-w-0">
-        <input
-          type={visible && !masked ? "text" : "password"}
-          autoComplete="off"
-          spellCheck={false}
-          className={`${inputClass} pr-10 font-mono`}
-          value={row.key}
-          disabled={!canWrite}
-          placeholder={configured ? "Key saved — paste a new one to replace" : "Paste API key"}
-          onChange={(e) => onChange({ key: e.target.value })}
-        />
-        <button
-          type="button"
-          className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40"
-          disabled={!canWrite || !row.key || masked}
-          onClick={() => setVisible((prev) => !prev)}
-          aria-label={visible ? "Hide API key" : "Show API key"}
-        >
-          {visible ? <EyeSlashIcon className="size-4" /> : <EyeIcon className="size-4" />}
-        </button>
-        <p className="mt-1.5 text-xs text-muted-foreground">
-          {configured
-            ? `${providerLabel(row.provider, row.label)} key is saved.`
-            : "Not saved yet."}
-        </p>
-      </div>
-      {canWrite ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="self-start"
-          onClick={onRemove}
-          aria-label={`Remove ${providerLabel(row.provider, row.label)} key`}
-        >
-          <TrashIcon className="size-4" />
-        </Button>
-      ) : null}
     </div>
   );
 }
@@ -197,6 +374,8 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [flagsError, setFlagsError] = useState<string | null>(null);
+  const [keyDialogOpen, setKeyDialogOpen] = useState(false);
+  const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -248,30 +427,44 @@ export default function SettingsPage() {
     setValue("provider_api_keys", JSON.stringify(next));
   }
 
-  function addProviderKey() {
-    const used = new Set(providerKeys.map((row) => row.provider));
-    const nextProvider = KEY_PROVIDERS.find((item) => !used.has(item.id))?.id ?? "custom";
+  function openAddKey() {
+    setEditingKeyId(null);
+    setKeyDialogOpen(true);
+  }
+
+  function openEditKey(id: string) {
+    setEditingKeyId(id);
+    setKeyDialogOpen(true);
+  }
+
+  function closeKeyDialog() {
+    setKeyDialogOpen(false);
+    setEditingKeyId(null);
+  }
+
+  function submitProviderKey(row: Omit<ProviderKeyRow, "id" | "set">) {
+    if (editingKeyId) {
+      updateProviderKey(editingKeyId, row);
+      return;
+    }
+    addProviderKey(row);
+  }
+
+  function addProviderKey(row: Omit<ProviderKeyRow, "id" | "set">) {
     setProviderKeys([
       ...providerKeys,
       {
         id: crypto.randomUUID(),
-        provider: nextProvider,
-        label: nextProvider === "custom" ? "" : providerLabel(nextProvider, ""),
-        key: "",
+        provider: row.provider,
+        label: row.label,
+        key: row.key,
       },
     ]);
   }
 
   function updateProviderKey(id: string, patch: Partial<ProviderKeyRow>) {
     setProviderKeys(
-      providerKeys.map((row) => {
-        if (row.id !== id) return row;
-        const next = { ...row, ...patch };
-        if (patch.provider && patch.provider !== "custom") {
-          next.label = providerLabel(patch.provider, "");
-        }
-        return next;
-      }),
+      providerKeys.map((row) => (row.id === id ? { ...row, ...patch } : row)),
     );
   }
 
@@ -467,36 +660,28 @@ export default function SettingsPage() {
               <div className="space-y-1.5">
                 <CardTitle>Provider API keys</CardTitle>
                 <CardDescription>
-                  Add a key per speech provider. Gemini still uses the server environment key.
+                  Save named keys here first. Assign them to customer accounts from Users.
                 </CardDescription>
               </div>
               {canWrite ? (
-                <Button type="button" variant="outline" size="sm" onClick={addProviderKey}>
+                <Button type="button" variant="outline" size="sm" onClick={openAddKey}>
                   <PlusIcon className="size-4" />
                   Add API key
                 </Button>
               ) : null}
             </CardHeader>
-            <CardContent className="py-5">
+            <CardContent className={providerKeys.length === 0 ? "py-5" : "px-0 py-0"}>
               {providerKeys.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center">
-                  <p className="text-sm font-medium">No provider keys yet</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Add ElevenLabs, Deepgram, or any other API key you want to use later.
-                  </p>
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  No keys yet. Add one, then assign it to a customer from Users.
+                </p>
               ) : (
-                <div className="flex flex-col gap-3">
-                  {providerKeys.map((row) => (
-                    <ProviderKeyRowFields
-                      key={row.id}
-                      row={row}
-                      canWrite={canWrite}
-                      onChange={(patch) => updateProviderKey(row.id, patch)}
-                      onRemove={() => removeProviderKey(row.id)}
-                    />
-                  ))}
-                </div>
+                <ProviderKeyList
+                  rows={providerKeys}
+                  canWrite={canWrite}
+                  onEdit={openEditKey}
+                  onRemove={removeProviderKey}
+                />
               )}
             </CardContent>
           </Card>
@@ -669,6 +854,15 @@ export default function SettingsPage() {
           ) : null}
         </form>
       )}
+
+      {canWrite ? (
+        <ProviderKeyDialog
+          open={keyDialogOpen}
+          editing={editingKeyId ? providerKeys.find((row) => row.id === editingKeyId) ?? null : null}
+          onClose={closeKeyDialog}
+          onSubmit={submitProviderKey}
+        />
+      ) : null}
     </div>
   );
 }

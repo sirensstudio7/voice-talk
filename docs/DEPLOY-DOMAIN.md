@@ -52,6 +52,7 @@ PLATFORM_ADMIN_EMAIL=superadmin@lorescale.com
 PLATFORM_ADMIN_PASSWORD=<strong-password>
 MERCHANT_ADMIN_URL=https://dashboard.yourdomain.com
 ALLOWED_ORIGINS=https://app.yourdomain.com,https://dashboard.yourdomain.com,https://admin.yourdomain.com,yourdomain.com
+PHOTO_DOWNLOAD_BASE_URL=https://yourdomain.com
 ```
 
 Domain-only entries (e.g. `yourdomain.com`) allow any `https://` subdomain. Host-only entries (e.g. `app.yourdomain.com`) match that host exactly.

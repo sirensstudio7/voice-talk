@@ -7,6 +7,7 @@
     "start": "bun src/index.ts",
     "typecheck": "tsc --noEmit",
     "seed": "bun scripts/seed.ts",
+    "seed:booking": "bun scripts/seed-booking.ts",
     "seed:demo-analytics": "bun scripts/seed-demo-analytics.ts",
     "seed:demo-analytics:force": "bun scripts/seed-demo-analytics.ts --force",
     "db:migrate": "bun scripts/migrate.ts",

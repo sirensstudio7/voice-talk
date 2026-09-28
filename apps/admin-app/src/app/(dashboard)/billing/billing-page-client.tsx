@@ -80,6 +80,7 @@ const PLAN_DETAILS: Record<string, PlanDetails> = {
     idr: { monthly: "Rp749.000", yearly: "Rp7.490.000" },
     features: (plan) => [
       `${plan.workspace_limit} workspace${plan.workspace_limit === 1 ? "" : "s"}`,
+      `${plan.kiosk_display_limit ?? 1} kiosk display${(plan.kiosk_display_limit ?? 1) === 1 ? "" : "s"}`,
       `${plan.monthly_voice_minutes ?? 300} Lore Voice Minutes / month`,
       "1 active AI Voice Talk agent",
       "Basic dashboard & analytics",
@@ -95,6 +96,7 @@ const PLAN_DETAILS: Record<string, PlanDetails> = {
     includedLabel: "Everything in Starter, plus",
     features: (plan) => [
       `${plan.workspace_limit} workspace${plan.workspace_limit === 1 ? "" : "s"}`,
+      `${plan.kiosk_display_limit ?? 5} kiosk display${(plan.kiosk_display_limit ?? 5) === 1 ? "" : "s"}`,
       `${plan.monthly_voice_minutes ?? 1500} Lore Voice Minutes / month`,
       "Up to 5 voice agents",
       "WhatsApp integration",
@@ -112,6 +114,7 @@ const PLAN_DETAILS: Record<string, PlanDetails> = {
     includedLabel: "Sales-led package includes",
     features: (plan) => [
       `${plan.workspace_limit} workspaces included`,
+      `${plan.kiosk_display_limit ?? 10} kiosk displays`,
       `${plan.monthly_voice_minutes ?? 5000} Lore Voice Minutes / month`,
       "Custom onboarding",
       "Dedicated support",

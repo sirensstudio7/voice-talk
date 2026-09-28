@@ -94,10 +94,16 @@ function AppointmentRow({
             <span className="truncate">{appointment.treatment_name}</span>
           </p>
 
-          <p className="mt-1.5 flex items-center gap-1.5 text-sm text-slate-600">
+          <p className="flex items-center gap-1.5 text-sm text-slate-600">
             <UserIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
             <span className="truncate">{appointment.customer_name}</span>
           </p>
+
+          {appointment.staff_name ? (
+            <p className="mt-1 text-sm text-slate-500">
+              Doctor: {appointment.staff_name}
+            </p>
+          ) : null}
 
           {appointment.customer_phone ? (
             <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">

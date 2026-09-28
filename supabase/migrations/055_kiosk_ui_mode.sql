@@ -1,0 +1,2 @@
+ALTER TABLE businesses
+  ADD COLUMN IF NOT EXISTS kiosk_ui_mode VARCHAR(20) NOT NULL DEFAULT 'classic';

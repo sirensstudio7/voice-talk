@@ -9,9 +9,10 @@ import { env } from "../env.js";
 const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL ?? "gemini-2.0-flash";
 const TTS_MODEL = process.env.GEMINI_TTS_MODEL ?? "gemini-2.5-flash-preview-tts";
 
-function getClient(): GoogleGenAI | null {
-  if (!env.GEMINI_API_KEY) return null;
-  return new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+function getClient(apiKey?: string | null): GoogleGenAI | null {
+  const key = apiKey?.trim() || env.GEMINI_API_KEY;
+  if (!key) return null;
+  return new GoogleGenAI({ apiKey: key });
 }
 
 async function resolveDefaultTtsModel() {
@@ -170,8 +171,9 @@ export async function synthesizeSpeechWav(
   text: string,
   voiceName = "Kore",
   modelName?: string,
+  apiKey?: string | null,
 ): Promise<{ buffer: Buffer; durationSeconds: number } | null> {
-  const client = getClient();
+  const client = getClient(apiKey);
   if (!client || !text.trim()) return null;
   const model = modelName?.trim() || (await resolveDefaultTtsModel());
 
@@ -232,6 +234,7 @@ export type QaSourceRef = {
 export async function answerPresentationQuestion(input: {
   language: string;
   question: string;
+  apiKey?: string | null;
   chunks: Array<{ sourceType: string; sourceId: string | null; chunkText: string }>;
 }): Promise<{ answer: string; sources: QaSourceRef[] }> {
   const ranked = rankChunks(input.question, input.chunks).slice(0, 8);
@@ -252,7 +255,7 @@ export async function answerPresentationQuestion(input: {
         : "Sorry, that question is outside this presentation's material."
       : ranked[0]!.chunkText.slice(0, 400);
 
-  const client = getClient();
+  const client = getClient(input.apiKey);
   if (!client) return { answer: fallback, sources };
 
   try {
@@ -302,4 +305,81 @@ function rankChunks(
       return { ...chunk, score };
     })
     .sort((a, b) => b.score - a.score);
+}
+
+const ALLOWED_AUDIO_MIME = new Set([
+  "audio/webm",
+  "audio/webm;codecs=opus",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/ogg",
+  "audio/ogg;codecs=opus",
+]);
+
+const TRANSCRIBE_MODELS = [
+  process.env.GEMINI_TEXT_MODEL,
+  "gemini-2.5-flash",
+  "gemini-3.1-flash",
+  "gemini-3.6-flash",
+].filter((model, index, all): model is string => {
+  if (!model) return false;
+  if (/live-preview|tts/i.test(model)) return false;
+  if (/gemini-2\.0/i.test(model)) return false;
+  return all.indexOf(model) === index;
+});
+
+export async function transcribeAudienceQuestion(input: {
+  apiKey?: string | null;
+  language?: string;
+  mimeType: string;
+  audioBase64: string;
+}): Promise<string> {
+  const client = getClient(input.apiKey);
+  if (!client) {
+    const err = new Error("Voice transcription is not configured") as Error & { statusCode: number };
+    err.statusCode = 503;
+    throw err;
+  }
+
+  const rawMime = String(input.mimeType || "audio/webm").split(";")[0]!.trim().toLowerCase();
+  const mimeType = ALLOWED_AUDIO_MIME.has(rawMime) || ALLOWED_AUDIO_MIME.has(input.mimeType)
+    ? (rawMime || "audio/webm")
+    : "audio/webm";
+  const lang = String(input.language ?? "id").toLowerCase().startsWith("id")
+    ? "Indonesian"
+    : "English";
+
+  let lastError: unknown;
+  for (const model of TRANSCRIBE_MODELS) {
+    try {
+      const response = await client.models.generateContent({
+        model,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { inlineData: { mimeType, data: input.audioBase64 } },
+              {
+                text: `Transcribe this spoken audience question in ${lang}. Return ONLY the transcript. If there is no speech, return EMPTY.`,
+              },
+            ],
+          },
+        ],
+      });
+      const text = response.text?.trim() ?? "";
+      if (!text || /^empty$/i.test(text)) return "";
+      return text.replace(/^["“”']+|["“”']+$/g, "").trim();
+    } catch (err) {
+      lastError = err;
+      console.warn("[presentation-ai] transcribe failed", model, err);
+    }
+  }
+
+  const err = new Error(
+    lastError instanceof Error ? lastError.message : "Could not transcribe the question",
+  ) as Error & { statusCode: number };
+  err.statusCode = 502;
+  throw err;
 }

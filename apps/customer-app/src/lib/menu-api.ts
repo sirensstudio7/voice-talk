@@ -35,6 +35,7 @@ export interface MenuResponse {
   background_url?: string;
   gradient_color?: string;
   display_orientation?: string;
+  kiosk_ui_mode?: string;
   voice_preset?: string;
   voice_gender?: string;
   capabilities?: BusinessCapabilities;
@@ -74,6 +75,24 @@ export interface MenuResponse {
   languages?: {
     active: boolean;
     available: AiLanguage[];
+  };
+  booking?: {
+    active: boolean;
+    enabled?: boolean;
+    staff: Array<{
+      id: string;
+      name: string;
+      specialty: string;
+      photo_url?: string;
+      is_active?: boolean;
+    }>;
+    services: Array<{
+      id: string;
+      name: string;
+      duration_min: number;
+      price: number;
+      description: string;
+    }>;
   };
   products: MenuProduct[];
 }

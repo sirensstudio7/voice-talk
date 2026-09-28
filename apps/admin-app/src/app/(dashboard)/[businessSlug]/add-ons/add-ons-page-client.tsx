@@ -1,14 +1,13 @@
 "use client";
 
 import {
+  CalendarDaysIcon,
   CameraIcon,
   CheckIcon,
   GlobeAltIcon,
   MagnifyingGlassIcon,
   MegaphoneIcon,
   PresentationChartBarIcon,
-  QrCodeIcon,
-  SparklesIcon,
   TrophyIcon,
   VideoCameraIcon,
 } from "@heroicons/react/24/outline";
@@ -16,7 +15,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { PageHeader } from "@/components/ui";
-import { peekAddonStatus, rememberAddonStatus } from "@/lib/addon-status-cache";
+import { peekAddonStatus, rememberAddonStatuses } from "@/lib/addon-status-cache";
 import { api, type AddonStatus } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
@@ -26,7 +25,7 @@ type CardConfig = {
   code: string;
   href: string;
   highlights: string[];
-  icon: "photo" | "spin" | "presenter" | "banner" | "language" | "live";
+  icon: "photo" | "spin" | "presenter" | "banner" | "language" | "live" | "booking";
 };
 
 type StatusFilter = "all" | "active" | "pending" | "available";
@@ -45,6 +44,26 @@ function addonLifecycle(
   if (status.pending_request) return "pending";
   return "available";
 }
+
+const CARD_ICONS = {
+  photo: CameraIcon,
+  spin: TrophyIcon,
+  presenter: PresentationChartBarIcon,
+  banner: MegaphoneIcon,
+  language: GlobeAltIcon,
+  live: VideoCameraIcon,
+  booking: CalendarDaysIcon,
+} as const;
+
+const THUMB_STYLE = {
+  photo: "bg-stone-100 text-stone-500",
+  spin: "bg-orange-50 text-orange-500",
+  presenter: "bg-slate-800 text-white",
+  banner: "bg-orange-100 text-orange-600",
+  language: "bg-slate-100 text-slate-500",
+  live: "bg-neutral-900 text-white",
+  booking: "bg-emerald-50 text-emerald-600",
+} as const;
 
 const CARDS: CardConfig[] = [
   {
@@ -83,7 +102,20 @@ const CARDS: CardConfig[] = [
     highlights: ["AI host", "Chat", "Your products"],
     icon: "live",
   },
+  {
+    code: "booking",
+    href: "/add-ons/booking",
+    highlights: ["Doctors", "Hours", "Voice book"],
+    icon: "booking",
+  },
 ];
+
+function addonPriceParts(priceDisplay: string): { currency: string; amount: string } {
+  const raw = (priceDisplay || "Rp199.000/month").replace(/\/\s*month/i, "").trim();
+  const match = raw.match(/^([A-Za-z]+)\s*(.+)$/);
+  if (match) return { currency: match[1], amount: match[2] };
+  return { currency: "", amount: raw };
+}
 
 function AddonCard({
   status,
@@ -96,10 +128,10 @@ function AddonCard({
 }) {
   const isActive = status.subscription_status === "active";
   const isPending = Boolean(status.pending_request);
-  const priceLabel = (status.addon.price_display ?? "Rp199.000/month").replace(
-    /\/\s*month/i,
-    "",
+  const { currency, amount } = addonPriceParts(
+    status.addon.price_display ?? "Rp199.000/month",
   );
+  const Icon = CARD_ICONS[config.icon];
 
   return (
     <Link
@@ -115,63 +147,15 @@ function AddonCard({
       )}
     >
       <div className="px-1 pt-1">
-        <div className="relative aspect-[5/4] w-full overflow-hidden rounded-xl bg-slate-100">
-          <div
-            className={cn(
-              "absolute inset-0",
-              config.icon === "photo"
-                ? "bg-[radial-gradient(ellipse_at_30%_20%,#fff7ed_0%,transparent_55%),linear-gradient(160deg,#fffbeb_0%,#ffedd5_42%,#fed7aa_100%)]"
-                : config.icon === "presenter"
-                  ? "bg-[radial-gradient(ellipse_at_40%_15%,#f5f3ff_0%,transparent_55%),linear-gradient(160deg,#ede9fe_0%,#ddd6fe_42%,#c4b5fd_100%)]"
-                  : config.icon === "banner"
-                    ? "bg-[radial-gradient(ellipse_at_35%_20%,#fff1f2_0%,transparent_55%),linear-gradient(160deg,#ffe4e6_0%,#fecdd3_42%,#fda4af_100%)]"
-                    : config.icon === "language"
-                      ? "bg-[radial-gradient(ellipse_at_30%_15%,#ecfeff_0%,transparent_55%),linear-gradient(160deg,#cffafe_0%,#a5f3fc_42%,#67e8f9_100%)]"
-                    : config.icon === "live"
-                      ? "bg-[radial-gradient(ellipse_at_25%_20%,#fef2f2_0%,transparent_55%),linear-gradient(160deg,#fee2e2_0%,#fecaca_42%,#f87171_100%)]"
-                    : "bg-[radial-gradient(ellipse_at_70%_20%,#eef2ff_0%,transparent_55%),linear-gradient(160deg,#e0e7ff_0%,#c7d2fe_42%,#a5b4fc_100%)]",
-            )}
-          />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="relative flex h-[62%] w-[58%] items-center justify-center rounded-2xl border border-white/70 bg-white/55 shadow-lg backdrop-blur-sm transition group-hover:scale-[1.02]">
-              {config.icon === "photo" ? (
-                <CameraIcon className="size-9 text-orange-500/80" aria-hidden />
-              ) : config.icon === "presenter" ? (
-                <PresentationChartBarIcon className="size-9 text-violet-600/80" aria-hidden />
-              ) : config.icon === "banner" ? (
-                <MegaphoneIcon className="size-9 text-rose-500/80" aria-hidden />
-              ) : config.icon === "language" ? (
-                <GlobeAltIcon className="size-9 text-cyan-600/80" aria-hidden />
-              ) : config.icon === "live" ? (
-                <VideoCameraIcon className="size-9 text-red-500/80" aria-hidden />
-              ) : (
-                <TrophyIcon className="size-9 text-indigo-500/80" aria-hidden />
-              )}
-              <div className="absolute bottom-3 right-3 flex size-9 items-center justify-center rounded-lg bg-white/90 shadow-sm ring-1 ring-slate-200/70">
-                {config.icon === "photo" ? (
-                  <QrCodeIcon className="size-4 text-slate-700" aria-hidden />
-                ) : (
-                  <SparklesIcon
-                    className={cn(
-                      "size-4",
-                      config.icon === "presenter"
-                        ? "text-violet-600"
-                        : config.icon === "banner"
-                          ? "text-rose-600"
-                          : config.icon === "language"
-                            ? "text-cyan-600"
-                            : config.icon === "live"
-                              ? "text-red-600"
-                          : "text-indigo-600",
-                    )}
-                    aria-hidden
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-          {(isActive || isPending) && (
-            <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full border border-white/40 bg-white/95 px-2 py-0.5 text-[11px] font-medium text-slate-900 shadow-sm backdrop-blur">
+        <div
+          className={cn(
+            "relative aspect-[5/4] overflow-hidden rounded-xl",
+            THUMB_STYLE[config.icon],
+          )}
+        >
+          <Icon className="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2" aria-hidden />
+          {isActive || isPending ? (
+            <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-[11px] font-medium text-slate-700 shadow-sm">
               {isActive ? (
                 <>
                   <CheckIcon className="size-3.5 text-orange-500" aria-hidden />
@@ -181,7 +165,7 @@ function AddonCard({
                 "Pending"
               )}
             </span>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -204,20 +188,15 @@ function AddonCard({
             </span>
           ))}
         </div>
-        <div className="mt-auto flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              Per workspace
-            </p>
-            <p className="truncate text-sm font-semibold tabular-nums text-slate-900">
-              {priceLabel}
-              <span className="ml-0.5 font-normal text-slate-500">/mo</span>
-            </p>
-          </div>
-          <span className="shrink-0 text-sm font-medium text-orange-600 transition group-hover:text-orange-700">
-            View details
+        <p className="mt-auto flex items-baseline gap-1.5">
+          {currency ? (
+            <span className="text-sm font-medium text-slate-500">{currency}</span>
+          ) : null}
+          <span className="text-xl font-semibold tabular-nums tracking-tight text-slate-900">
+            {amount}
           </span>
-        </div>
+          <span className="text-sm text-slate-500">/ month</span>
+        </p>
       </div>
     </Link>
   );
@@ -249,8 +228,7 @@ export function AddOnsPageClient() {
     void (async () => {
       if (!token || !business?.id) return;
       const cached = cachedAddonStatuses(business.id);
-      const hasCompleteCache = CARDS.every((card) => cached[card.code]);
-      if (hasCompleteCache) {
+      if (Object.keys(cached).length > 0) {
         setStatuses(cached);
         setLoading(false);
       } else {
@@ -258,18 +236,12 @@ export function AddOnsPageClient() {
       }
       setError(null);
       try {
-        const results = await Promise.all(
-          CARDS.map(async (card) => {
-            const data = await api.getAddonStatus(token, business.id, card.code);
-            return [card.code, data] as const;
-          }),
+        const results = await api.listAddonStatuses(token, business.id);
+        if (cancelled) return;
+        rememberAddonStatuses(business.id, results);
+        setStatuses(
+          Object.fromEntries(results.map((status) => [status.addon.code, status])),
         );
-        if (!cancelled) {
-          for (const [code, data] of results) {
-            rememberAddonStatus(business.id, code, data);
-          }
-          setStatuses(Object.fromEntries(results));
-        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load add-ons");
@@ -376,9 +348,12 @@ export function AddOnsPageClient() {
 
       {loading ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <div className="h-72 animate-pulse rounded-2xl bg-slate-100 ring-1 ring-slate-200/80" />
-          <div className="h-72 animate-pulse rounded-2xl bg-slate-100 ring-1 ring-slate-200/80" />
-          <div className="h-72 animate-pulse rounded-2xl bg-slate-100 ring-1 ring-slate-200/80" />
+          {CARDS.map((card) => (
+            <div
+              key={card.code}
+              className="h-72 animate-pulse rounded-2xl bg-slate-100 ring-1 ring-slate-200/80"
+            />
+          ))}
         </div>
       ) : filteredCards.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-8 py-12 text-center">

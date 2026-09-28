@@ -12,6 +12,7 @@ import {
   PencilSquareIcon,
   PlayIcon,
   PlusIcon,
+  ShareIcon,
   StopIcon,
   TrashIcon,
   XMarkIcon,
@@ -333,6 +334,12 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
   const openPreviewWhenReadyRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState("");
+  const [shareError, setShareError] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
+
   const load = useCallback(async () => {
     if (!token || !business || loadInFlight.current) return;
     loadInFlight.current = true;
@@ -349,6 +356,33 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
       loadInFlight.current = false;
     }
   }, [token, business, presentationId, router]);
+
+  const copyShareUrl = useCallback(async () => {
+    if (!shareUrl.trim()) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+      setShareError("");
+    } catch {
+      setShareError("Copy failed — please select the link and copy manually.");
+    }
+  }, [shareUrl]);
+
+  const onShare = useCallback(async () => {
+    if (!token || !business) return;
+    setShareBusy(true);
+    setShareCopied(false);
+    setShareError("");
+    try {
+      const res = await api.sharePresentation(token, business.id, presentationId);
+      setShareUrl(res.share_url);
+      setShareDialogOpen(true);
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : "Could not create share link");
+    } finally {
+      setShareBusy(false);
+    }
+  }, [business, presentationId, shareBusy, token]);
 
   useEffect(() => {
     void load();
@@ -685,6 +719,17 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
                   </Link>
                 </Button>
               ) : null}
+              {primaryFile && isReady ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || shareBusy}
+                  onClick={() => void onShare()}
+                >
+                  <ShareIcon className="h-4 w-4" />
+                  Share
+                </Button>
+              ) : null}
               {isReady ? (
                 <Button size="sm" disabled={busy} onClick={() => void onLaunch()}>
                   <PlayIcon className="h-4 w-4" />
@@ -714,6 +759,76 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
         <p className="shrink-0 border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 lg:px-6">
           {error}
         </p>
+      ) : null}
+
+      {shareDialogOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            onClick={() => setShareDialogOpen(false)}
+            aria-label="Close share dialog"
+          />
+
+          <div className="relative z-10 flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200">
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">Share AI Present</h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Audience can open the link and tap <span className="font-medium">Start</span>.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShareDialogOpen(false)}
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+              <div>
+                <p className="text-xs font-medium text-slate-700">Share link</p>
+                <div className="mt-1 flex gap-2">
+                  <input
+                    value={shareUrl}
+                    readOnly
+                    className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void copyShareUrl()}
+                    disabled={shareBusy}
+                  >
+                    Copy
+                  </Button>
+                </div>
+                {shareCopied ? (
+                  <p className="mt-2 text-xs text-emerald-700">Copied.</p>
+                ) : null}
+                {shareError ? (
+                  <p className="mt-2 text-xs text-red-700">{shareError}</p>
+                ) : null}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setShareDialogOpen(false)} disabled={shareBusy}>
+                  Close
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => window.open(shareUrl, "_blank", "noopener,noreferrer")}
+                  disabled={!shareUrl}
+                >
+                  Open
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {!primaryFile ? (

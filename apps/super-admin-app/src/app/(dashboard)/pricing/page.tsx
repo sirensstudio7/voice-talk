@@ -24,7 +24,13 @@ function parseNum(value: string) {
 }
 
 type Pricing = Awaited<ReturnType<typeof api.getPricing>>;
-type PlanDraft = { monthly: string; discount: string; minutes: string; workspaces: string };
+type PlanDraft = {
+  monthly: string;
+  discount: string;
+  minutes: string;
+  workspaces: string;
+  kiosks: string;
+};
 type AddonDraft = { monthly: string; d3: string; d6: string; d12: string };
 type PackDraft = { price: string; minutes: string; discount: string };
 
@@ -88,6 +94,7 @@ export default function PricingPage() {
               discount: String(plan.yearly_discount_percent),
               minutes: String(plan.monthly_voice_minutes),
               workspaces: String(plan.workspace_limit),
+              kiosks: String(plan.kiosk_display_limit),
             },
           ]),
         ),
@@ -137,6 +144,7 @@ export default function PricingPage() {
         yearly_discount_percent: parseNum(draft.discount),
         monthly_voice_minutes: parseNum(draft.minutes),
         workspace_limit: parseNum(draft.workspaces),
+        kiosk_display_limit: parseNum(draft.kiosks),
       });
       setMessage(`Saved ${code} plan.`);
       await load();
@@ -231,6 +239,7 @@ export default function PricingPage() {
                     <th className="px-3 py-3 font-medium">Yearly price</th>
                     <th className="px-3 py-3 font-medium">Minutes</th>
                     <th className="px-3 py-3 font-medium">Workspace</th>
+                    <th className="px-3 py-3 font-medium">Kiosks</th>
                     <th className="px-5 py-3" />
                   </tr>
                 </thead>
@@ -241,13 +250,15 @@ export default function PricingPage() {
                       discount: "0",
                       minutes: "0",
                       workspaces: "1",
+                      kiosks: "1",
                     };
                     const yearly = yearlyFromMonthly(parseNum(draft.monthly), parseNum(draft.discount));
                     const dirty =
                       parseNum(draft.monthly) !== plan.monthly_price_idr ||
                       parseNum(draft.discount) !== plan.yearly_discount_percent ||
                       parseNum(draft.minutes) !== plan.monthly_voice_minutes ||
-                      parseNum(draft.workspaces) !== plan.workspace_limit;
+                      parseNum(draft.workspaces) !== plan.workspace_limit ||
+                      parseNum(draft.kiosks) !== plan.kiosk_display_limit;
                     return (
                       <tr key={plan.code} className="border-t border-border">
                         <td className="px-5 py-3.5">
@@ -328,6 +339,22 @@ export default function PricingPage() {
                               setPlanDrafts((prev) => ({
                                 ...prev,
                                 [plan.code]: { ...draft, workspaces: event.target.value },
+                              }))
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-3.5">
+                          <AffixField
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={draft.kiosks}
+                            disabled={!canWrite}
+                            className="w-20"
+                            onChange={(event) =>
+                              setPlanDrafts((prev) => ({
+                                ...prev,
+                                [plan.code]: { ...draft, kiosks: event.target.value },
                               }))
                             }
                           />

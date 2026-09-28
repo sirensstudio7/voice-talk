@@ -2,15 +2,13 @@
 
 import { useEffect, useState } from "react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 type DownloadState =
   | { status: "loading" }
   | { status: "ready"; url: string; expiresAt: string }
   | { status: "expired" }
   | { status: "error"; message: string };
 
-export function PhotoDownloadClient({ token }: { token: string }) {
+export function PhotoDownloadClient({ token, apiUrl }: { token: string; apiUrl: string }) {
   const [state, setState] = useState<DownloadState>({ status: "loading" });
 
   useEffect(() => {
@@ -22,7 +20,7 @@ export function PhotoDownloadClient({ token }: { token: string }) {
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`${API_URL}/public/photo/download/${encodeURIComponent(token)}`);
+        const res = await fetch(`${apiUrl}/public/photo/download/${encodeURIComponent(token)}`);
         if (cancelled) return;
         if (res.status === 410) {
           setState({ status: "expired" });
@@ -45,7 +43,7 @@ export function PhotoDownloadClient({ token }: { token: string }) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [apiUrl, token]);
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-gradient-to-b from-slate-50 to-orange-50 px-4 py-10">

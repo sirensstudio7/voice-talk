@@ -55,3 +55,16 @@ export function getBusinessCapabilities(
     payment_enabled: orderingEnabled,
   };
 }
+
+/** Booking add-on unlocks voice appointments for any workspace (clinic, contact center, etc.). */
+export function withBookingAddon(
+  capabilities: BusinessCapabilities,
+  bookingAddonActive: boolean,
+): BusinessCapabilities {
+  if (!bookingAddonActive) return capabilities;
+  return {
+    ...capabilities,
+    booking_enabled: true,
+    menu_enabled: true,
+  };
+}

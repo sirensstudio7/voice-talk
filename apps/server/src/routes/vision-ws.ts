@@ -103,6 +103,20 @@ async function handleKioskClient(
     return;
   }
 
+  try {
+    const { assertKioskSocketAccess } = await import("../services/kiosk-displays.js");
+    await assertKioskSocketAccess({
+      businessId: tenant.id,
+      businessSlug: slug,
+      kioskSlug: kioskId,
+      token: query.token,
+      embed: query.embed,
+    });
+  } catch {
+    socket.close();
+    return;
+  }
+
   const hub = await ensureVisionHub(tenant.id, slug);
   hub.settings = await getOrCreateVisionSettings(tenant.id);
   registerKioskClient(hub, kioskId, socket);

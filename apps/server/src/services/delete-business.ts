@@ -7,10 +7,14 @@ import {
   aiRules,
   analyticsEvents,
   appointments,
+  bookingServices,
+  bookingSettings,
+  bookingStaff,
   businessHours,
   businessMembers,
   businesses,
   knowledgeEntries,
+  kioskDisplays,
   luckySpinCampaigns,
   luckySpinSettings,
   luckySpinWinners,
@@ -63,6 +67,9 @@ export async function deleteBusinessAsOwner(userId: string, businessId: string):
   const sessionIds = sessions.map((s) => s.id);
 
   await db.delete(appointments).where(eq(appointments.businessId, businessId));
+  await db.delete(bookingServices).where(eq(bookingServices.businessId, businessId));
+  await db.delete(bookingSettings).where(eq(bookingSettings.businessId, businessId));
+  await db.delete(bookingStaff).where(eq(bookingStaff.businessId, businessId));
   await db.delete(orders).where(eq(orders.businessId, businessId));
 
   if (sessionIds.length > 0) {
@@ -76,6 +83,7 @@ export async function deleteBusinessAsOwner(userId: string, businessId: string):
   await db.delete(knowledgeEntries).where(eq(knowledgeEntries.businessId, businessId));
   await db.delete(businessHours).where(eq(businessHours.businessId, businessId));
   await db.delete(aiRules).where(eq(aiRules.businessId, businessId));
+  await db.delete(kioskDisplays).where(eq(kioskDisplays.businessId, businessId));
   await db.delete(visionSettings).where(eq(visionSettings.businessId, businessId));
   await db.delete(visionEvents).where(eq(visionEvents.businessId, businessId));
   await db.delete(analyticsEvents).where(eq(analyticsEvents.businessId, businessId));

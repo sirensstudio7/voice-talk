@@ -73,8 +73,20 @@ export type PlatformUser = {
   status: string;
   workspace_count: number;
   plan: string;
+  has_custom_api_keys?: boolean;
   created_at: string;
   last_login_at: string | null;
+};
+
+export type UserApiKeyCatalogItem = {
+  id: string;
+  provider: string;
+  label: string;
+};
+
+export type UserApiKeyAssignment = {
+  source_id: string | null;
+  catalog: UserApiKeyCatalogItem[];
 };
 
 export type Paginated<T> = {
@@ -327,6 +339,16 @@ export const api = {
       `/platform/users/${id}/reset-password`,
       { method: "POST", token },
     );
+  },
+  getUserApiKeys(token: string, id: string) {
+    return request<UserApiKeyAssignment>(`/platform/users/${id}/api-keys`, { token });
+  },
+  updateUserApiKeys(token: string, id: string, sourceId: string | null) {
+    return request<UserApiKeyAssignment>(`/platform/users/${id}/api-keys`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify({ source_id: sourceId }),
+    });
   },
   listBusinesses(
     token: string,
@@ -596,6 +618,7 @@ export const api = {
         name: string;
         is_trial: boolean;
         workspace_limit: number;
+        kiosk_display_limit: number;
         monthly_price_idr: number;
         yearly_price_idr: number;
         yearly_discount_percent: number;
@@ -634,6 +657,7 @@ export const api = {
       yearly_discount_percent?: number;
       monthly_voice_minutes?: number;
       workspace_limit?: number;
+      kiosk_display_limit?: number;
     },
   ) {
     return request(`/platform/pricing/plans/${code}`, {

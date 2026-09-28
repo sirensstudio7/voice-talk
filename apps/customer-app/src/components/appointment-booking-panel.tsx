@@ -12,6 +12,7 @@ import {
 import { slideOverBackdropClass, slideOverPanelClass, useSlideOver } from "@/components/slide-over";
 import { useBusinessSlug } from "@/context/business-context";
 import { bookAppointment, fetchAvailability } from "@/lib/appointment-api";
+import { resolveMediaUrl } from "@/lib/menu-api";
 import { useSessionStore } from "@/store/session-store";
 
 function formatSlotLabel(iso: string) {
@@ -26,7 +27,9 @@ function nextDateOptions(count = 14) {
   for (let offset = 0; offset < count; offset += 1) {
     const date = new Date(now);
     date.setDate(now.getDate() + offset);
-    const value = date.toISOString().slice(0, 10);
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const value = `${date.getFullYear()}-${month}-${day}`;
     const label =
       offset === 0
         ? "Today"
@@ -49,7 +52,14 @@ const inputClassName =
 function AppointmentBookingPanel({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const businessSlug = useBusinessSlug();
   const selectedTreatment = useSessionStore((s) => s.selectedTreatment);
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const staffOptions = useSessionStore((s) => s.menuCache?.booking?.staff ?? []);
+  const [selectedStaffId, setSelectedStaffId] = useState<string>("");
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${now.getFullYear()}-${month}-${day}`;
+  });
   const [slots, setSlots] = useState<string[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState("");
@@ -62,18 +72,27 @@ function AppointmentBookingPanel({ visible, onClose }: { visible: boolean; onClo
 
   useEffect(() => {
     if (!visible || !selectedTreatment) return;
+    if (staffOptions.length > 0 && !selectedStaffId) {
+      setSlots([]);
+      return;
+    }
 
     setLoadingSlots(true);
     setError(null);
     setSelectedSlot(null);
-    void fetchAvailability(businessSlug, selectedTreatment.productId, selectedDate)
+    void fetchAvailability(
+      businessSlug,
+      selectedTreatment.productId,
+      selectedDate,
+      selectedStaffId || null,
+    )
       .then((data) => setSlots(data))
       .catch((err) => {
         setSlots([]);
         setError(err instanceof Error ? err.message : "Could not load slots.");
       })
       .finally(() => setLoadingSlots(false));
-  }, [visible, selectedTreatment, selectedDate, businessSlug]);
+  }, [visible, selectedTreatment, selectedDate, businessSlug, selectedStaffId, staffOptions.length]);
 
   useEffect(() => {
     if (!visible) {
@@ -82,6 +101,7 @@ function AppointmentBookingPanel({ visible, onClose }: { visible: boolean; onClo
       setSelectedSlot(null);
       setCustomerName("");
       setCustomerPhone("");
+      setSelectedStaffId("");
     }
   }, [visible]);
 
@@ -89,6 +109,7 @@ function AppointmentBookingPanel({ visible, onClose }: { visible: boolean; onClo
     selectedTreatment &&
     selectedSlot &&
     customerName.trim().length > 0 &&
+    (staffOptions.length === 0 || Boolean(selectedStaffId)) &&
     !booking &&
     !success;
 
@@ -103,6 +124,7 @@ function AppointmentBookingPanel({ visible, onClose }: { visible: boolean; onClo
         starts_at: selectedSlot,
         customer_name: customerName.trim(),
         customer_phone: customerPhone.trim(),
+        staff_id: selectedStaffId || undefined,
       });
       setSuccess(true);
     } catch (err) {
@@ -163,6 +185,53 @@ function AppointmentBookingPanel({ visible, onClose }: { visible: boolean; onClo
             </div>
           ) : (
             <div className="space-y-6">
+              {staffOptions.length > 0 ? (
+                <section>
+                  <div className="mb-3 text-sm font-semibold text-slate-800">Choose a doctor</div>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {staffOptions.map((person) => {
+                      const selected = selectedStaffId === person.id;
+                      const photo = resolveMediaUrl(person.photo_url ?? "");
+                      const initials = person.name
+                        .replace(/^dr\.?\s*/i, "")
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .slice(0, 2)
+                        .map((part) => part[0]?.toUpperCase() ?? "")
+                        .join("");
+                      return (
+                        <button
+                          key={person.id}
+                          type="button"
+                          onClick={() => setSelectedStaffId(person.id)}
+                          className={`flex w-[5.5rem] shrink-0 flex-col items-center gap-1.5 rounded-2xl px-2 py-2 text-center transition ${
+                            selected
+                              ? "bg-orange-50 ring-2 ring-orange-400"
+                              : "bg-white ring-1 ring-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          {photo ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={photo}
+                              alt=""
+                              className="size-12 rounded-full object-cover"
+                            />
+                          ) : (
+                            <span className="flex size-12 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+                              {initials || "DR"}
+                            </span>
+                          )}
+                          <span className="line-clamp-2 text-[11px] font-semibold leading-tight text-slate-800">
+                            {person.name.replace(/^dr\.?\s*/i, "")}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
+
               <section>
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
                   <CalendarDaysIcon className="h-4 w-4 text-slate-400" />
@@ -199,7 +268,9 @@ function AppointmentBookingPanel({ visible, onClose }: { visible: boolean; onClo
                   </div>
                 ) : slots.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">
-                    No open slots on this day. Try another date.
+                    {staffOptions.length > 0 && !selectedStaffId
+                      ? "Choose a doctor to see open times."
+                      : "No open slots on this day. Try another date."}
                   </p>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">

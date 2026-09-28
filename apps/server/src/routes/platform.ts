@@ -64,6 +64,14 @@ import {
   orderOut,
   rejectTopupOrder,
 } from "../services/voice-minutes.js";
+import {
+  listPlatformProviderKeys,
+  listUserApiKeys,
+  publicPlatformProviderKeys,
+  setUserAssignedProviderKey,
+  userAssignment,
+  usersWithCustomApiKeys,
+} from "../services/user-api-keys.js";
 
 function clientKey(request: AuthContext): string {
   return (
@@ -314,6 +322,7 @@ async function enrichUsers(
   if (rows.length === 0) return [];
 
   const ids = rows.map((r) => r.id);
+  const keyedUsers = await usersWithCustomApiKeys(ids);
   const memberRows = await db
     .select({
       userId: businessMembers.userId,
@@ -352,6 +361,7 @@ async function enrichUsers(
       status: row.status,
       workspace_count: meta?.count ?? 0,
       plan: meta?.plan ?? "starter",
+      has_custom_api_keys: keyedUsers.has(row.id),
       created_at: row.createdAt.toISOString(),
       last_login_at: row.lastLoginAt?.toISOString() ?? null,
     };
@@ -359,7 +369,14 @@ async function enrichUsers(
 }
 
 export async function registerPlatformRoutes(app: Elysia): Promise<void> {
-  await ensurePlatformAdminSeed();
+  try {
+    await ensurePlatformAdminSeed();
+  } catch (error) {
+    console.warn(
+      "[auth] platform admin seed skipped:",
+      error instanceof Error ? error.message : error,
+    );
+  }
 
   app.post("/platform/auth/login", async (request) => {
     const key = `login:${clientKey(request)}`;
@@ -715,6 +732,63 @@ export async function registerPlatformRoutes(app: Elysia): Promise<void> {
           metadata: safeJson(a.metadataJson),
           created_at: a.createdAt.toISOString(),
         })),
+      };
+    } catch (err) {
+      return sendAuthError(request, err);
+    }
+  });
+
+  app.get("/platform/users/:id/api-keys", async (request) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "users:read");
+      const { id } = request.params as { id: string };
+      const user = await db.query.users.findFirst({ where: eq(users.id, id) });
+      if (!user) return request.status(404, { detail: "User not found" });
+      const [keys, catalog] = await Promise.all([
+        listUserApiKeys(id),
+        listPlatformProviderKeys(),
+      ]);
+      return {
+        source_id: userAssignment(keys).source_id,
+        catalog: publicPlatformProviderKeys(catalog),
+      };
+    } catch (err) {
+      return sendAuthError(request, err);
+    }
+  });
+
+  app.patch("/platform/users/:id/api-keys", async (request) => {
+    try {
+      const admin = await getCurrentPlatformAdmin(request);
+      requirePermission(admin.role, "settings:write");
+      const { id } = request.params as { id: string };
+      const user = await db.query.users.findFirst({ where: eq(users.id, id) });
+      if (!user) return request.status(404, { detail: "User not found" });
+
+      const body = (request.body ?? {}) as { source_id?: string | null };
+      const sourceId =
+        typeof body.source_id === "string" ? body.source_id.trim() || null : body.source_id === null ? null : undefined;
+      if (sourceId === undefined) {
+        return request.status(400, { detail: "source_id is required" });
+      }
+
+      const saved = await setUserAssignedProviderKey(id, sourceId);
+      await writeAuditLog({
+        adminId: admin.id,
+        action: "user.api_keys.update",
+        entityType: "user",
+        entityId: id,
+        metadata: {
+          source_id: sourceId,
+          providers: saved.map((row) => row.provider),
+        },
+        request,
+      });
+      const catalog = await listPlatformProviderKeys();
+      return {
+        source_id: userAssignment(saved).source_id,
+        catalog: publicPlatformProviderKeys(catalog),
       };
     } catch (err) {
       return sendAuthError(request, err);
@@ -2163,6 +2237,7 @@ export async function registerPlatformRoutes(app: Elysia): Promise<void> {
             name: plan.name,
             is_trial: plan.isTrial,
             workspace_limit: plan.workspaceLimit,
+            kiosk_display_limit: plan.kioskDisplayLimit,
             monthly_price_idr: plan.monthlyPriceIdr,
             yearly_price_idr: plan.yearlyPriceIdr,
             yearly_discount_percent: plan.yearlyDiscountPercent,
@@ -2211,6 +2286,7 @@ export async function registerPlatformRoutes(app: Elysia): Promise<void> {
         yearly_discount_percent?: number;
         monthly_voice_minutes?: number;
         workspace_limit?: number;
+        kiosk_display_limit?: number;
       };
       const plan = await db.query.plans.findFirst({ where: eq(plans.code, code) });
       if (!plan) {
@@ -2240,6 +2316,13 @@ export async function registerPlatformRoutes(app: Elysia): Promise<void> {
         }
         updates.workspaceLimit = limit;
       }
+      if (body.kiosk_display_limit !== undefined) {
+        const limit = parsePositiveInt(body.kiosk_display_limit, "Kiosk display limit");
+        if (limit < 1) {
+          return request.status(400, { detail: "Kiosk display limit must be at least 1." });
+        }
+        updates.kioskDisplayLimit = limit;
+      }
       if (Object.keys(updates).length === 0) {
         return request.status(400, { detail: "No pricing fields to update." });
       }
@@ -2258,6 +2341,7 @@ export async function registerPlatformRoutes(app: Elysia): Promise<void> {
         name: updated!.name,
         is_trial: updated!.isTrial,
         workspace_limit: updated!.workspaceLimit,
+        kiosk_display_limit: updated!.kioskDisplayLimit,
         monthly_price_idr: updated!.monthlyPriceIdr,
         yearly_price_idr: updated!.yearlyPriceIdr,
         yearly_discount_percent: updated!.yearlyDiscountPercent,

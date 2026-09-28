@@ -107,10 +107,10 @@ html {
 @keyframes avatar-pulse {
   0%,
   100% {
-    transform: scale(1);
+    transform: scale(1.05);
   }
   50% {
-    transform: scale(1.02);
+    transform: scale(1.1);
   }
 }
 

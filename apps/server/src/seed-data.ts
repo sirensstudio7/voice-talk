@@ -12,6 +12,7 @@ Tawarkan upsell dengan sopan jika relevan dengan pesanan.
 Jika tidak yakin, tanyakan klarifikasi daripada menebak.`;
 
 export const TOOL_INSTRUCTIONS = `Panggil add_to_order segera setelah pelanggan memilih item.
+Setelah item masuk, sebut nama, harga, dan total keranjang (contoh: "Latte Rp 45.000. Total Rp 45.000."). Jangan sebut item tanpa harganya.
 Setelah confirm_order: tanyakan kartu loyalitas atau hal checkout lain dulu (satu topik per turn). Jika Smart Photo Moment aktif, tanyakan foto kenang-kenangan di turn terpisah sebelum nama, lalu panggil set_photo_souvenir_consent.
 Lalu tanyakan nama pelanggan terakhir di turn terpisah.
 Pertanyaan nama harus satu-satunya pertanyaan di turn itu — jangan gabungkan dengan foto, loyalitas, atau pertanyaan lain. Jangan ulangi pertanyaan yang sudah dijawab.

@@ -17,6 +17,7 @@ import {
 } from "./presentation-ai.js";
 import { parsePptxBuffer } from "./pptx-parser.js";
 import { persistPresentationThumbnail } from "./presentation-thumbnail.js";
+import { resolveGeminiApiKeyForBusiness } from "./user-api-keys.js";
 
 const running = new Set<string>();
 /** Soft-cancel flags — checked between pipeline steps. */
@@ -65,7 +66,12 @@ async function upsertStageAudio(input: {
       ),
     );
 
-  const tts = await synthesizeSpeechWav(text);
+  const tts = await synthesizeSpeechWav(
+    text,
+    undefined,
+    undefined,
+    await resolveGeminiApiKeyForBusiness(input.businessId),
+  );
   if (!tts) return false;
 
   const path = `${input.businessId}/${input.presentationId}/audio/${input.kind}.wav`;
@@ -158,7 +164,12 @@ export async function ensureSlideAudio(
     );
   if (existing[0]) return true;
 
-  const tts = await synthesizeSpeechWav(slide.script);
+  const tts = await synthesizeSpeechWav(
+    slide.script,
+    undefined,
+    undefined,
+    await resolveGeminiApiKeyForBusiness(presentation.businessId),
+  );
   if (!tts) {
     console.warn("[presentation-pipeline] ensure slide TTS failed", presentationId, slideId);
     return false;

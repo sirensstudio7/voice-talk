@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   BASE_AI_LANGUAGES,
   isAiLanguage,
+  isAssistantTranscriptContinuation,
   mergeTranscriptChunk,
   normalizeVoiceGender,
   normalizeVoicePreset,
@@ -137,6 +138,14 @@ function buildFlyEntries(
   }));
 }
 
+
+function resolveAssistantBubbleText(current: string, incoming: string): string {
+  const next = incoming.trimStart();
+  if (!next) return current;
+  if (!current.trim()) return next;
+  if (current.startsWith(next)) return next;
+  return mergeTranscriptChunk(current, next);
+}
 
 function tryRevealPaymentModal(state: {
   order: OrderState;
@@ -410,17 +419,29 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         state.forceNewAssistantBubble || last?.role !== "assistant";
 
       if (!startNewBubble && last?.role === "assistant") {
-        if (last.text === text) {
+        const nextText = resolveAssistantBubbleText(last.text, text);
+        if (!nextText) return state;
+        if (last.text === nextText) {
           nextTranscript = state.transcript;
         } else {
           nextTranscript = state.transcript.map((message, index) =>
             index === state.transcript.length - 1
-              ? { ...message, text }
+              ? { ...message, text: nextText }
               : message,
           );
         }
-      } else if (!text) {
+      } else if (!text.trim()) {
         return state;
+      } else if (
+        last?.role === "assistant" &&
+        isAssistantTranscriptContinuation(last.text, text)
+      ) {
+        const nextText = mergeTranscriptChunk(last.text, text);
+        nextTranscript = state.transcript.map((message, index) =>
+          index === state.transcript.length - 1
+            ? { ...message, text: nextText }
+            : message,
+        );
       } else {
         nextTranscript = [
           ...state.transcript,

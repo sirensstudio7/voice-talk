@@ -45,6 +45,12 @@ export const adminAppUrl = resolvePublicAppUrl(
   "http://localhost:6680",
 );
 
+export const publicApiUrl = resolvePublicAppUrl(
+  process.env.NEXT_PUBLIC_API_URL,
+  "https://voice-talk-api.onrender.com",
+  "http://localhost:8000",
+);
+
 export const demoSlug = process.env.NEXT_PUBLIC_DEFAULT_BUSINESS_SLUG ?? DEFAULT_DEMO_SLUG;
 export const heroDemoSlug = process.env.NEXT_PUBLIC_HERO_DEMO_SLUG ?? "lorescale";
 

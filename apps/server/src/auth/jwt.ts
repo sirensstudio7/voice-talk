@@ -1,7 +1,7 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { and, eq } from "drizzle-orm";
-import { getBusinessCapabilities } from "@voicetalk/shared";
+import { getBusinessCapabilities, withBookingAddon } from "@voicetalk/shared";
 import { db } from "../db/client.js";
 import { businessMembers, businesses, users, type User } from "../db/schema.js";
 import { env } from "../env.js";
@@ -192,8 +192,14 @@ export function userOut(user: User) {
   };
 }
 
-export function businessOut(business: typeof businesses.$inferSelect) {
-  const capabilities = getBusinessCapabilities(business.primaryUseCase, business.businessType);
+export function businessOut(
+  business: typeof businesses.$inferSelect,
+  extras?: { bookingAddonActive?: boolean },
+) {
+  const capabilities = withBookingAddon(
+    getBusinessCapabilities(business.primaryUseCase, business.businessType),
+    Boolean(extras?.bookingAddonActive),
+  );
   return {
     id: business.id,
     slug: business.slug,

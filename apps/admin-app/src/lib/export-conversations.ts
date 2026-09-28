@@ -61,8 +61,9 @@ const END_REASON_LABELS: Record<string, string> = {
   out_of_scope: "Out of scope",
   idle_timeout: "Timed out",
   manual: "Ended by patient",
-  disconnected: "Disconnected",
-};
+    disconnected: "Disconnected",
+    admin: "Ended by staff",
+  };
 
 function formatEndReason(reason: string | null) {
   if (!reason) return "";
@@ -79,6 +80,7 @@ function buildConversationSummaryRows(conversations: VoiceSessionDetail[]) {
       "End reason",
       "Duration (seconds)",
       "Message count",
+      "Kiosk display",
       "Order ID",
       "Order total",
     ]),
@@ -91,6 +93,7 @@ function buildConversationSummaryRows(conversations: VoiceSessionDetail[]) {
         formatEndReason(session.end_reason),
         session.duration_seconds ?? "",
         session.message_count,
+        session.kiosk_display_name ?? "",
         session.order_id ?? "",
         session.order_total ?? "",
       ]),
@@ -155,6 +158,9 @@ export function exportConversationsJson({
       end_reason: session.end_reason,
       duration_seconds: session.duration_seconds,
       message_count: session.message_count,
+      kiosk_display_id: session.kiosk_display_id,
+      kiosk_display_name: session.kiosk_display_name,
+      kiosk_display_slug: session.kiosk_display_slug,
       order_id: session.order_id,
       order_total: session.order_total,
       messages: mergeTranscriptMessages(session.messages).map((message) => ({
@@ -187,6 +193,7 @@ export function exportConversationsXls({
       { value: "End reason" },
       { value: "Duration (seconds)" },
       { value: "Message count" },
+      { value: "Kiosk display" },
       { value: "Order ID" },
       { value: "Order total" },
     ]),
@@ -202,6 +209,7 @@ export function exportConversationsXls({
           type: session.duration_seconds != null ? "Number" : "String",
         },
         { value: session.message_count, type: "Number" },
+        { value: session.kiosk_display_name ?? "" },
         { value: session.order_id ?? "" },
         {
           value: session.order_total ?? "",

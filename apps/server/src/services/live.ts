@@ -22,12 +22,12 @@ import {
   OrderValidationError,
   persistConfirmedOrder,
 } from "./order-persistence.js";
-import { env } from "../env.js";
 import { effectivePrice } from "./pricing.js";
 import { hasActiveAddon, LIVE_CODE } from "./addon-entitlement.js";
 import { hasServiceAccessForBusiness } from "./entitlement.js";
 import { synthesizeSpeechWav } from "./presentation-ai.js";
 import { speakWithGeminiLive, stopLiveHostVoice } from "./live-narrator.js";
+import { resolveGeminiApiKeyForBusiness } from "./user-api-keys.js";
 
 function httpError(message: string, statusCode: number): Error & { statusCode: number } {
   const err = new Error(message) as Error & { statusCode: number };
@@ -921,7 +921,8 @@ async function generateLiveReply(
   const recent = await loadRecentChat(session.id);
   const transcript = formatChatTranscript(recent);
   const tagged = taggedProductFromChat(session, recent);
-  if (!env.GEMINI_API_KEY) return fallbackLiveReply(session, latest, recent);
+  const apiKey = await resolveGeminiApiKeyForBusiness(session.business_id);
+  if (!apiKey) return fallbackLiveReply(session, latest, recent);
   const rules = await db.query.aiRules.findFirst({
     where: eq(aiRules.businessId, session.business_id),
   });
@@ -930,7 +931,7 @@ async function generateLiveReply(
     .map((p) => `- ${p.name} (${formatLivePrice(p.price)}): ${p.description || "no description"}`)
     .join("\n");
   const facts = liveFacts(notes);
-  const client = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+  const client = new GoogleGenAI({ apiKey });
   const prompt = `You are ${rules?.assistantName || "Alex"}, the AI host of a LIVE shopping show.
 Answer the live chat. Do not hallucinate.
 
@@ -1010,9 +1011,11 @@ async function tryLiveTts(session: LiveSessionOut, text: string) {
   const cached = ttsCache.get(cacheKey);
   if (cached) return cached;
   if (Date.now() < ttsQuotaUntil) return null;
+  const apiKey = await resolveGeminiApiKeyForBusiness(session.business_id);
+  if (!apiKey) return null;
   for (const model of await liveTtsModels()) {
     try {
-      const tts = await synthesizeSpeechWav(text, voice, model);
+      const tts = await synthesizeSpeechWav(text, voice, model, apiKey);
       if (!tts) continue;
       if (ttsCache.size > 24) ttsCache.clear();
       ttsCache.set(cacheKey, tts);
@@ -1037,6 +1040,7 @@ async function speakLiveLine(session: LiveSessionOut, text: string) {
     });
     const voiced = await speakWithGeminiLive({
       sessionId: session.id,
+      apiKey: await resolveGeminiApiKeyForBusiness(session.business_id),
       text: line,
       voiceName: getVoicePresetGeminiVoice(rules?.voicePreset, rules?.voiceGender),
       assistantName: rules?.assistantName || "Alex",
@@ -1181,7 +1185,8 @@ async function generateLiveHostLine(
   const notes = await loadLiveKnowledge(session.id);
   const index = hostCursor.get(session.id) ?? 0;
   hostCursor.set(session.id, index + 1);
-  if (!env.GEMINI_API_KEY) return fallbackHostLine(session, kind, index);
+  const apiKey = await resolveGeminiApiKeyForBusiness(session.business_id);
+  if (!apiKey) return fallbackHostLine(session, kind, index);
   const rules = await db.query.aiRules.findFirst({
     where: eq(aiRules.businessId, session.business_id),
   });
@@ -1191,7 +1196,7 @@ async function generateLiveHostLine(
   const feature = featuredProduct(session, index);
   const recent = await recentHostLines(session.id, startedAt);
   const facts = liveFacts(notes);
-  const client = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+  const client = new GoogleGenAI({ apiKey });
   const prompt = `You are ${rules?.assistantName || "Alex"}, hosting a LIVE shopping show "${session.title}" for ${session.business_name}.
 Your job is to sell the products on the show. 1-2 short sentences. Energetic, not spammy.
 

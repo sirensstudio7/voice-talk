@@ -12,7 +12,7 @@ import { AiLanguage } from "@/types/voice";
 
 type TranscriptPanelProps = {
   onLanguageChange: (language: AiLanguage) => void;
-  variant?: "portrait" | "landscape";
+  variant?: "portrait" | "landscape" | "studio";
 };
 
 export function TranscriptPanel({
@@ -53,6 +53,77 @@ export function TranscriptPanel({
     }
   }, [transcript]);
 
+  const isStudio = variant === "studio";
+
+  const messages = (
+    <div
+      ref={scrollRef}
+      className={`transcript-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto ${
+        isStudio ? "px-1 py-1" : "px-3 py-3"
+      }`}
+    >
+      {transcript.length === 0 ? (
+        <p className={`px-1 leading-relaxed text-slate-600 ${isStudio ? "text-[15px]" : "text-sm"}`}>
+          {placeholder}
+        </p>
+      ) : (
+        transcript.map((message, index) => {
+          const isUser = message.role === "user";
+          const showAvatar =
+            !isUser &&
+            (index === 0 || transcript[index - 1]?.role === "user");
+
+          return (
+            <div
+              key={message.id}
+              className={`flex items-end gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}
+            >
+              {!isUser && showAvatar ? (
+                <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+                  {assistantAvatarSrc.startsWith("http") ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={assistantAvatarSrc}
+                      src={assistantAvatarSrc}
+                      alt="Lorescale"
+                      width={28}
+                      height={28}
+                      className="h-full w-full object-cover object-center"
+                    />
+                  ) : (
+                    <Image
+                      src={assistantAvatarSrc}
+                      alt="Lorescale"
+                      width={28}
+                      height={28}
+                      className="h-full w-full object-cover object-center"
+                    />
+                  )}
+                </div>
+              ) : !isUser ? (
+                <div className="w-7 shrink-0" />
+              ) : null}
+
+              <div
+                className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                  isUser
+                    ? "rounded-br-md bg-orange-500 text-white"
+                    : "rounded-bl-md bg-slate-100 text-slate-900"
+                }`}
+              >
+                {message.text}
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+
+  if (isStudio) {
+    return <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">{messages}</div>;
+  }
+
   return (
     <div
       className={`flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white/95 shadow-lg backdrop-blur-sm ${
@@ -65,65 +136,7 @@ export function TranscriptPanel({
         </p>
         <LanguageToggle value={language} onChange={onLanguageChange} />
       </div>
-
-      <div
-        ref={scrollRef}
-        className="transcript-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3"
-      >
-        {transcript.length === 0 ? (
-          <p className="px-1 text-sm leading-relaxed text-slate-600">{placeholder}</p>
-        ) : (
-          transcript.map((message, index) => {
-            const isUser = message.role === "user";
-            const showAvatar =
-              !isUser &&
-              (index === 0 || transcript[index - 1]?.role === "user");
-
-            return (
-              <div
-                key={message.id}
-                className={`flex items-end gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}
-              >
-                {!isUser && showAvatar ? (
-                  <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
-                    {assistantAvatarSrc.startsWith("http") ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={assistantAvatarSrc}
-                        src={assistantAvatarSrc}
-                        alt="Lorescale"
-                        width={28}
-                        height={28}
-                        className="h-full w-full object-cover object-center"
-                      />
-                    ) : (
-                      <Image
-                        src={assistantAvatarSrc}
-                        alt="Lorescale"
-                        width={28}
-                        height={28}
-                        className="h-full w-full object-cover object-center"
-                      />
-                    )}
-                  </div>
-                ) : !isUser ? (
-                  <div className="w-7 shrink-0" />
-                ) : null}
-
-                <div
-                  className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
-                    isUser
-                      ? "bg-orange-500 text-white"
-                      : "bg-slate-100 text-slate-900"
-                  }`}
-                >
-                  {message.text}
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+      {messages}
     </div>
   );
 }

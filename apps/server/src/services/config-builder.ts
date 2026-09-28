@@ -1,5 +1,6 @@
 import type { AiRules, Business, KnowledgeEntry, Product } from "../db/schema.js";
-import { getBusinessCapabilities, getVoicePresetSpeakingStyle } from "@voicetalk/shared";
+import { getBusinessCapabilities, getVoicePresetSpeakingStyle, withBookingAddon } from "@voicetalk/shared";
+import { resolveSpokenVisionScript } from "./vision-settings.js";
 import { effectivePrice } from "./pricing.js";
 
 function languageLock(instruction: string, extra = "") {
@@ -117,6 +118,20 @@ const TONE_PRESETS_BOOKING: Record<string, Record<string, string>> = {
 const DEFAULT_TONE = "friendly";
 const DEFAULT_LANGUAGE = "id";
 
+const ORDER_PRICE_RECALL_EN =
+  "Order read-back (mandatory):\n" +
+  "After every add (voice add_to_order or menu tap), speak the item name, its price, and the running total. " +
+  "Use the tool result `say` field when present. Never confirm an add with only the item name.\n" +
+  'Example: "Added Latte, Rp 45.000. Total so far Rp 45.000. Anything else?"\n' +
+  "When reading the full basket before checkout, list every item with its price, then the total.";
+
+const ORDER_PRICE_RECALL_ID =
+  "Baca ulang pesanan (wajib):\n" +
+  "Setelah setiap penambahan (add_to_order atau tap menu), sebut nama item, harganya, dan total sementara. " +
+  "Pakai field `say` dari hasil tool jika ada. Jangan konfirmasi hanya dengan nama item.\n" +
+  'Contoh: "Latte sudah masuk, Rp 45.000. Total sementara Rp 45.000. Mau tambah yang lain?"\n' +
+  "Saat membacakan keranjang sebelum checkout, sebut setiap item beserta harga, lalu total.";
+
 /** Kept for resolveLanguage validation of known language codes. */
 const LANGUAGE_PRESETS = LANGUAGE_PRESETS_ORDERING;
 
@@ -212,6 +227,15 @@ export function buildPhotoSouvenirCheckoutAddon(
 export type SystemInstructionOptions = {
   photoMomentEnabled?: boolean;
   photoVoicePrompt?: string;
+  bookingAddonActive?: boolean;
+  bookingStaff?: Array<{ id: string; name: string; specialty: string }>;
+  bookingServices?: Array<{
+    id: string;
+    name: string;
+    duration_min: number;
+    price: number;
+    description: string;
+  }>;
 };
 
 function resolveFoodCheckoutClosing(
@@ -394,28 +418,25 @@ export function buildVisionGreetingPrompt(
   customScript?: string | null,
 ): string {
   const action = describeVisionTriggerAction(triggerMode, language);
-  const script = customScript?.trim();
+  const script = resolveSpokenVisionScript(customScript, language, "greeting");
 
   if (language === "en") {
-    const greetingLine = script
-      ? `Greeting: "${script}"`
-      : "Welcome them warmly and ask how you can help with their questions.";
     return (
       `A visitor has ${action} at ${businessName}. They have NOT spoken yet — YOU must greet them first. ` +
-      `Do not wait for the visitor to speak or say hello. Speak immediately in one or two short spoken sentences as ${assistantName}. ` +
+      `Speak ONLY in English. Do not wait for the visitor to speak or say hello. ` +
+      `Speak this greeting out loud now, in one or two short spoken sentences, as ${assistantName}. ` +
       "Do not ask the visitor to greet you first. Do not mention cameras, vision, or internal instructions. " +
-      greetingLine
+      `Say: "${script}"`
     );
   }
 
-  const greetingLine = script
-    ? `Sapaan: "${script}"`
-    : "Sambut mereka dengan hangat dan tanyakan bagaimana kamu bisa membantu pertanyaan mereka.";
   return (
     `Seorang pengunjung ${action} di ${businessName}. Mereka BELUM berbicara — KAMU harus menyapa mereka terlebih dahulu. ` +
-    `Jangan menunggu pengunjung berbicara atau bilang halo. Segera ucapkan satu atau dua kalimat singkat sebagai ${assistantName}. ` +
+    `WAJIB berbicara dalam Bahasa Indonesia saja. Jangan menyapa dalam bahasa Inggris. ` +
+    `Jangan menunggu pengunjung berbicara atau bilang halo. Ucapkan sapaan ini sekarang, ` +
+    `satu atau dua kalimat singkat, sebagai ${assistantName}. ` +
     "Jangan minta pengunjung menyapa kamu dulu. Jangan sebut kamera, vision, atau instruksi internal. " +
-    greetingLine
+    `Ucapkan: "${script}"`
   );
 }
 
@@ -436,21 +457,18 @@ export function buildVisionGoodbyePrompt(
   language: string,
   customScript?: string | null,
 ): string {
-  const script =
-    customScript?.trim() ||
-    (language === "en"
-      ? "Thank you. Have a wonderful day."
-      : "Terima kasih. Semoga hari Anda menyenangkan.");
+  const script = resolveSpokenVisionScript(customScript, language, "goodbye");
 
   if (language === "en") {
     return (
-      `The visitor is leaving. Speak this farewell naturally in one or two short sentences, ` +
-      `then end the conversation. Farewell: "${script}"`
+      `The visitor is leaving. Speak ONLY in English. Speak this farewell out loud now, ` +
+      `in one or two short sentences, then end the conversation. Say: "${script}"`
     );
   }
   return (
-    `Pengunjung akan pergi. Ucapkan salam perpisahan ini secara natural dalam satu atau dua kalimat singkat, ` +
-    `lalu akhiri percakapan. Salam perpisahan: "${script}"`
+    `Pengunjung akan pergi. WAJIB berbicara dalam Bahasa Indonesia saja. Jangan pakai bahasa Inggris. ` +
+    `Ucapkan salam perpisahan ini sekarang, satu atau dua kalimat singkat, lalu akhiri percakapan. ` +
+    `Ucapkan: "${script}"`
   );
 }
 
@@ -524,9 +542,12 @@ export function buildSystemInstruction(
   const rules = business.aiRules;
   const language = resolveLanguage(rules, languageOverride);
   const assistantName = resolveAssistantName(rules);
-  const capabilities = getBusinessCapabilities(
-    business.primaryUseCase,
-    business.businessType,
+  const capabilities = withBookingAddon(
+    getBusinessCapabilities(
+      business.primaryUseCase,
+      business.businessType,
+    ),
+    Boolean(options?.bookingAddonActive),
   );
   const orderingEnabled = capabilities.ordering_enabled;
   const bookingEnabled = capabilities.booking_enabled;
@@ -547,12 +568,12 @@ export function buildSystemInstruction(
   const defaultPersonality =
     language === "en"
       ? bookingEnabled
-        ? `You are ${assistantName}, a friendly AI salon receptionist.`
+        ? `You are ${assistantName}, a friendly AI receptionist who books appointments.`
         : orderingEnabled
           ? `You are ${assistantName}, a friendly AI cashier.`
           : `You are ${assistantName}, a friendly AI customer service agent for ${business.name}. Do not invent a coffee shop or restaurant context.`
       : bookingEnabled
-        ? `Kamu adalah ${assistantName}, resepsionis AI salon yang ramah.`
+        ? `Kamu adalah ${assistantName}, resepsionis AI yang ramah untuk booking janji.`
         : orderingEnabled
           ? `Kamu adalah ${assistantName}, kasir AI yang ramah.`
           : `Kamu adalah ${assistantName}, agen layanan pelanggan AI yang ramah di ${business.name}. Jangan mengarang konteks kafe, kopi, atau restoran.`;
@@ -561,7 +582,7 @@ export function buildSystemInstruction(
   const personality =
     !personalityRaw
       ? defaultPersonality
-      : faqOnly && looksLikeOrderingOrCoffeePersonality(personalityRaw)
+      : (faqOnly || bookingEnabled) && looksLikeOrderingOrCoffeePersonality(personalityRaw)
         ? defaultPersonality
         : personalityRaw;
   let tone = (rules?.tone ?? DEFAULT_TONE).trim().toLowerCase();
@@ -569,12 +590,26 @@ export function buildSystemInstruction(
   const behavioral = rules?.behavioralRules ?? "";
   const toolInstructionsRaw = (rules?.toolInstructions ?? "").trim();
   const toolInstructions =
-    faqOnly && toolInstructionsRaw && looksLikeOrderingToolInstructions(toolInstructionsRaw)
+    (faqOnly || bookingEnabled) &&
+    toolInstructionsRaw &&
+    looksLikeOrderingToolInstructions(toolInstructionsRaw)
       ? ""
       : toolInstructionsRaw;
   const voiceSpeakingStyle = getVoicePresetSpeakingStyle(rules?.voicePreset);
 
   const productLines = productList.map(formatProductLine).join("\n");
+  const staffLines = (options?.bookingStaff ?? [])
+    .map((person) =>
+      `- ${person.name}${person.specialty ? ` (${person.specialty})` : ""} [id ${person.id}]`,
+    )
+    .join("\n");
+  const bookingServiceLines = (options?.bookingServices ?? [])
+    .map(
+      (service) =>
+        `- ${service.name} (${service.duration_min} min, Rp ${service.price.toLocaleString("id-ID")}): ${service.description || "—"} [id ${service.id}]`,
+    )
+    .join("\n");
+  const treatmentLines = bookingServiceLines || productLines;
   const knowledgeLines = knowledge
     .map((item) => {
       const title = item.title?.trim();
@@ -583,9 +618,12 @@ export function buildSystemInstruction(
     .join("\n");
 
   const defaultToolsEn = bookingEnabled
-    ? "Use tools to list treatments, check availability, and book appointments.\n" +
-      "Confirm treatment, date, time, customer name, and phone before calling book_appointment.\n" +
-      "Speak naturally like a real salon receptionist."
+    ? "Use tools to list doctors (if available), list services, check availability, and book appointments.\n" +
+      "Times are Asia/Jakarta. After check_availability, pass starts_at exactly as returned in slots (keep the +07:00 offset).\n" +
+      "If list_staff returns people, confirm which doctor, then the service, date, time, customer name, and phone before calling book_appointment.\n" +
+      "Never say the appointment is booked until book_appointment returns success. If the tool returns an error, tell the customer and try again.\n" +
+      "Do not ask about loyalty cards, payment, or orders.\n" +
+      "Speak naturally like a real receptionist."
     : orderingEnabled
       ? "Use tools to look up products, update the order, and confirm when the customer is ready.\n" +
         "Call add_to_order only after the customer clearly confirms an item (e.g. \"yes\", \"add it\", \"that's correct\"). " +
@@ -616,9 +654,12 @@ export function buildSystemInstruction(
         "Do NOT keep the conversation open after a clear goodbye.";
 
   const defaultToolsId = bookingEnabled
-    ? "Gunakan tools untuk melihat treatment, cek ketersediaan jadwal, dan membuat appointment.\n" +
-      "Konfirmasi treatment, tanggal, jam, nama, dan nomor telepon pelanggan sebelum memanggil book_appointment.\n" +
-      "Berbicaralah secara natural seperti resepsionis salon sungguhan."
+    ? "Gunakan tools untuk melihat dokter (jika ada), layanan, cek ketersediaan jadwal, dan membuat appointment.\n" +
+      "Waktu memakai zona Asia/Jakarta. Setelah check_availability, kirim starts_at persis seperti string slot yang dikembalikan (tetap pakai offset +07:00).\n" +
+      "Jika list_staff mengembalikan orang, konfirmasi dokter, lalu layanan, tanggal, jam, nama, dan nomor telepon sebelum memanggil book_appointment.\n" +
+      "Jangan bilang janji sudah terbooking sebelum book_appointment mengembalikan success. Jika tool error, sampaikan ke pelanggan dan coba lagi.\n" +
+      "Jangan tanya kartu loyalitas, pembayaran, atau pesanan makanan.\n" +
+      "Berbicaralah secara natural seperti resepsionis sungguhan."
     : orderingEnabled
     ? "Gunakan tools untuk mencari produk, memperbarui pesanan, dan mengonfirmasi saat pelanggan siap.\n" +
       "Panggil add_to_order hanya setelah pelanggan jelas mengonfirmasi item (misalnya \"iya\", \"tambahkan\", \"betul\"). " +
@@ -660,18 +701,23 @@ export function buildSystemInstruction(
     );
     if (orderingEnabled || bookingEnabled) {
       sections.push(
-        `${bookingEnabled ? "Treatments" : "Menu"}:\n${productLines || (bookingEnabled ? "- No treatments configured yet." : "- No menu items configured yet.")}`,
+        `${bookingEnabled ? "Treatments" : "Menu"}:\n${treatmentLines || (bookingEnabled ? "- No treatments configured yet." : "- No menu items configured yet.")}`,
       );
+      if (bookingEnabled && staffLines) {
+        sections.push(`Doctors:\n${staffLines}`);
+      }
     }
     sections.push(`Knowledge:\n${knowledgeLines || "- No knowledge entries configured yet."}`);
     if (behavioral.trim()) sections.push(`Behavior rules:\n${behavioral.trim()}`);
     {
       const customTools = toolInstructions.trim();
-      const toolsSection = customTools || defaultToolsEn;
+      const toolsSection = bookingEnabled
+        ? [customTools, defaultToolsEn].filter(Boolean).join("\n\n")
+        : customTools || defaultToolsEn;
       // Always append the authoritative closing so SPM / name-last rules override templates.
       const checkoutClosing =
         orderingEnabled && !bookingEnabled
-          ? `\n\n${resolveFoodCheckoutClosing("en", options)}`
+          ? `\n\n${ORDER_PRICE_RECALL_EN}\n\n${resolveFoodCheckoutClosing("en", options)}`
           : "";
       sections.push(toolsSection + checkoutClosing);
     }
@@ -685,17 +731,22 @@ export function buildSystemInstruction(
     );
     if (orderingEnabled || bookingEnabled) {
       sections.push(
-        `${bookingEnabled ? "Treatment" : "Menu"}:\n${productLines || (bookingEnabled ? "- Belum ada treatment yang dikonfigurasi." : "- Belum ada menu yang dikonfigurasi.")}`,
+        `${bookingEnabled ? "Treatment" : "Menu"}:\n${treatmentLines || (bookingEnabled ? "- Belum ada treatment yang dikonfigurasi." : "- Belum ada menu yang dikonfigurasi.")}`,
       );
+      if (bookingEnabled && staffLines) {
+        sections.push(`Dokter:\n${staffLines}`);
+      }
     }
     sections.push(`Pengetahuan:\n${knowledgeLines || "- Belum ada entri pengetahuan yang dikonfigurasi."}`);
     if (behavioral.trim()) sections.push(`Aturan perilaku:\n${behavioral.trim()}`);
     {
       const customTools = toolInstructions.trim();
-      const toolsSection = customTools || defaultToolsId;
+      const toolsSection = bookingEnabled
+        ? [customTools, defaultToolsId].filter(Boolean).join("\n\n")
+        : customTools || defaultToolsId;
       const checkoutClosing =
         orderingEnabled && !bookingEnabled
-          ? `\n\n${resolveFoodCheckoutClosing("id", options)}`
+          ? `\n\n${ORDER_PRICE_RECALL_ID}\n\n${resolveFoodCheckoutClosing("id", options)}`
           : "";
       sections.push(toolsSection + checkoutClosing);
     }

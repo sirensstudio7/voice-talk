@@ -20,7 +20,13 @@ import {
   PRESENTER_SHUTDOWN,
   createTextQueue,
   runPresenterLiveSession,
+  type PresenterCueMode,
 } from "../services/presenter-live.js";
+import { resolveGeminiApiKeyForBusiness } from "../services/user-api-keys.js";
+import {
+  assertSharedPresenterActive,
+  loadPresentationByShareToken,
+} from "../services/presentation-share.js";
 
 function safeSendJson(socket: SocketBridge, payload: Record<string, unknown>): boolean {
   try {
@@ -114,6 +120,9 @@ Language: ${input.language === "id" ? "Indonesian" : "English"}.
 - Use short spoken sentences, natural pacing, light emphasis, and brief connective phrases.
 - Do not ask the audience questions during slide narration. Stop when the slide is covered.
 - Follow any Delivery style notes below over the default tone.
+- Never apologize or say you made a mistake. Never announce a correction.
+- Never go back to a previous slide or re-read it unless the cue says that slide.
+- When told to continue, pick up mid-segment. Do not restart from the beginning.
 
 ## Delivery style (from presentation knowledge)
 ${styleBlock}
@@ -131,33 +140,44 @@ export function registerPresentationWebSocketRoutes(app: Elysia): void {
 
 async function handlePresenterSession(
   socket: SocketBridge,
-  query: { token?: string; businessId?: string; sessionId?: string },
+  query: { token?: string; shareToken?: string; businessId?: string; sessionId?: string },
 ): Promise<void> {
   const token = String(query.token ?? "").trim();
+  const shareToken = String(query.shareToken ?? "").trim();
   const businessId = String(query.businessId ?? "").trim();
   const sessionId = String(query.sessionId ?? "").trim();
 
-  if (!token || !businessId || !sessionId) {
+  if ((!token && !shareToken) || !businessId || !sessionId) {
     safeSendJson(socket, {
       type: "error",
-      error: "token, businessId, and sessionId are required",
+      error: "token or shareToken, businessId, and sessionId are required",
     });
     socket.close();
     return;
   }
 
-  if (!env.GEMINI_API_KEY) {
+  const geminiApiKey = await resolveGeminiApiKeyForBusiness(businessId);
+  if (!geminiApiKey) {
     safeSendJson(socket, { type: "error", error: "GEMINI_API_KEY is not configured." });
     socket.close();
     return;
   }
 
-  let userId: string;
+  let sharedPresentationId: string | null = null;
   try {
-    userId = verifyUserIdFromToken(token);
-    await assertBusinessMember(userId, businessId);
-    if (!(await hasActiveAddon(businessId, AI_PRESENTER_CODE))) {
-      throw new Error("AI Presenter add-on is not active");
+    if (shareToken) {
+      const shared = await loadPresentationByShareToken(shareToken);
+      if (!shared || shared.businessId !== businessId) {
+        throw new Error("Invalid share link");
+      }
+      await assertSharedPresenterActive(businessId);
+      sharedPresentationId = shared.id;
+    } else {
+      const userId = verifyUserIdFromToken(token);
+      await assertBusinessMember(userId, businessId);
+      if (!(await hasActiveAddon(businessId, AI_PRESENTER_CODE))) {
+        throw new Error("AI Presenter add-on is not active");
+      }
     }
   } catch (err) {
     safeSendJson(socket, {
@@ -174,7 +194,7 @@ async function handlePresenterSession(
       eq(presentationSessions.businessId, businessId),
     ),
   });
-  if (!session) {
+  if (!session || (sharedPresentationId && session.presentationId !== sharedPresentationId)) {
     safeSendJson(socket, { type: "error", error: "Session not found" });
     socket.close();
     return;
@@ -210,10 +230,22 @@ async function handlePresenterSession(
     if (closed) return;
     try {
       const text = typeof raw === "string" ? raw : raw.toString("utf8");
-      const msg = JSON.parse(text) as { type?: string; text?: string };
+      const msg = JSON.parse(text) as {
+        type?: string;
+        text?: string;
+        mode?: string;
+        label?: string;
+      };
       if (msg.type === "speak") {
         const script = String(msg.text ?? "").trim();
-        if (script) textQueue.push(script);
+        if (!script) return;
+        const mode: PresenterCueMode =
+          msg.mode === "continue" || msg.mode === "stage" ? msg.mode : "slide";
+        textQueue.push({
+          text: script,
+          mode,
+          label: String(msg.label ?? "").trim() || undefined,
+        });
         return;
       }
       if (msg.type === "close") {
@@ -244,6 +276,7 @@ async function handlePresenterSession(
 
   try {
     await runPresenterLiveSession({
+      apiKey: geminiApiKey,
       systemInstruction,
       voiceName: getVoicePresetGeminiVoice(rules?.voicePreset, rules?.voiceGender),
       textQueue: textQueue.iterable,

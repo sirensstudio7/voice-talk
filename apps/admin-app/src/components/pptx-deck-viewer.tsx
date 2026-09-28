@@ -32,6 +32,65 @@ type Props = {
   presenterChrome?: boolean;
 };
 
+const SLIDE_TRANSITION_MS = 480;
+
+function stageElement(host: HTMLElement | null): HTMLElement | null {
+  if (!host) return null;
+  return (
+    (host.querySelector("[data-pptx-presentation-stage]") as HTMLElement | null) ??
+    (host.querySelector('[aria-roledescription="slide"]') as HTMLElement | null)
+  );
+}
+
+function playSlidePush(host: HTMLElement, direction: 1 | -1, swap: () => void) {
+  host.querySelectorAll("[data-pptx-slide-ghost]").forEach((node) => node.remove());
+  const stage = stageElement(host);
+  if (!stage) {
+    swap();
+    return () => undefined;
+  }
+
+  const ghost = stage.cloneNode(true) as HTMLElement;
+  ghost.setAttribute("data-pptx-slide-ghost", "true");
+  ghost.setAttribute("aria-hidden", "true");
+  ghost.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "z-index:6",
+    "pointer-events:none",
+    "overflow:hidden",
+    `transition:transform ${SLIDE_TRANSITION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+    "transform:translateX(0)",
+  ].join(";");
+  host.appendChild(ghost);
+
+  swap();
+
+  const incoming = stageElement(host) ?? stage;
+  incoming.style.transition = "none";
+  incoming.style.transform = `translateX(${direction * 100}%)`;
+
+  const run = () => {
+    incoming.style.transition = `transform ${SLIDE_TRANSITION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
+    incoming.style.transform = "translateX(0)";
+    ghost.style.transform = `translateX(${direction * -100}%)`;
+  };
+  requestAnimationFrame(() => requestAnimationFrame(run));
+
+  const done = window.setTimeout(() => {
+    ghost.remove();
+    incoming.style.transition = "";
+    incoming.style.transform = "";
+  }, SLIDE_TRANSITION_MS + 40);
+
+  return () => {
+    window.clearTimeout(done);
+    ghost.remove();
+    incoming.style.transition = "";
+    incoming.style.transform = "";
+  };
+}
+
 /** Present mode keeps a separate presentationSlideIndex; goTo alone won't update it. */
 function presentNavigateTo(slideIndex0: number) {
   const digits = String(Math.max(1, slideIndex0 + 1));
@@ -68,6 +127,8 @@ export function PptxDeckViewer({
   presenterChrome = true,
 }: Props) {
   const viewerRef = useRef<PowerPointViewerHandle>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const cancelTransitionRef = useRef<() => void>(() => undefined);
   const [content, setContent] = useState<Uint8Array | null>(null);
   const [loadError, setLoadError] = useState("");
   const [ready, setReady] = useState(false);
@@ -136,17 +197,31 @@ export function PptxDeckViewer({
     if (!ready || !viewerRef.current) return;
     const index = Math.max(0, (slideNumber || 1) - 1);
     if (lastSynced.current === index) return;
+    const previous = lastSynced.current;
     lastSynced.current = index;
-    try {
-      // goTo updates the visible slide in present + preview.
-      viewerRef.current.goTo(index);
-      if (viewerMode === "present") {
-        // Also sync presentationSlideIndex used by present-mode chrome.
-        presentNavigateTo(index);
+
+    const apply = () => {
+      try {
+        viewerRef.current?.goTo(index);
+        if (viewerMode === "present") {
+          presentNavigateTo(index);
+        }
+      } catch {
+        // ignore transient viewer errors during transitions
       }
-    } catch {
-      // ignore transient viewer errors during transitions
+    };
+
+    cancelTransitionRef.current();
+    const host = hostRef.current;
+    const shouldAnimate = previous != null && host != null;
+    if (!shouldAnimate) {
+      apply();
+      return;
     }
+
+    const direction: 1 | -1 = index > previous ? 1 : -1;
+    cancelTransitionRef.current = playSlidePush(host, direction, apply);
+    return () => cancelTransitionRef.current();
   }, [ready, slideNumber, viewerMode]);
 
   if (loadError) {
@@ -172,6 +247,7 @@ export function PptxDeckViewer({
   return (
     <I18nextProvider i18n={pptxI18n}>
       <div
+        ref={hostRef}
         className={`pptx-deck-viewer relative overflow-hidden ${shellBg} ${className ?? ""}${
           presenterChrome ? "" : " pptx-deck-viewer--no-chrome"
         }`}
@@ -256,6 +332,9 @@ export function PptxDeckViewer({
             width: 100% !important;
             height: 100% !important;
             min-height: 100% !important;
+          }
+          .pptx-deck-viewer [data-pptx-slide-ghost] {
+            pointer-events: none !important;
           }
           .pptx-deck-viewer [data-pptx-presentation-stage] [aria-roledescription="slide"] {
             background-color: ${slideSurface};

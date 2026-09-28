@@ -1,0 +1,2 @@
+ALTER TABLE user_api_keys
+  ADD COLUMN IF NOT EXISTS source_id VARCHAR(36) NOT NULL DEFAULT '';
