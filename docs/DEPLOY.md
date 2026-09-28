@@ -86,7 +86,7 @@ Set these variables on the host (or in the env file):
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | Aiven (or any managed Postgres) URL, `?sslmode=require` |
-| `DB_POOL_MAX` | Pooled Postgres connections per API instance (default 10). Keep `instances × DB_POOL_MAX` under the service's connection limit; Aiven's free tier allows only 20 total. Set 5 for one instance on free tier. |
+| `DB_POOL_MAX` | Pooled Postgres connections per API instance (default 8). Keep `instances × DB_POOL_MAX` under the service's connection limit; Aiven's free tier allows only 20 total. Set 5 for one instance on free tier. |
 | `REDIS_URL` | Upstash `rediss://` URL — rate limits + background-job locks |
 | `S3_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` |
 | `S3_BUCKET` | Bucket name (prefixes separate the storage areas) |
@@ -98,8 +98,18 @@ Set these variables on the host (or in the env file):
 | `GEMINI_API_KEY` | Google AI Studio key |
 | `JWT_SECRET` | Random 32+ char string |
 | `GEMINI_MODEL` | `gemini-3.1-flash-live-preview` |
+| `ANALYTICS_RETENTION_DAYS` | Optional, default 180 — analytics event history kept |
+| `VISION_RETENTION_DAYS` | Optional, default 365 — vision event history kept |
+| `PRESENTER_MAX_VIEWERS_PER_SESSION` | Optional, default 20 — narration sockets per AI Present session |
 
-After deploy, verify: `https://YOUR-API-HOST/health`
+After deploy, verify the API and every feature path:
+
+```bash
+bun run verify:deploy -- --url https://YOUR-API-HOST --business YOUR-SLUG
+```
+
+The script is read-only (no voice session is started) and checks health,
+metrics, and the `/menu` kiosk contract; it exits non-zero on a failed check.
 
 Run seed once (from your machine):
 

@@ -23,6 +23,7 @@
     "check:deploy": "bash scripts/check-deploy-env.sh",
     "lint:api": "bun run --filter server lint",
     "test:api": "bun run --filter server test",
+    "verify:deploy": "bun apps/server/scripts/verify-deploy.ts",
     "demo:cloudflare": "bash scripts/demo-cloudflare.sh"
   },
   "devDependencies": {

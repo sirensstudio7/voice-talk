@@ -36,7 +36,16 @@ scripted sequence with rollback criteria rather than an ad-hoc flip.
 
 1. **Deploy burst capacity only:** `--min-instances 1 --max-instances 2 --wait`.
    Watch for 10 minutes.
-2. **Verification matrix** (also in `docs/MULTI-INSTANCE.md`):
+2. **Verification matrix** (also in `docs/MULTI-INSTANCE.md`). Run the
+   read-only verifier first, then the manual checks:
+
+   ```bash
+   bun run verify:deploy -- --url https://<api-host> --business <slug>
+   ```
+
+   It checks `/health?db=1` (db + redis), `/health?metrics=1` (kiosk bus
+   subscribed, menu traffic) and the `/menu` contract with cold/warm timings —
+   no voice session is started, so it consumes no minutes. Manual checks:
    - `GET /health?metrics=1` on both pods shows `kiosk_bus.subscribed: 1`.
    - `/menu` warm requests: `menu.request_ms.avg_ms` well under 300 ms and
      `menu.cache_hits_total` rising.

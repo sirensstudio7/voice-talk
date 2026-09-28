@@ -198,6 +198,13 @@ bun scripts/ws-probe.ts --url wss://lorescale-api.kubeletto.app/ws/session?busin
 It sends `session.greeting`, prints session status / first transcript / first
 audio latency, and exits non-zero when the assistant stays silent.
 
+Post-deploy verifier (read-only: health, metrics, `/menu` contract; no Gemini
+minutes consumed):
+
+```bash
+bun run verify:deploy -- --url https://api.example.com --business lorescale
+```
+
 CI runs the same lint, typecheck and tests on every push or PR that touches
 the API, then builds the production Docker image and boots it against the
 service containers ([`.github/workflows/api.yml`](.github/workflows/api.yml)).
