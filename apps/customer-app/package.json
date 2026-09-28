@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npm run api:ensure --prefix ../.. && next dev -p 6670",
+    "dev": "bun run --cwd ../.. api:ensure && next dev -p 6670",
     "build": "next build",
     "start": "next start -p 6670",
     "lint": "eslint"

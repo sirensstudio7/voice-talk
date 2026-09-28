@@ -63,8 +63,9 @@ export function KioskRulesPageClient({ playbookId }: { playbookId: PlaybookId })
   };
 
   const addNode = (kind: Extract<RuleNodeKind, "action" | "addon">) => {
+    if (!playbook) return;
     const id = `custom-${crypto.randomUUID().slice(0, 8)}`;
-    const origin = selected ?? playbook.nodes[playbook.nodes.length - 1];
+    const origin = selected ?? playbook.nodes.at(-1);
     const node: RuleNode = {
       id,
       label: kind === "addon" ? "New add-on" : "New step",
@@ -94,7 +95,7 @@ export function KioskRulesPageClient({ playbookId }: { playbookId: PlaybookId })
   };
 
   const addLink = () => {
-    if (!selected || !linkTo || linkTo === selected.id) return;
+    if (!playbook || !selected || !linkTo || linkTo === selected.id) return;
     const exists = playbook.edges.some((edge) => edge.from === selected.id && edge.to === linkTo);
     if (exists) return;
     updatePlaybook((current) => ({
