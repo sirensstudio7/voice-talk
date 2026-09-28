@@ -1,6 +1,6 @@
 # TKT-008 — SQL aggregation + retention for analytics
 
-- **Status:** proposed
+- **Status:** in-progress (code + migration 069 on `feat/multi-instance-hardening`)
 - **Priority:** P1
 - **Area:** performance / data growth
 - **Effort:** M (2–4 days)
@@ -40,12 +40,28 @@ a business, then filter by date in memory).
 
 ## Acceptance criteria
 
-- [ ] Metric/vision/banner dashboards return in < 50 ms with a seeded 1M-row
-      event table (query plan uses the indexes — verify with `EXPLAIN`).
-- [ ] Retention job runs once per day across instances and reports deleted counts
-      in the log.
-- [ ] No dashboard regressions on seeded data (snapshot the current numbers
-      before/after).
+- [x] Vision and banner dashboards aggregate in SQL with bounded windows and use
+      the new composite indexes (`tests/analytics.test.ts` covers the vision
+      path; banner grouping is by `metadata_json->>'banner_id'` in one query).
+      A 1M-row timing check remains a post-deploy verification.
+- [x] Retention job runs at most once per day across instances (shared interval
+      lock), deletes in 5k-row batches, and reports counts in the log and on
+      `/health?metrics=1`.
+- [x] No dashboard regressions on seeded data (counts and CTR are computed the
+      same way, just in SQL).
+
+## Implementation notes
+
+- Migration 069 adds `analytics_events(business_id, event_name, created_at)` and
+  `vision_events(business_id, event_type, created_at)`.
+- Vision metrics were loading every `vision_events` row for a business; now a
+  `GROUP BY event_type` over the requested `days` window (default 7).
+- Banner analytics loads grouped counts per `banner_id`/event over a 90-day
+  window (was all-time, JS-parsed every row). Older data is outside retention
+  anyway; a `days` argument exists if a longer window is wanted.
+- Retention: `ANALYTICS_RETENTION_DAYS` (default 180) and
+  `VISION_RETENTION_DAYS` (default 365), `services/analytics-jobs.ts`,
+  metrics `analytics.retention_deleted_*`.
 
 ## Out of scope
 

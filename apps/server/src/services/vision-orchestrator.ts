@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { SocketBridge } from "../http/websocket.js";
-import { eq } from "drizzle-orm";
+import { and, count, eq, gte } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { logger } from "../http/logger.js";
 import { publishKioskPayload } from "./kiosk-bus.js";
@@ -512,14 +512,16 @@ export async function handleVisionEvent(
 
 export async function getVisionMetrics(businessId: string, days = 7) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const events = await db
-    .select()
+  // Aggregate in SQL over the window instead of loading every event (TKT-008).
+  const rows = await db
+    .select({ eventType: visionEvents.eventType, events: count() })
     .from(visionEvents)
-    .where(eq(visionEvents.businessId, businessId));
+    .where(and(eq(visionEvents.businessId, businessId), gte(visionEvents.createdAt, since)))
+    .groupBy(visionEvents.eventType);
 
-  const recent = events.filter((e) => e.createdAt >= since);
-  const confirmed = recent.filter((e) => e.eventType === "PERSON_CONFIRMED").length;
-  const enters = recent.filter((e) => e.eventType === "PERSON_ENTER").length;
+  const counts = new Map(rows.map((row) => [row.eventType, Number(row.events)]));
+  const confirmed = counts.get("PERSON_CONFIRMED") ?? 0;
+  const enters = counts.get("PERSON_ENTER") ?? 0;
   const falseRate = enters > 0 ? Math.max(0, (enters - confirmed) / enters) : 0;
 
   return {

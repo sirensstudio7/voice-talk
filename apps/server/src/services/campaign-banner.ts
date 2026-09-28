@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, count, desc, eq, gte, isNull, lte, or } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import {
   analyticsEvents,
@@ -414,26 +414,31 @@ export async function trackCampaignBannerEvent(params: {
   });
 }
 
-export async function getCampaignBannerAnalytics(businessId: string) {
+/** Banner event analytics, aggregated in SQL over a bounded window (TKT-008). */
+export async function getCampaignBannerAnalytics(businessId: string, days = 90) {
   await assertEntitled(businessId);
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-  const eventRows = await db
+  const bannerIdExpr = sql<string>`coalesce(${analyticsEvents.metadataJson}::jsonb ->> 'banner_id', '')`;
+  const rows = await db
     .select({
+      bannerId: bannerIdExpr,
       eventName: analyticsEvents.eventName,
-      metadataJson: analyticsEvents.metadataJson,
-      createdAt: analyticsEvents.createdAt,
+      events: count(),
+      lastShownAt: sql<Date | null>`max(${analyticsEvents.createdAt})`,
     })
     .from(analyticsEvents)
     .where(
       and(
         eq(analyticsEvents.businessId, businessId),
-        or(
-          eq(analyticsEvents.eventName, "campaign_banner_impression"),
-          eq(analyticsEvents.eventName, "campaign_banner_click"),
-        ),
+        inArray(analyticsEvents.eventName, [
+          "campaign_banner_impression",
+          "campaign_banner_click",
+        ]),
+        gte(analyticsEvents.createdAt, since),
       ),
     )
-    .orderBy(desc(analyticsEvents.createdAt));
+    .groupBy(bannerIdExpr, analyticsEvents.eventName);
 
   let impressions = 0;
   let clicks = 0;
@@ -442,29 +447,25 @@ export async function getCampaignBannerAnalytics(businessId: string) {
     { impressions: number; clicks: number; last_shown_at: string | null }
   >();
 
-  for (const row of eventRows) {
-    let bannerId = "";
-    try {
-      const meta = JSON.parse(row.metadataJson || "{}") as { banner_id?: string };
-      bannerId = String(meta.banner_id ?? "");
-    } catch {
-      bannerId = "";
-    }
+  for (const row of rows) {
+    const bannerId = row.bannerId;
     if (!bannerId) continue;
+    const events = Number(row.events);
     const bucket = perBanner.get(bannerId) ?? {
       impressions: 0,
       clicks: 0,
       last_shown_at: null,
     };
     if (row.eventName === "campaign_banner_impression") {
-      impressions += 1;
-      bucket.impressions += 1;
-      if (!bucket.last_shown_at) {
-        bucket.last_shown_at = row.createdAt.toISOString();
+      impressions += events;
+      bucket.impressions += events;
+      const last = row.lastShownAt ? new Date(row.lastShownAt) : null;
+      if (last && !Number.isNaN(last.getTime())) {
+        bucket.last_shown_at = last.toISOString();
       }
     } else if (row.eventName === "campaign_banner_click") {
-      clicks += 1;
-      bucket.clicks += 1;
+      clicks += events;
+      bucket.clicks += events;
     }
     perBanner.set(bannerId, bucket);
   }

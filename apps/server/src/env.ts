@@ -55,6 +55,9 @@ const envSchema = z.object({
   PHOTO_DOWNLOAD_BASE_URL: z.string().optional(),
   /** Public API origin used in QR codes. Phones cannot reach localhost. */
   PUBLIC_API_URL: z.string().optional(),
+  /** Analytics event retention (TKT-008). Vision events keep a longer history. */
+  ANALYTICS_RETENTION_DAYS: z.coerce.number().int().min(7).max(3650).default(180),
+  VISION_RETENTION_DAYS: z.coerce.number().int().min(7).max(3650).default(365),
 });
 
 export const env = envSchema.parse(process.env);
