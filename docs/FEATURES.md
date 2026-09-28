@@ -109,23 +109,26 @@ in code but is not mounted. Privacy/Terms/Contact links are placeholders.
   Postgres, Redis (rate limits, job locks, config fanout). No email/WhatsApp.
 - **Money paths**: subscriptions per account, add-ons per workspace, voice
   minutes per account, top-ups; all entitlements resolved lazily on read.
-- **Per-instance caches** (invalidated locally only): user/access caches (60 s),
-  USD–IDR FX (15 min), menu/photo branding (would be new), live TTS cache.
+- **Per-instance caches** (invalidated locally, except menu which is invalidated
+  by the kiosk bus on every instance): user/access caches (60 s), USD–IDR FX
+  (15 min), `/menu` (45 s, bus-invalidated), photo branding (10 min, keyed by
+  settings version), live TTS cache.
 - **Jobs**: photo QR expiry (hourly), photo retention (daily), minute orphan
-  sweep (5 min) — all interval-locked across instances.
+  sweep (5 min), analytics/vision retention (daily), presenter stuck-deck sweep
+  (10 min) — all interval-locked across instances.
 
 ## Known gaps (technical)
 
 > Each gap below has a proposal ticket in [`docs/tickets/`](tickets/README.md).
 > That directory is the working backlog; this table is the summary.
 
-| Area | Gap |
-|---|---|
-| Voice minutes | Debit loops lot updates without a transaction — concurrent sessions can overspend |
-| Booking | Availability check + insert is not atomic — double bookings possible |
-| `/menu` | 8 service calls per request, no cache; observed 1.6–2.3 s in production |
-| Analytics | Banner/vision metrics load unbounded rows and aggregate in JS; no retention on `analytics_events`/`vision_events` |
-| Presenter | No durable queue; embeddings unused; per-viewer Gemini sessions; share token cannot be revoked |
-| LIVE | Single-instance by design; in-memory room state |
-| Frontends | No CI typecheck (real errors found in super-admin); admin/super-admin ESLint config broken under ESLint 9 |
-| Dead code | `apps-legacy`, several unused components, `getPhotoDownloadBaseUrl` |
+| Area | Gap | Ticket (state on `feat/multi-instance-hardening`) |
+|---|---|---|
+| Voice minutes | Debit loops lot updates without a transaction — concurrent sessions can overspend | TKT-001 in-progress |
+| Booking | Availability check + insert is not atomic — double bookings possible | TKT-002 in-progress |
+| `/menu` | 8 service calls per request, no cache; observed 1.6–2.3 s in production | TKT-005 in-progress |
+| Analytics | Banner/vision metrics load unbounded rows and aggregate in JS; no retention on `analytics_events`/`vision_events` | TKT-008 in-progress |
+| Presenter | No durable queue; embeddings unused; per-viewer Gemini sessions; share token cannot be revoked | TKT-007 + TKT-010 + TKT-012 in-progress |
+| LIVE | Single-instance by design; in-memory room state | TKT-006 guard + ADR in-progress |
+| Frontends | No CI typecheck (real errors found in super-admin); admin/super-admin ESLint config broken under ESLint 9 | TKT-011 typecheck blocking, lint non-blocking |
+| Dead code | `apps-legacy`, several unused components, `getPhotoDownloadBaseUrl` | TKT-013 in-progress |
