@@ -1,6 +1,6 @@
 # TKT-012 — Presentation share-token revocation
 
-- **Status:** proposed
+- **Status:** in-progress (code + migration 068 on `feat/multi-instance-hardening`)
 - **Priority:** P2
 - **Area:** security
 - **Effort:** S (≤ 1 day)
@@ -35,10 +35,26 @@ way to cut access — the only option is archiving the deck.
 
 ## Acceptance criteria
 
-- [ ] Revoked token: landing page and all public APIs return 410 with a friendly
-      message.
-- [ ] Rotated link works; the old one does not.
-- [ ] Optional expiry is enforced server-side, not only in the UI.
+- [x] Revoked token: landing page and all public APIs return 410 with a friendly
+      message (`loadShareLink` in `routes/presentations.ts`; service lifecycle
+      covered by `tests/presentation-share.test.ts`).
+- [x] Rotated link works; the old one does not (rotation replaces the column,
+      so the previous token stops resolving).
+- [x] Optional expiry is enforced server-side (`share_token_expires_at`, checked
+      in `presentationShareGone`).
+
+## Implementation notes
+
+- Migration 068 adds `share_token_created_at`, `share_token_expires_at`,
+  `share_token_revoked_at`.
+- Admin API: `POST …/share` returns the active link (and self-heals revoked or
+  expired tokens), `POST …/share/rotate` issues a new token with optional
+  `expires_in_days`, `POST …/share/revoke` blocks the current token while
+  keeping it on the row for audit.
+- Admin UI: share dialog now shows expiry/revoked state with **Revoke link** and
+  **New link** actions; the public landing shows the 410 message and keeps
+  Start disabled.
+- Existing rows keep working (new columns are null = never expires/revoked).
 
 ## Out of scope
 

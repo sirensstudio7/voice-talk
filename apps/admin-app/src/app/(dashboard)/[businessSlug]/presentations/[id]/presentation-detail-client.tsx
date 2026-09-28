@@ -339,6 +339,8 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
   const [shareUrl, setShareUrl] = useState("");
   const [shareError, setShareError] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
+  const [shareRevoked, setShareRevoked] = useState(false);
+  const [shareExpiresAt, setShareExpiresAt] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token || !business || loadInFlight.current) return;
@@ -375,14 +377,49 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
     setShareError("");
     try {
       const res = await api.sharePresentation(token, business.id, presentationId);
-      setShareUrl(res.share_url);
+      setShareUrl(res.share_url ?? "");
+      setShareRevoked(Boolean(res.revoked_at));
+      setShareExpiresAt(res.expires_at);
       setShareDialogOpen(true);
     } catch (err) {
       setShareError(err instanceof Error ? err.message : "Could not create share link");
     } finally {
       setShareBusy(false);
     }
-  }, [business, presentationId, shareBusy, token]);
+  }, [business, presentationId, token]);
+
+  const onRotateShare = useCallback(async () => {
+    if (!token || !business) return;
+    setShareBusy(true);
+    setShareCopied(false);
+    setShareError("");
+    try {
+      const res = await api.rotatePresentationShare(token, business.id, presentationId);
+      setShareUrl(res.share_url ?? "");
+      setShareRevoked(false);
+      setShareExpiresAt(res.expires_at);
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : "Could not create a new link");
+    } finally {
+      setShareBusy(false);
+    }
+  }, [business, presentationId, token]);
+
+  const onRevokeShare = useCallback(async () => {
+    if (!token || !business) return;
+    setShareBusy(true);
+    setShareCopied(false);
+    setShareError("");
+    try {
+      const res = await api.revokePresentationShare(token, business.id, presentationId);
+      setShareRevoked(true);
+      setShareExpiresAt(res.expires_at);
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : "Could not revoke the link");
+    } finally {
+      setShareBusy(false);
+    }
+  }, [business, presentationId, token]);
 
   useEffect(() => {
     void load();
@@ -809,19 +846,56 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
                 {shareCopied ? (
                   <p className="mt-2 text-xs text-emerald-700">Copied.</p>
                 ) : null}
+                {shareRevoked ? (
+                  <p className="mt-2 text-xs font-medium text-red-700">
+                    This link has been revoked. Anyone opening it sees an error until you create
+                    a new one.
+                  </p>
+                ) : shareExpiresAt ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Expires {new Date(shareExpiresAt).toLocaleString()}.
+                  </p>
+                ) : null}
                 {shareError ? (
                   <p className="mt-2 text-xs text-red-700">{shareError}</p>
                 ) : null}
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                {!shareRevoked && shareUrl ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mr-auto text-red-700"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Revoke this share link? Anyone with it will lose access immediately.",
+                        )
+                      ) {
+                        void onRevokeShare();
+                      }
+                    }}
+                    disabled={shareBusy}
+                  >
+                    Revoke link
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void onRotateShare()}
+                  disabled={shareBusy}
+                >
+                  New link
+                </Button>
                 <Button type="button" variant="outline" onClick={() => setShareDialogOpen(false)} disabled={shareBusy}>
                   Close
                 </Button>
                 <Button
                   type="button"
                   onClick={() => window.open(shareUrl, "_blank", "noopener,noreferrer")}
-                  disabled={!shareUrl}
+                  disabled={!shareUrl || shareRevoked}
                 >
                   Open
                 </Button>

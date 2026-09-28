@@ -42,7 +42,11 @@ import {
   assertSharedPresenterActive,
   ensurePresentationShareToken,
   loadPresentationByShareToken,
-  presentationSharePageUrl,
+  presentationShareGone,
+  presentationShareGoneDetail,
+  presentationShareOut,
+  rotatePresentationShareToken,
+  revokePresentationShareToken,
 } from "../services/presentation-share.js";
 import { transcribeAudienceQuestion } from "../services/presentation-ai.js";
 import { resolveGeminiApiKeyForBusiness } from "../services/user-api-keys.js";
@@ -279,6 +283,19 @@ async function loadPresentationForBusiness(businessId: string, presentationId: s
     ),
   });
   return row ?? null;
+}
+
+type ShareLinkLookup =
+  | { row: NonNullable<Awaited<ReturnType<typeof loadPresentationByShareToken>>> }
+  | { error: { status: number; detail: string } };
+
+/** Resolve a public share token, mapping revoked/expired links to 410 Gone. */
+async function loadShareLink(token: string): Promise<ShareLinkLookup> {
+  const row = await loadPresentationByShareToken(token);
+  if (!row) return { error: { status: 404, detail: "Share link not found" } };
+  const gone = presentationShareGone(row);
+  if (gone) return { error: { status: 410, detail: presentationShareGoneDetail(gone) } };
+  return { row };
 }
 
 export async function registerPresentationRoutes(app: Elysia): Promise<void> {
@@ -1086,10 +1103,60 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
         if (!shared?.shareToken) {
           return request.status(500, { detail: "Could not create a share link" });
         }
-        return {
-          share_token: shared.shareToken,
-          share_url: presentationSharePageUrl(shared.shareToken),
+        return presentationShareOut(shared);
+      } catch (err) {
+        return sendAuthError(request, err);
+      }
+    },
+  );
+
+  app.post(
+    "/admin/businesses/:businessId/presentations/:presentationId/share/rotate",
+    async (request) => {
+      try {
+        const { businessId, presentationId } = request.params as {
+          businessId: string;
+          presentationId: string;
         };
+        await requirePresenterAccess(request, businessId);
+        const row = await loadPresentationForBusiness(businessId, presentationId);
+        if (!row) return request.status(404, { detail: "Presentation not found" });
+        if (row.status !== "ready" && row.status !== "completed") {
+          return request.status(400, { detail: "Prepare the presentation before sharing it" });
+        }
+        const requestedDays = request.body.expires_in_days;
+        const expiresInDays =
+          requestedDays == null || !Number.isFinite(Number(requestedDays))
+            ? null
+            : Number(requestedDays);
+        const shared = await rotatePresentationShareToken(presentationId, expiresInDays);
+        if (!shared?.shareToken) {
+          return request.status(500, { detail: "Could not rotate the share link" });
+        }
+        return presentationShareOut(shared);
+      } catch (err) {
+        return sendAuthError(request, err);
+      }
+    },
+    {
+      body: t.Object({ expires_in_days: optionalNumberLike }),
+    },
+  );
+
+  app.post(
+    "/admin/businesses/:businessId/presentations/:presentationId/share/revoke",
+    async (request) => {
+      try {
+        const { businessId, presentationId } = request.params as {
+          businessId: string;
+          presentationId: string;
+        };
+        await requirePresenterAccess(request, businessId);
+        const row = await loadPresentationForBusiness(businessId, presentationId);
+        if (!row) return request.status(404, { detail: "Presentation not found" });
+        const updated = await revokePresentationShareToken(presentationId);
+        if (!updated) return request.status(404, { detail: "Presentation not found" });
+        return presentationShareOut(updated);
       } catch (err) {
         return sendAuthError(request, err);
       }
@@ -1098,8 +1165,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
 
   app.get("/public/presentations/share/:token", async (request) => {
     const { token } = request.params as { token: string };
-    const row = await loadPresentationByShareToken(token);
-    if (!row) return request.status(404, { detail: "Share link not found" });
+    const share = await loadShareLink(token);
+    if ("error" in share) return request.status(share.error.status, { detail: share.error.detail });
+    const row = share.row;
     if (row.status !== "ready" && row.status !== "completed") {
       return request.status(409, { detail: "This presentation is not ready yet" });
     }
@@ -1120,8 +1188,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
 
   app.get("/public/presentations/share/:token/pptx", async (request) => {
     const { token } = request.params as { token: string };
-    const row = await loadPresentationByShareToken(token);
-    if (!row) return request.status(404, { detail: "Share link not found" });
+    const share = await loadShareLink(token);
+    if ("error" in share) return request.status(share.error.status, { detail: share.error.detail });
+    const row = share.row;
     const files = await db
       .select()
       .from(presentationFiles)
@@ -1142,8 +1211,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
 
   app.post("/public/presentations/share/:token/start", async (request) => {
     const { token } = request.params as { token: string };
-    const row = await loadPresentationByShareToken(token);
-    if (!row) return request.status(404, { detail: "Share link not found" });
+    const share = await loadShareLink(token);
+    if ("error" in share) return request.status(share.error.status, { detail: share.error.detail });
+    const row = share.row;
     if (row.status !== "ready" && row.status !== "completed") {
       return request.status(409, { detail: "This presentation is not ready yet" });
     }
@@ -1173,8 +1243,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
     "/public/presentations/share/:token/sessions/:sessionId",
     async (request) => {
       const { token, sessionId } = request.params as { token: string; sessionId: string };
-      const row = await loadPresentationByShareToken(token);
-      if (!row) return request.status(404, { detail: "Share link not found" });
+      const share = await loadShareLink(token);
+      if ("error" in share) return request.status(share.error.status, { detail: share.error.detail });
+      const row = share.row;
       const bundle = await getSessionBundle(sessionId);
       if (!bundle || bundle.session.presentationId !== row.id) {
         return request.status(404, { detail: "Session not found" });
@@ -1213,8 +1284,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
     "/public/presentations/share/:token/sessions/:sessionId/control",
     async (request) => {
       const { token, sessionId } = request.params as { token: string; sessionId: string };
-      const row = await loadPresentationByShareToken(token);
-      if (!row) return request.status(404, { detail: "Share link not found" });
+      const share = await loadShareLink(token);
+      if ("error" in share) return request.status(share.error.status, { detail: share.error.detail });
+      const row = share.row;
       const session = await db.query.presentationSessions.findFirst({
         where: eq(presentationSessions.id, sessionId),
       });
@@ -1234,8 +1306,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
     "/public/presentations/share/:token/sessions/:sessionId/questions",
     async (request) => {
       const { token, sessionId } = request.params as { token: string; sessionId: string };
-      const row = await loadPresentationByShareToken(token);
-      if (!row) return request.status(404, { detail: "Share link not found" });
+      const share = await loadShareLink(token);
+      if ("error" in share) return request.status(share.error.status, { detail: share.error.detail });
+      const row = share.row;
       const session = await db.query.presentationSessions.findFirst({
         where: eq(presentationSessions.id, sessionId),
       });
@@ -1257,8 +1330,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
     "/public/presentations/share/:token/sessions/:sessionId/transcribe",
     async (request) => {
       const { token, sessionId } = request.params as { token: string; sessionId: string };
-      const row = await loadPresentationByShareToken(token);
-      if (!row) return request.status(404, { detail: "Share link not found" });
+      const share = await loadShareLink(token);
+      if ("error" in share) return request.status(share.error.status, { detail: share.error.detail });
+      const row = share.row;
       const session = await db.query.presentationSessions.findFirst({
         where: eq(presentationSessions.id, sessionId),
       });
@@ -1288,8 +1362,9 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
     "/public/presentations/share/:token/sessions/:sessionId/analytics",
     async (request) => {
       const { token, sessionId } = request.params as { token: string; sessionId: string };
-      const row = await loadPresentationByShareToken(token);
-      if (!row) return request.status(404, { detail: "Share link not found" });
+      const share = await loadShareLink(token);
+      if ("error" in share) return request.status(share.error.status, { detail: share.error.detail });
+      const row = share.row;
       const bundle = await getSessionBundle(sessionId);
       if (!bundle || bundle.session.presentationId !== row.id) {
         return request.status(404, { detail: "Session not found" });

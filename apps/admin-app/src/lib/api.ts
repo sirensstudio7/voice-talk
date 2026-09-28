@@ -1502,8 +1502,23 @@ export const api = {
       { method: "DELETE" },
     ),
   sharePresentation: (token: string, businessId: string, presentationId: string) =>
-    request<{ share_token: string; share_url: string }>(
+    request<PresentationShareLink>(
       `/admin/businesses/${businessId}/presentations/${presentationId}/share`,
+      token,
+      { method: "POST" },
+    ),
+  rotatePresentationShare: (token: string, businessId: string, presentationId: string) =>
+    request<PresentationShareLink>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}/share/rotate`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+      },
+    ),
+  revokePresentationShare: (token: string, businessId: string, presentationId: string) =>
+    request<PresentationShareLink>(
+      `/admin/businesses/${businessId}/presentations/${presentationId}/share/revoke`,
       token,
       { method: "POST" },
     ),
@@ -1730,6 +1745,14 @@ export type SharedPresentationLanding = {
   total_slides: number;
   estimated_duration: number;
   thumbnail_url: string;
+};
+
+export type PresentationShareLink = {
+  share_token: string | null;
+  share_url: string | null;
+  created_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
 };
 
 export type Presentation = {
