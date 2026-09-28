@@ -15,6 +15,7 @@ on:
       - "package.json"
       - "bun.lock"
       - ".github/workflows/api.yml"
+  workflow_dispatch:
 
 concurrency:
   group: api-${{ github.ref }}
@@ -24,6 +25,8 @@ jobs:
   checks:
     name: Lint, typecheck, tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:17-alpine
@@ -72,8 +75,17 @@ jobs:
       - name: Tests
         working-directory: apps/server
         run: bun test
+      - uses: docker/setup-buildx-action@v4
       - name: Build image
-        run: docker build -t voicetalk-api -f apps/server/Dockerfile .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          push: false
+          load: true
+          tags: voicetalk-api:ci
+          cache-from: type=gha,scope=api-image
+          cache-to: type=gha,scope=api-image,mode=max
       - name: Smoke the image
         run: |
           docker run -d --name api-image --network host \
@@ -82,7 +94,7 @@ jobs:
             -e PORT=8098 \
             -e PLATFORM_ADMIN_EMAIL="$PLATFORM_ADMIN_EMAIL" \
             -e PLATFORM_ADMIN_PASSWORD="$PLATFORM_ADMIN_PASSWORD" \
-            voicetalk-api
+            voicetalk-api:ci
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:8098/health >/dev/null; then break; fi
             sleep 1
@@ -90,3 +102,46 @@ jobs:
           curl -sf "http://127.0.0.1:8098/health?db=1" | grep -q '"db_online":true'
           curl -sf "http://127.0.0.1:8098/health?db=1" | grep -q '"redis_online":true'
           docker rm -f api-image
+
+  publish:
+    name: Publish image to GHCR
+    needs: checks
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.ref == 'refs/heads/feat/bun-elysia'
+      || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=api-image
+          cache-to: type=gha,scope=api-image,mode=max
