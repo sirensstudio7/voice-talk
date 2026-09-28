@@ -1,4 +1,4 @@
-import postgres from "postgres";
+import { SQL } from "bun";
 import { env } from "../env.js";
 
 export type DbHealth = {
@@ -19,25 +19,26 @@ let inflightCheck: Promise<DbHealth> | null = null;
  *
  * Important: never race `db.execute` on the shared pool — a timed-out query
  * keeps holding a pool slot and will exhaust max connections (common with
- * Supabase transaction pooler on :6543).
+ * transaction poolers).
  */
 async function pingDb(timeoutMs: number): Promise<DbHealth> {
   const started = Date.now();
   const connectTimeoutSec = Math.max(1, Math.ceil(timeoutMs / 1000));
 
-  const ping = postgres(env.DATABASE_URL, {
+  const ping = new SQL({
+    url: env.DATABASE_URL,
     prepare: false,
     max: 1,
-    connect_timeout: connectTimeoutSec,
-    idle_timeout: 1,
-    max_lifetime: 5,
+    connectionTimeout: connectTimeoutSec,
+    idleTimeout: 1,
+    maxLifetime: 5,
   });
 
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   try {
     await Promise.race([
-      ping`select 1`,
+      ping.unsafe("select 1"),
       new Promise<never>((_, reject) => {
         timer = setTimeout(
           () => reject(new Error("Database ping timed out")),
@@ -55,7 +56,7 @@ async function pingDb(timeoutMs: number): Promise<DbHealth> {
     };
   } finally {
     if (timer) clearTimeout(timer);
-    await ping.end({ timeout: 1 }).catch(() => {
+    await ping.close({ timeout: 1 }).catch(() => {
       // Ignore close errors — connection may already be dead.
     });
   }

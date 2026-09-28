@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import postgres from "postgres";
+import { SQL } from "bun";
 
 const DATABASE_URL =
   process.env.DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/voicetalk";
@@ -11,7 +11,7 @@ const DATABASE_URL =
 const ALREADY_APPLIED = new Set(["42701", "42P07", "23514"]);
 
 async function migrate() {
-  const sql = postgres(DATABASE_URL, { max: 1 });
+  const sql = new SQL({ url: DATABASE_URL, max: 1 });
   const migrationsDir = resolve(process.cwd(), "../../supabase/migrations");
   const migrationFiles = readdirSync(migrationsDir)
     .filter((f) => f.endsWith(".sql"))
@@ -35,7 +35,7 @@ async function migrate() {
     }
   }
 
-  await sql.end();
+  await sql.close();
 }
 
 migrate().catch((err) => {

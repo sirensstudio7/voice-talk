@@ -1,34 +1,25 @@
-import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import postgres, { type Sql } from "postgres";
+import { SQL } from "bun";
+import { drizzle, type BunSQLDatabase } from "drizzle-orm/bun-sql";
 import { env } from "../env.js";
 import * as schema from "./schema.js";
 
-export type AppDb = PostgresJsDatabase<typeof schema>;
+export type AppDb = BunSQLDatabase<typeof schema>;
 
-const usesSupabasePooler =
-  env.DATABASE_URL.includes(":6543/") || env.DATABASE_URL.includes("pooler.supabase.com");
-
-const usesTransactionPooler = env.DATABASE_URL.includes(":6543/");
-
-if (usesTransactionPooler) {
-  console.warn(
-    "[db] DATABASE_URL uses Supabase transaction pooler (:6543). " +
-      "Prefer session pooler (:5432) for the Node API to avoid stuck connections.",
-  );
-}
-
-function createSqlClient(): Sql {
-  return postgres(env.DATABASE_URL, {
-    // Transaction pooler cannot multiplex; session pooler can hold a few.
+function createSqlClient(): SQL {
+  return new SQL({
+    url: env.DATABASE_URL,
+    // Transaction poolers (PgBouncer) cannot keep prepared statements across
+    // checkouts. Disabling them everywhere means one configuration works on a
+    // direct connection and through the pooler alike.
     prepare: false,
-    max: usesTransactionPooler ? 1 : usesSupabasePooler ? 4 : 10,
-    connect_timeout: 25,
+    max: 10,
+    connectionTimeout: 25,
     // Recycle idle / old sockets so a bad pooler connection cannot linger.
-    idle_timeout: usesTransactionPooler ? 5 : 20,
-    max_lifetime: usesTransactionPooler ? 60 : 60 * 5,
+    idleTimeout: 20,
+    maxLifetime: 60 * 5,
     // Fail stuck queries instead of holding pool slots forever (login/UI hang).
     connection: {
-      statement_timeout: usesSupabasePooler ? 10_000 : 20_000,
+      statement_timeout: 20_000,
     },
   });
 }
@@ -47,7 +38,7 @@ export async function resetDbPool(reason: string): Promise<void> {
     const old = client;
     client = createSqlClient();
     db = drizzle(client, { schema });
-    await old.end({ timeout: 2 }).catch(() => {
+    await old.close({ timeout: 2 }).catch(() => {
       // Ignore — sockets may already be dead.
     });
   })().finally(() => {
@@ -98,7 +89,7 @@ export function startDbPoolWatchdog(intervalMs = 30_000): void {
       // Must be longer than a busy Super Admin dashboard burst. A 5s probe
       // was resetting live queries and every page then reported a DB timeout.
       await Promise.race([
-        client`select 1`,
+        client.unsafe("select 1"),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(new Error("Shared pool watchdog timed out")), 20_000);
         }),
@@ -117,5 +108,5 @@ export function startDbPoolWatchdog(intervalMs = 30_000): void {
 }
 
 export async function closeDb(): Promise<void> {
-  await client.end();
+  await client.close();
 }
