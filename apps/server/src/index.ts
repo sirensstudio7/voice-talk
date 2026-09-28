@@ -18,7 +18,6 @@ import { registerLuckySpinRoutes } from "./routes/lucky-spin.js";
 import { registerCampaignBannerRoutes } from "./routes/campaign-banner.js";
 import { registerLiveRoutes } from "./routes/live.js";
 import { registerLiveWebSocketRoutes } from "./routes/live-websocket.js";
-import { initVisionEventBus } from "./services/vision-orchestrator.js";
 import { startPhotoMomentJobs } from "./services/photo-jobs.js";
 import { registerVoiceMinuteJobs } from "./services/voice-minute-jobs.js";
 import { getUploadRoot, MAX_PRESENTATION_UPLOAD_BYTES } from "./storage/index.js";
@@ -61,7 +60,6 @@ registerWebSocketRoutes(app);
 registerPresentationWebSocketRoutes(app);
 registerLiveWebSocketRoutes(app);
 registerVisionWebSocketRoutes(app);
-await initVisionEventBus();
 startPhotoMomentJobs(logger);
 registerVoiceMinuteJobs(logger);
 

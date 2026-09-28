@@ -99,7 +99,7 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
     const clientIp =
       forwardedFor || request.server?.requestIP(request.request)?.address || "unknown";
     const key = `${clientIp}:${business}`;
-    if (!checkKioskUnlockRateLimit(key)) {
+    if (!(await checkKioskUnlockRateLimit(key))) {
       return request.status(429, { detail: "Too many PIN attempts. Try again later." });
     }
     try {

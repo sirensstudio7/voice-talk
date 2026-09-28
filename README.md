@@ -18,13 +18,17 @@ Copy `.env.example` to `apps/server/.env` and configure:
 
 - `GEMINI_API_KEY` — from [Google AI Studio](https://aistudio.google.com/apikey)
 - `DATABASE_URL` — Supabase Postgres connection pooler URL (port 6543)
+- `REDIS_URL` — rate limits + background-job locks, shared across API instances.
+  Use Upstash's `rediss://...` string in production; local dev:
+  `docker compose up -d redis` gives `redis://127.0.0.1:6380`
 - `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` — for file uploads (optional locally; falls back to `apps/server/uploads/`)
 
 For local Postgres without Supabase:
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres redis
 # DATABASE_URL defaults to postgresql://postgres:postgres@localhost:5432/voicetalk
+# REDIS_URL defaults to redis://127.0.0.1:6380
 ```
 
 ### 2. Database

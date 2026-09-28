@@ -380,7 +380,7 @@ export async function registerPlatformRoutes(app: Elysia): Promise<void> {
 
   app.post("/platform/auth/login", async (request) => {
     const key = `login:${clientKey(request)}`;
-    if (!checkLoginRateLimit(key)) {
+    if (!(await checkLoginRateLimit(key))) {
       return request.status(429, { detail: "Too many login attempts. Try again later." });
     }
 

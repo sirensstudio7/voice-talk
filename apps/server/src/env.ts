@@ -11,6 +11,8 @@ const envSchema = z.object({
   DATABASE_URL: z
     .string()
     .default("postgresql://localhost:5432/voicetalk"),
+  /** Rate limits and job locks shared across instances; rediss:// for Upstash. */
+  REDIS_URL: z.string().url(),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default("gemini-3.1-flash-live-preview"),
   JWT_SECRET: z.string().default("dev-secret-change-in-production"),

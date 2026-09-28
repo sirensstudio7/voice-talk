@@ -6,6 +6,7 @@ import { withLoginDb } from "../db/login-db.js";
 import { auditLogs, platformAdmins, type PlatformAdmin } from "../db/schema.js";
 import { env } from "../env.js";
 import type { AuthContext } from "../http/context.js";
+import { rateLimit } from "../redis.js";
 import { hashPassword, verifyPassword } from "./jwt.js";
 import { isPlatformRole, type PlatformRole } from "./platform-rbac.js";
 
@@ -228,17 +229,11 @@ export async function ensurePlatformAdminSeed(): Promise<void> {
   console.info(`Seeded platform super admin: ${email}`);
 }
 
-/** Simple in-memory rate limiter for login endpoints. */
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-
-export function checkLoginRateLimit(key: string, limit = 20, windowMs = 15 * 60 * 1000): boolean {
-  const now = Date.now();
-  const entry = loginAttempts.get(key);
-  if (!entry || entry.resetAt < now) {
-    loginAttempts.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-  if (entry.count >= limit) return false;
-  entry.count += 1;
-  return true;
+/** Login limiter backed by Redis so every instance shares one window. */
+export async function checkLoginRateLimit(
+  key: string,
+  limit = 20,
+  windowMs = 15 * 60 * 1000,
+): Promise<boolean> {
+  return rateLimit(key, limit, windowMs);
 }

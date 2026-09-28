@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { SocketBridge } from "../http/websocket.js";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
+import { redis } from "../redis.js";
 import { visionEvents, visionSettings, type VisionSettings } from "../db/schema.js";
 import {
   DEFAULT_VISION_SETTINGS,
@@ -540,33 +541,16 @@ export async function getVisionMetrics(businessId: string, days = 7) {
   };
 }
 
-// Optional Redis bridge: when REDIS_URL is set, publish vision events for multi-kiosk scaling.
-let redisPublisher: { publish: (channel: string, message: string) => Promise<number> } | null =
-  null;
-
-export async function initVisionEventBus(): Promise<void> {
-  const redisUrl = process.env.REDIS_URL?.trim();
-  if (!redisUrl) return;
-
-  try {
-    const moduleName = "ioredis";
-    const imported = (await import(moduleName)) as {
-      default: new (url: string) => { publish: (channel: string, message: string) => Promise<number> };
-    };
-    redisPublisher = new imported.default(redisUrl);
-    console.info("Vision event bus: Redis publisher connected");
-  } catch (err) {
-    console.warn("Vision event bus: Redis unavailable, using in-process hub only", err);
-  }
-}
-
+/**
+ * Publish vision events to every API instance, so kiosk dashboards connected
+ * to another instance still see person/entry events.
+ */
 export async function publishVisionEvent(
   businessSlug: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
-  if (!redisPublisher) return;
   try {
-    await redisPublisher.publish(`vision:${businessSlug}`, JSON.stringify(payload));
+    await redis.send("PUBLISH", [`vision:${businessSlug}`, JSON.stringify(payload)]);
   } catch (err) {
     console.error("Vision Redis publish failed:", err);
   }

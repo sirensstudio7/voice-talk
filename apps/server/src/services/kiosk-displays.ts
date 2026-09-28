@@ -7,6 +7,7 @@ import { hashPassword, verifyPassword } from "../auth/jwt.js";
 import { db } from "../db/client.js";
 import { businessMembers, kioskDisplays, plans, type KioskDisplay } from "../db/schema.js";
 import { env } from "../env.js";
+import { rateLimit } from "../redis.js";
 import { getEntitlementSnapshot } from "./entitlement.js";
 
 export const DEFAULT_KIOSK_SLUG = "default";
@@ -498,16 +499,11 @@ export async function releaseKioskDisplayByToken(opts: {
   await releaseUnlockLease(row.id, payload.jti);
 }
 
-const unlockAttempts = new Map<string, { count: number; resetAt: number }>();
-
-export function checkKioskUnlockRateLimit(key: string, limit = 12, windowMs = 15 * 60 * 1000): boolean {
-  const now = Date.now();
-  const entry = unlockAttempts.get(key);
-  if (!entry || entry.resetAt < now) {
-    unlockAttempts.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-  if (entry.count >= limit) return false;
-  entry.count += 1;
-  return true;
+/** Kiosk unlock limiter backed by Redis so every instance shares one window. */
+export async function checkKioskUnlockRateLimit(
+  key: string,
+  limit = 12,
+  windowMs = 15 * 60 * 1000,
+): Promise<boolean> {
+  return rateLimit(key, limit, windowMs);
 }

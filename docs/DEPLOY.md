@@ -35,6 +35,7 @@ Copy credentials into a secure note for Render env vars.
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | Supabase pooler URL (port 6543, Transaction mode) |
+| `REDIS_URL` | Upstash `rediss://` URL — rate limits + background-job locks |
 | `SUPABASE_URL` | `https://[ref].supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role key (secret) |
 | `GEMINI_API_KEY` | Google AI Studio key |
