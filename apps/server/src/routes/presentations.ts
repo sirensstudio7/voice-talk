@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { t, type Elysia } from "elysia";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 
 import {
   getAuthUserId,
@@ -1222,6 +1222,24 @@ export async function registerPresentationRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+
+    // One live session per deck: a second /start joins the running session
+    // instead of opening another narrator fleet (TKT-007).
+    const [active] = await db
+      .select()
+      .from(presentationSessions)
+      .where(
+        and(
+          eq(presentationSessions.presentationId, row.id),
+          ne(presentationSessions.status, "completed"),
+        ),
+      )
+      .orderBy(desc(presentationSessions.createdAt))
+      .limit(1);
+    if (active) {
+      return request.status(200, sessionOut(active));
+    }
+
     const [session] = await db
       .insert(presentationSessions)
       .values({

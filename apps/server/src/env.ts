@@ -56,6 +56,8 @@ const envSchema = z.object({
   /** Analytics event retention (TKT-008). Vision events keep a longer history. */
   ANALYTICS_RETENTION_DAYS: z.coerce.number().int().min(7).max(3650).default(180),
   VISION_RETENTION_DAYS: z.coerce.number().int().min(7).max(3650).default(365),
+  /** Concurrent narration sockets per AI Present session (TKT-007). */
+  PRESENTER_MAX_VIEWERS_PER_SESSION: z.coerce.number().int().min(1).max(500).default(20),
 });
 
 export const env = envSchema.parse(process.env);

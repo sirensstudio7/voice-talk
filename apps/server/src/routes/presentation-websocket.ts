@@ -17,6 +17,7 @@ import {
   presentations,
 } from "../db/schema.js";
 import { AI_PRESENTER_CODE, hasActiveAddon } from "../services/addon-entitlement.js";
+import { inc, setGauge } from "../http/metrics.js";
 import {
   PRESENTER_SHUTDOWN,
   createTextQueue,
@@ -137,6 +138,39 @@ export function registerPresentationWebSocketRoutes(app: Elysia): void {
     "/ws/presentation-session",
     socketRoute((socket, { query }) => handlePresenterSession(socket, query)),
   );
+}
+
+/**
+ * Viewer cap per presentation session (TKT-007): every socket opens its own
+ * Gemini Live narrator, so an uncapped share link can spawn unbounded
+ * sessions. Bounded counter per session, gauge for the fleet. Exported for
+ * tests.
+ */
+const activeViewers = new Map<string, number>();
+
+function updatePresenterGauges(): void {
+  let viewers = 0;
+  for (const count of activeViewers.values()) viewers += count;
+  setGauge("presenter.narrator_sessions_active", activeViewers.size);
+  setGauge("presenter.viewers_active", viewers);
+}
+
+export function acquireViewerSlot(sessionId: string): boolean {
+  const current = activeViewers.get(sessionId) ?? 0;
+  if (current >= env.PRESENTER_MAX_VIEWERS_PER_SESSION) return false;
+  activeViewers.set(sessionId, current + 1);
+  updatePresenterGauges();
+  return true;
+}
+
+export function releaseViewerSlot(sessionId: string): void {
+  const current = activeViewers.get(sessionId) ?? 0;
+  if (current <= 1) {
+    activeViewers.delete(sessionId);
+  } else {
+    activeViewers.set(sessionId, current - 1);
+  }
+  updatePresenterGauges();
 }
 
 async function handlePresenterSession(
@@ -264,6 +298,18 @@ async function handlePresenterSession(
     textQueue.push(PRESENTER_SHUTDOWN);
   });
 
+  // Only sockets that actually start a narrator consume a slot; failed lookups
+  // above never leak one.
+  if (!acquireViewerSlot(sessionId)) {
+    inc("presenter.viewers_rejected_total");
+    safeSendJson(socket, {
+      type: "error",
+      error: "This presentation is full right now. Please try again in a moment.",
+    });
+    socket.close();
+    return;
+  }
+
   safeSendJson(socket, { type: "session.status", status: "connecting" });
 
   const slideOutline = slides
@@ -301,6 +347,7 @@ async function handlePresenterSession(
     });
   } finally {
     closed = true;
+    releaseViewerSlot(sessionId);
     try {
       socket.close();
     } catch {

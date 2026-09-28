@@ -1,6 +1,6 @@
 # TKT-007 — Presenter narration cost + viewer cap
 
-- **Status:** proposed
+- **Status:** in-progress (code on `feat/multi-instance-hardening`)
 - **Priority:** P2
 - **Area:** architecture / cost
 - **Effort:** M (2–4 days)
@@ -43,10 +43,24 @@ is per-deck, not per-viewer.
 
 ## Acceptance criteria
 
-- [ ] Opening the 21st viewer is rejected with a friendly message; the 20th keeps
-      playing.
-- [ ] Two `/start` calls on one share token do not create two sessions.
-- [ ] `/health?metrics=1` exposes the active-session gauge and rejection count.
+- [x] Opening the (cap+1)th viewer is rejected with a friendly message; earlier
+      viewers keep playing: `PRESENTER_MAX_VIEWERS_PER_SESSION` (default 20),
+      slot counter in `routes/presentation-websocket.ts`, unit tested in
+      `tests/presenter-cap.test.ts`.
+- [x] Two `/start` calls on one share token do not create two sessions: the
+      second joins the running (non-completed) session and returns it with 200.
+- [x] `/health?metrics=1` exposes `presenter.narrator_sessions_active`,
+      `presenter.viewers_active` (gauges) and
+      `presenter.viewers_rejected_total`.
+
+## Implementation notes
+
+- The cap is per API instance; with the current per-instance room scale that is
+  the right unit (each socket is an independent Gemini session regardless of
+  which pod it lands on). If a global cap is ever needed, move the counter to
+  Redis.
+- Medium-term fan-out/pre-render decision stays with TKT-006 option C; the
+  dormant per-slide audio helpers are kept for that evaluation (TKT-010).
 
 ## Out of scope
 
