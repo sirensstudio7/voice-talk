@@ -176,4 +176,15 @@ bun run setup:supabase   # checklist
 bun run check:deploy     # validate env before deploy
 ```
 
+### Checks and tests
+
+```bash
+bun run lint:api   # Biome over the backend (zero warnings expected)
+bun run test:api   # unit tests; the smoke suite skips without services
+```
+
+From `apps/server`: `bun run typecheck`, and `bun run test:with-services` to
+provision throwaway Postgres + Redis containers and run the full suite
+(health, logins, validation rejections).
+
 Template: [`.env.production.example`](.env.production.example)
