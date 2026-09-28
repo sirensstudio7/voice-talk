@@ -975,6 +975,7 @@ export const presentationEmbeddings = pgTable("presentation_embeddings", {
   sourceType: varchar("source_type", { length: 50 }).notNull(),
   sourceId: varchar("source_id", { length: 36 }),
   chunkText: text("chunk_text").notNull().default(""),
+  /** Reserved for pgvector. Q&A ranking is keyword-based today (TKT-010). */
   embeddingReference: text("embedding_reference").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

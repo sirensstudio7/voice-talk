@@ -10,6 +10,7 @@ import { applyRemoteKioskPayload } from "./services/vision-orchestrator.js";
 import { startKioskBus, stopKioskBus } from "./services/kiosk-bus.js";
 import { startPhotoMomentJobs } from "./services/photo-jobs.js";
 import { startAnalyticsRetentionJobs } from "./services/analytics-jobs.js";
+import { startPresentationJobs } from "./services/presentation-jobs.js";
 import { registerVoiceMinuteJobs } from "./services/voice-minute-jobs.js";
 
 /** Grace period for clients to reconnect elsewhere before the server stops. */
@@ -24,6 +25,7 @@ startKioskBus((businessSlug, payload) => applyRemoteKioskPayload(businessSlug, p
 startPhotoMomentJobs(logger.child({ component: "jobs" }));
 registerVoiceMinuteJobs(logger.child({ component: "jobs" }));
 startAnalyticsRetentionJobs();
+startPresentationJobs();
 
 const start = async () => {
   const allowedOrigins = env.ALLOWED_ORIGINS?.trim();

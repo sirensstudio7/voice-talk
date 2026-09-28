@@ -1,6 +1,6 @@
 # TKT-010 — Presenter pipeline hardening (orphans, dormant features)
 
-- **Status:** proposed
+- **Status:** in-progress (code on `feat/multi-instance-hardening`)
 - **Priority:** P2
 - **Area:** reliability
 - **Effort:** M (2–4 days)
@@ -42,10 +42,26 @@ embeddings — which makes the module harder to reason about than it needs to be
 
 ## Acceptance criteria
 
-- [ ] Killing the API mid-processing leaves no deck stuck longer than 15 minutes.
-- [ ] A failed deck can be retried from the UI and reaches `ready`.
-- [ ] No exported-but-unused presenter helpers remain (or each has a comment
-      explaining why it stays).
+- [x] Killing the API mid-processing leaves no deck stuck longer than ~15
+      minutes: `sweepStuckPresentations` marks stale `processing` rows failed,
+      interval-locked so one instance runs it per 10-minute bucket
+      (`tests/presentation-jobs.test.ts`).
+- [x] A failed deck can be retried from the UI: the detail page already renders
+      `processing_error` and shows "Retry prepare" for `failed` decks.
+- [x] Presenter helpers are either wired or documented: `generateSlideScript`,
+      `generateGreetingClosing`, `ensureSlideAudio` and
+      `ensurePresentationStageAudio` are marked dormant pending the TKT-007
+      render/fan-out decision; `presentation_embeddings.embedding_reference` is
+      documented as reserved (keyword ranking today).
+
+## Implementation notes
+
+- `services/presentation-jobs.ts` (registered in `index.ts`) runs the sweep at
+  startup and every 10 minutes; recovered rows get
+  `processing_error = "Preparation was interrupted. Retry prepare."` and are
+  counted by `presenter.processing_stuck_total`.
+- No queue was introduced: at current volume the interval sweep is enough; a
+  BullMQ/Redis-stream queue remains a separate decision if throughput grows.
 
 ## Out of scope
 

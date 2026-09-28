@@ -89,7 +89,12 @@ async function upsertStageAudio(input: {
   return true;
 }
 
-/** Lazily create greeting/closing WAV if scripts exist but audio is missing. */
+/** Lazily create greeting/closing WAV if scripts exist but audio is missing.
+ *
+ * Dormant (TKT-010): live Gemini narration does not fetch these assets. Kept
+ * for the TKT-007 fan-out/pre-render decision; remove with `ensureSlideAudio`
+ * and `generateSlideScript` if live narration stays the design.
+ */
 export async function ensurePresentationStageAudio(presentationId: string): Promise<void> {
   const presentation = await db.query.presentations.findFirst({
     where: eq(presentations.id, presentationId),
@@ -138,7 +143,10 @@ export async function ensurePresentationStageAudio(presentationId: string): Prom
   }
 }
 
-/** Lazily create a slide WAV if the script exists but audio is missing. */
+/** Lazily create a slide WAV if the script exists but audio is missing.
+ *
+ * Dormant (TKT-010): see `ensurePresentationStageAudio` above.
+ */
 export async function ensureSlideAudio(
   presentationId: string,
   slideId: string,
