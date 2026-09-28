@@ -14,7 +14,7 @@ export async function registerPlatformTopupOrderRoutes(app: Elysia): Promise<voi
     try {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:read");
-      const query = request.query as { status?: string; search?: string };
+      const query = request.query;
       const rows = await listPlatformTopupOrders({
         status: query.status,
         search: query.search,
@@ -29,6 +29,11 @@ export async function registerPlatformTopupOrderRoutes(app: Elysia): Promise<voi
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({
+      status: optionalString,
+      search: optionalString,
+    }),
   });
 
   app.post("/platform/topup-orders/:id/approve", async (request) => {

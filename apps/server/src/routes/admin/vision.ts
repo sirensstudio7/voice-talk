@@ -4,7 +4,7 @@ import { db } from "../../db/client.js";
 import { visionSettings } from "../../db/schema.js";
 import { DEFAULT_VISION_SETTINGS, normalizeAutoGoodbyeTimeoutSeconds, normalizeCooldownSeconds, normalizeDetectionDistanceM, normalizeGreetingDelaySeconds, normalizeGreetingTriggerMode, normalizeStartHotkey, normalizeVisionSource, normalizeLostTimeoutSeconds, normalizeSilenceTimeoutSeconds, normalizeVisionScript, visionSettingsOut } from "../../services/vision-settings.js";
 import { broadcastVisionConfig, getOrCreateVisionSettings, getVisionHub, getVisionMetrics, refreshHubSettings } from "../../services/vision-orchestrator.js";
-import { optionalBoolean, optionalNumberLike, optionalString } from "../../http/validation.js";
+import { optionalBoolean, optionalNumberLike, optionalString, queryNumber } from "../../http/validation.js";
 import { t, type Elysia } from "elysia";
 
 export const visionSettingsUpdateBody = t.Object({
@@ -118,11 +118,13 @@ export async function registerAdminVisionRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const { days } = request.query as { days?: string };
-      const periodDays = days ? Math.max(1, Math.min(90, Number(days))) : 7;
+      const { days } = request.query;
+      const periodDays = Math.max(1, Math.min(90, days ?? 7));
       return getVisionMetrics(businessId, periodDays);
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({ days: queryNumber }),
   });
 }

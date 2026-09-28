@@ -4,7 +4,7 @@ import { ALLOWED_IMAGE_TYPES, MAX_UPLOAD_BYTES, PHOTO_BRANDING_BUCKET, uploadToS
 import { getAddonStatusForBusiness, getOrCreatePhotoSettings, photoSettingsOut, SMART_PHOTO_MOMENT_CODE } from "../../services/addon-entitlement.js";
 import { deletePhotoSession, getPhotoAnalytics, listPhotoGallery, updatePhotoSettings } from "../../services/photo-moment.js";
 import { readUploadedFile } from "../../http/multipart.js";
-import { optionalBoolean, optionalNullableString, optionalString } from "../../http/validation.js";
+import { optionalBoolean, optionalNullableString, optionalString, queryNumber } from "../../http/validation.js";
 import { t, type Elysia } from "elysia";
 
 export const photoSettingsUpdateBody = t.Object({
@@ -134,11 +134,11 @@ export async function registerAdminPhotoRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const query = request.query as Record<string, unknown>;
-      const from = typeof query.from === "string" && query.from ? new Date(query.from) : null;
-      const to = typeof query.to === "string" && query.to ? new Date(query.to) : null;
-      const limit = Math.min(100, Math.max(1, Number(query.limit) || 50));
-      const offset = Math.max(0, Number(query.offset) || 0);
+      const query = request.query;
+      const from = query.from ? new Date(query.from) : null;
+      const to = query.to ? new Date(query.to) : null;
+      const limit = Math.min(100, Math.max(1, query.limit ?? 50));
+      const offset = Math.max(0, query.offset ?? 0);
       return listPhotoGallery({
         businessId,
         from: from && !Number.isNaN(from.getTime()) ? from : null,
@@ -149,6 +149,13 @@ export async function registerAdminPhotoRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({
+      from: optionalString,
+      to: optionalString,
+      limit: queryNumber,
+      offset: queryNumber,
+    }),
   });
 
   app.delete("/admin/businesses/:businessId/photo/gallery/:sessionId", async (request) => {

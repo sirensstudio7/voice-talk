@@ -4,7 +4,7 @@ import { getCurrentPlatformAdmin, writeAuditLog } from "../../auth/platform-auth
 import { requirePermission } from "../../auth/platform-rbac.js";
 import { db } from "../../db/client.js";
 import { businesses, plans, subscriptions, voiceSessions } from "../../db/schema.js";
-import { optionalNullableString, optionalString } from "../../http/validation.js";
+import { optionalNullableString, optionalString, listQueryFields } from "../../http/validation.js";
 import { t, type Elysia } from "elysia";
 import { parsePagination, resolveUsdIdrQuote, ensureSubscriptionForBusiness } from "./shared.js";
 
@@ -35,10 +35,10 @@ export async function registerPlatformSubscriptionRoutes(app: Elysia): Promise<v
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:read");
 
-      const query = request.query as Record<string, unknown>;
+      const query = request.query;
       const { page, limit, offset } = parsePagination(query);
-      const search = typeof query.search === "string" ? query.search.trim() : "";
-      const status = typeof query.status === "string" ? query.status.trim() : "";
+      const search = query.search?.trim() ?? "";
+      const status = query.status?.trim() ?? "";
 
       // Ensure every business has a subscription row for listing completeness
       await ensureAllBusinessSubscriptions();
@@ -205,6 +205,11 @@ export async function registerPlatformSubscriptionRoutes(app: Elysia): Promise<v
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({
+      ...listQueryFields,
+      status: optionalString,
+    }),
   });
 
   app.patch("/platform/subscriptions/:id", async (request) => {

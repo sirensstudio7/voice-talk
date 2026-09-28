@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { Elysia, t } from "elysia";
-import { numberLike, optionalNullableString, validationDetail } from "../src/http/validation.js";
+import {
+  listQueryFields,
+  numberLike,
+  optionalNullableString,
+  validationDetail,
+} from "../src/http/validation.js";
 
 /**
  * Unit tests for the validation primitives. These run without Postgres or
@@ -76,6 +81,31 @@ describe("optionalNullableString", () => {
         expect((await postJson(baseUrl, "/s", { v: null })).status).toBe(200);
         expect((await postJson(baseUrl, "/s", {})).status).toBe(200);
         expect((await postJson(baseUrl, "/s", { v: 5 })).status).toBe(400);
+      },
+    );
+  });
+});
+
+describe("listQueryFields", () => {
+  test("coerces numeric query values and rejects junk", async () => {
+    await withApp(
+      (app) =>
+        app.get("/list", ({ query }) => query, {
+          query: t.Object({ ...listQueryFields }),
+        }),
+      async (baseUrl) => {
+        const ok = await fetch(`${baseUrl}/list?page=2&limit=50&search=hi`);
+        expect(ok.status).toBe(200);
+        const body = (await ok.json()) as { page: number; limit: number; search: string };
+        expect(body.page).toBe(2);
+        expect(body.limit).toBe(50);
+        expect(body.search).toBe("hi");
+
+        const defaults = await fetch(`${baseUrl}/list`);
+        expect(defaults.status).toBe(200);
+
+        const bad = await fetch(`${baseUrl}/list?page=abc`);
+        expect(bad.status).toBe(400);
       },
     );
   });

@@ -5,7 +5,7 @@ import { requirePermission } from "../../auth/platform-rbac.js";
 import { db } from "../../db/client.js";
 import { plans, accountSubscriptions, subscriptionRequests, users } from "../../db/schema.js";
 import { activateSubscriptionRequest, getEntitlementSnapshot, listPaidPlans, rejectSubscriptionRequest } from "../../services/entitlement.js";
-import { optionalString } from "../../http/validation.js";
+import { optionalString, listQueryFields } from "../../http/validation.js";
 import { t, type Elysia } from "elysia";
 import { parsePagination } from "./shared.js";
 
@@ -26,10 +26,10 @@ export async function registerPlatformSubscriptionRequestRoutes(app: Elysia): Pr
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "subscriptions:read");
 
-      const query = request.query as Record<string, unknown>;
+      const query = request.query;
       const { page, limit, offset } = parsePagination(query);
-      const search = typeof query.search === "string" ? query.search.trim() : "";
-      const status = typeof query.status === "string" ? query.status.trim() : "";
+      const search = query.search?.trim() ?? "";
+      const status = query.status?.trim() ?? "";
 
       const conditions = [];
       if (status) conditions.push(eq(subscriptionRequests.status, status));
@@ -94,6 +94,11 @@ export async function registerPlatformSubscriptionRequestRoutes(app: Elysia): Pr
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({
+      ...listQueryFields,
+      status: optionalString,
+    }),
   });
 
   app.get("/platform/subscription-requests/:id", async (request) => {

@@ -4,7 +4,7 @@ import { getCurrentPlatformAdmin, writeAuditLog } from "../../auth/platform-auth
 import { requirePermission } from "../../auth/platform-rbac.js";
 import { db } from "../../db/client.js";
 import { demoRequests } from "../../db/schema.js";
-import { optionalString } from "../../http/validation.js";
+import { optionalString, listQueryFields } from "../../http/validation.js";
 import { t, type Elysia } from "elysia";
 import { parsePagination } from "./shared.js";
 
@@ -19,10 +19,10 @@ export async function registerPlatformDemoRequestRoutes(app: Elysia): Promise<vo
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "demo_requests:read");
 
-      const query = request.query as Record<string, unknown>;
+      const query = request.query;
       const { page, limit, offset } = parsePagination(query);
-      const search = typeof query.search === "string" ? query.search.trim() : "";
-      const status = typeof query.status === "string" ? query.status.trim() : "";
+      const search = query.search?.trim() ?? "";
+      const status = query.status?.trim() ?? "";
 
       const conditions = [];
       if (search) {
@@ -79,6 +79,11 @@ export async function registerPlatformDemoRequestRoutes(app: Elysia): Promise<vo
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({
+      ...listQueryFields,
+      status: optionalString,
+    }),
   });
 
   app.patch("/platform/demo-requests/:id", async (request) => {

@@ -59,7 +59,7 @@ export async function registerAdminBusinessRoutes(app: Elysia): Promise<void> {
   app.get("/admin/businesses/check-slug", async (request) => {
     try {
       await getCurrentUser(request);
-      const { slug: rawSlug } = request.query as { slug?: string };
+      const { slug: rawSlug } = request.query;
       const slug = rawSlug?.toLowerCase().trim() ?? "";
 
       if (!isValidSlug(slug)) {
@@ -74,6 +74,8 @@ export async function registerAdminBusinessRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({ slug: optionalString }),
   });
 
   app.post("/admin/businesses", async (request) => {

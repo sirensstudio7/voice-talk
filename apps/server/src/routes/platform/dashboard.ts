@@ -4,7 +4,8 @@ import { getCurrentPlatformAdmin } from "../../auth/platform-auth.js";
 import { requirePermission } from "../../auth/platform-rbac.js";
 import { withDbTimeout } from "../../db/client.js";
 import { businesses, demoRequests, subscriptionRequests, subscriptions, users, voiceSessions } from "../../db/schema.js";
-import type { Elysia } from "elysia";
+import { listQueryFields, optionalString } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
 import { parsePagination, getSettingsMap, enrichUsers } from "./shared.js";
 
 export async function registerPlatformDashboardRoutes(app: Elysia): Promise<void> {
@@ -13,10 +14,10 @@ export async function registerPlatformDashboardRoutes(app: Elysia): Promise<void
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "dashboard");
 
-      const query = request.query as Record<string, unknown>;
+      const query = request.query;
       const { page, limit, offset } = parsePagination(query);
-      const search = typeof query.search === "string" ? query.search.trim() : "";
-      const status = typeof query.status === "string" ? query.status.trim() : "";
+      const search = query.search?.trim() ?? "";
+      const status = query.status?.trim() ?? "";
 
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const monthStart = new Date();
@@ -136,5 +137,10 @@ export async function registerPlatformDashboardRoutes(app: Elysia): Promise<void
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({
+      ...listQueryFields,
+      status: optionalString,
+    }),
   });
 }

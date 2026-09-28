@@ -1,14 +1,15 @@
-import type { Elysia } from "elysia";
 import { mergeTranscriptMessages } from "@voicetalk/shared";
 import { and, count, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { requireBusinessAccess, sendAuthError } from "../../auth/jwt.js";
 import { db } from "../../db/client.js";
 import { orderItems, orders, transcriptMessages, voiceSessions, kioskDisplays } from "../../db/schema.js";
+import { optionalString, queryNumber } from "../../http/validation.js";
 import { endVoiceSession } from "../../services/order-persistence.js";
 import { safeDebitEndedSession } from "../../services/voice-minutes.js";
 import { forceCompleteVoiceSession } from "../../services/voice-session-runtime.js";
 import { serializeUtcDatetime } from "../../services/pricing.js";
 import { orderToOut } from "../public.js";
+import { t, type Elysia } from "elysia";
 import type { ConversationSessionRow, ConversationKioskOut } from "./shared.js";
 
 export function parseDateFilter(date: string, tzOffset?: number) {
@@ -130,16 +131,22 @@ export async function loadKioskForSession(
   return map.get(session.kioskDisplayId) ?? null;
 }
 
+export const conversationQuery = t.Object({
+  date: optionalString,
+  tz_offset: queryNumber,
+  kiosk_display_id: optionalString,
+});
+
 export async function registerAdminConversationRoutes(app: Elysia): Promise<void> {
   app.get("/admin/businesses/:businessId/orders", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const query = request.query as { date?: string; tz_offset?: string };
+      const query = request.query;
       let filterStart: Date | null = null;
       let filterEnd: Date | null = null;
       if (query.date) {
-        const { start, end } = parseDateFilter(query.date, query.tz_offset ? Number(query.tz_offset) : 0);
+        const { start, end } = parseDateFilter(query.date, query.tz_offset ?? 0);
         filterStart = start;
         filterEnd = end;
       }
@@ -181,28 +188,23 @@ export async function registerAdminConversationRoutes(app: Elysia): Promise<void
       }
       return sendAuthError(request, err);
     }
+  }, {
+    query: conversationQuery,
   });
 
   app.get("/admin/businesses/:businessId/conversations", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const query = request.query as {
-        date?: string;
-        tz_offset?: string;
-        kiosk_display_id?: string;
-      };
+      const query = request.query;
       let filterStart: Date | null = null;
       let filterEnd: Date | null = null;
       if (query.date) {
-        const { start, end } = parseDateFilter(query.date, query.tz_offset ? Number(query.tz_offset) : 0);
+        const { start, end } = parseDateFilter(query.date, query.tz_offset ?? 0);
         filterStart = start;
         filterEnd = end;
       }
-      const kioskDisplayId =
-        typeof query.kiosk_display_id === "string" && query.kiosk_display_id.trim()
-          ? query.kiosk_display_id.trim()
-          : null;
+      const kioskDisplayId = query.kiosk_display_id?.trim() || null;
 
       const sessions = await db
         .select()
@@ -262,28 +264,23 @@ export async function registerAdminConversationRoutes(app: Elysia): Promise<void
       }
       return sendAuthError(request, err);
     }
+  }, {
+    query: conversationQuery,
   });
 
   app.get("/admin/businesses/:businessId/conversations/export", async (request) => {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const query = request.query as {
-        date?: string;
-        tz_offset?: string;
-        kiosk_display_id?: string;
-      };
+      const query = request.query;
       let filterStart: Date | null = null;
       let filterEnd: Date | null = null;
       if (query.date) {
-        const { start, end } = parseDateFilter(query.date, query.tz_offset ? Number(query.tz_offset) : 0);
+        const { start, end } = parseDateFilter(query.date, query.tz_offset ?? 0);
         filterStart = start;
         filterEnd = end;
       }
-      const kioskDisplayId =
-        typeof query.kiosk_display_id === "string" && query.kiosk_display_id.trim()
-          ? query.kiosk_display_id.trim()
-          : null;
+      const kioskDisplayId = query.kiosk_display_id?.trim() || null;
 
       const sessions = await db
         .select()
@@ -338,6 +335,8 @@ export async function registerAdminConversationRoutes(app: Elysia): Promise<void
       }
       return sendAuthError(request, err);
     }
+  }, {
+    query: conversationQuery,
   });
 
   app.get("/admin/businesses/:businessId/conversations/:sessionId", async (request) => {

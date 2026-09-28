@@ -31,6 +31,19 @@ export const metadata = t.Optional(t.Record(t.String(), t.Unknown()));
 
 export const auditNotes = t.Optional(t.String({ maxLength: 2000 }));
 
+/**
+ * Query-string number: Elysia's Numeric coerces "25" to 25 and rejects
+ * non-numeric values, so handlers can use the value directly.
+ */
+export const queryNumber = t.Optional(t.Numeric());
+
+/** Fields shared by the paginated list endpoints. */
+export const listQueryFields = {
+  page: t.Optional(t.Numeric()),
+  limit: t.Optional(t.Numeric()),
+  search: t.Optional(t.String()),
+};
+
 type ValidationIssue = { path?: string; message?: string };
 
 /**

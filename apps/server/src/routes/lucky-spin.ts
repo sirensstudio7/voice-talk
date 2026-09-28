@@ -29,7 +29,7 @@ import {
   uploadToStorage,
 } from "../storage/index.js";
 import { readUploadedFile } from "../http/multipart.js";
-import { nonEmptyString, optionalBoolean, optionalNullableString, optionalString } from "../http/validation.js";
+import { nonEmptyString, optionalBoolean, optionalNullableString, optionalString, queryNumber } from "../http/validation.js";
 import { t, type Elysia } from "elysia";
 
 export const luckySpinSettingsBody = t.Object({
@@ -348,16 +348,22 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const query = request.query as { search?: string; limit?: string; offset?: string };
+      const query = request.query;
       const result = await listWinners(businessId, {
         search: query.search,
-        limit: query.limit ? Number(query.limit) : undefined,
-        offset: query.offset ? Number(query.offset) : undefined,
+        limit: query.limit,
+        offset: query.offset,
       });
       return result;
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({
+      search: optionalString,
+      limit: queryNumber,
+      offset: queryNumber,
+    }),
   });
 
   app.post("/admin/businesses/:businessId/lucky-spin/redeem", async (request) => {

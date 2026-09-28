@@ -5,6 +5,7 @@ import { requirePermission } from "../../auth/platform-rbac.js";
 import { db } from "../../db/client.js";
 import { aiRules, businessMembers, businesses, products, subscriptions, users, voiceSessions } from "../../db/schema.js";
 import { env } from "../../env.js";
+import { listQueryFields, optionalString } from "../../http/validation.js";
 import { t, type Elysia } from "elysia";
 import { parsePagination, ensureSubscriptionForBusiness } from "./shared.js";
 
@@ -18,10 +19,10 @@ export async function registerPlatformBusinessRoutes(app: Elysia): Promise<void>
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "businesses:read");
 
-      const query = request.query as Record<string, unknown>;
+      const query = request.query;
       const { page, limit, offset } = parsePagination(query);
-      const search = typeof query.search === "string" ? query.search.trim() : "";
-      const status = typeof query.status === "string" ? query.status.trim() : "";
+      const search = query.search?.trim() ?? "";
+      const status = query.status?.trim() ?? "";
 
       const conditions = [];
       if (search) {
@@ -97,6 +98,11 @@ export async function registerPlatformBusinessRoutes(app: Elysia): Promise<void>
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({
+      ...listQueryFields,
+      status: optionalString,
+    }),
   });
 
   app.get("/platform/businesses/:id", async (request) => {

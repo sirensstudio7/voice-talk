@@ -7,6 +7,7 @@ import { db } from "../../db/client.js";
 import { auditLogs, businessMembers, businesses, subscriptions, users } from "../../db/schema.js";
 import { ensureTrialEntitlement } from "../../services/entitlement.js";
 import { listPlatformProviderKeys, listUserApiKeys, publicPlatformProviderKeys, setUserAssignedProviderKey, userAssignment } from "../../services/user-api-keys.js";
+import { listQueryFields, optionalString } from "../../http/validation.js";
 import { t, type Elysia } from "elysia";
 import { parsePagination, enrichUsers, safeJson } from "./shared.js";
 
@@ -24,10 +25,10 @@ export async function registerPlatformUserRoutes(app: Elysia): Promise<void> {
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "users:read");
 
-      const query = request.query as Record<string, unknown>;
+      const query = request.query;
       const { page, limit, offset } = parsePagination(query);
-      const search = typeof query.search === "string" ? query.search.trim() : "";
-      const status = typeof query.status === "string" ? query.status.trim() : "";
+      const search = query.search?.trim() ?? "";
+      const status = query.status?.trim() ?? "";
 
       const conditions = [];
       if (search) {
@@ -64,6 +65,11 @@ export async function registerPlatformUserRoutes(app: Elysia): Promise<void> {
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({
+      ...listQueryFields,
+      status: optionalString,
+    }),
   });
 
   app.get("/platform/users/:id", async (request) => {

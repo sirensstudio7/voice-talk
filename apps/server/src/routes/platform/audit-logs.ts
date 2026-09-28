@@ -4,7 +4,8 @@ import { getCurrentPlatformAdmin } from "../../auth/platform-auth.js";
 import { requirePermission } from "../../auth/platform-rbac.js";
 import { db } from "../../db/client.js";
 import { auditLogs, platformAdmins } from "../../db/schema.js";
-import type { Elysia } from "elysia";
+import { listQueryFields } from "../../http/validation.js";
+import { t, type Elysia } from "elysia";
 import { parsePagination, safeJson } from "./shared.js";
 
 export async function registerPlatformAuditLogRoutes(app: Elysia): Promise<void> {
@@ -13,7 +14,7 @@ export async function registerPlatformAuditLogRoutes(app: Elysia): Promise<void>
       const admin = await getCurrentPlatformAdmin(request);
       requirePermission(admin.role, "audit:read");
 
-      const query = request.query as Record<string, unknown>;
+      const query = request.query;
       const { page, limit, offset } = parsePagination(query);
 
       const [totalRow] = await db.select({ value: count() }).from(auditLogs);
@@ -58,5 +59,9 @@ export async function registerPlatformAuditLogRoutes(app: Elysia): Promise<void>
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({
+      ...listQueryFields,
+    }),
   });
 }

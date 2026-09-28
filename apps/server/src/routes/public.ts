@@ -254,7 +254,7 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   });
 
   app.get("/menu", async (request) => {
-    const query = request.query as { business?: string };
+    const query = request.query;
     const slug = query.business || env.DEFAULT_BUSINESS_SLUG;
     const tenant = await getBusinessBySlug(slug);
     if (!tenant) return request.status(404, { detail: "Business not found" });
@@ -300,15 +300,13 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
         duration_min: p.durationMin,
       })),
     };
+  }, {
+    query: t.Object({ business: optionalString }),
   });
 
   app.get("/businesses/:slug/availability", async (request) => {
     const { slug } = request.params as { slug: string };
-    const { product_id: productId, date, staff_id: staffId } = request.query as {
-      product_id?: string;
-      date?: string;
-      staff_id?: string;
-    };
+    const { product_id: productId, date, staff_id: staffId } = request.query;
     const business = await getBusinessBySlug(slug);
     if (!business) return request.status(404, { detail: "Business not found" });
     if (!productId || !date) {
@@ -333,6 +331,12 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
         detail: error instanceof Error ? error.message : "Could not load availability.",
       });
     }
+  }, {
+    query: t.Object({
+      product_id: optionalString,
+      date: optionalString,
+      staff_id: optionalString,
+    }),
   });
 
   app.post("/businesses/:slug/appointments", async (request) => {
@@ -539,7 +543,7 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
 
   app.get("/public/photo/download/:token", async (request) => {
     const { token } = request.params as { token: string };
-    const query = request.query as { redirect?: string };
+    const query = request.query;
     try {
       const result = await resolvePhotoDownload(token);
       if (query.redirect === "1") {
@@ -554,6 +558,8 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
       }
       throw err;
     }
+  }, {
+    query: t.Object({ redirect: optionalString }),
   });
 
   app.post("/public/photo/events", async (request) => {

@@ -97,6 +97,25 @@ suite("api smoke", () => {
     expect(rejected.status).toBe(400);
     const rejectedBody = (await rejected.json()) as { detail?: string };
     expect(rejectedBody.detail).toContain("price");
+
+    const auth = { authorization: `Bearer ${token}` };
+    const conversations = await api(
+      `/admin/businesses/${businessId}/conversations?date=2026-01-01&tz_offset=420`,
+      { headers: auth },
+    );
+    expect(conversations.status).toBe(200);
+
+    const badLimit = await api(`/admin/businesses/${businessId}/photo/gallery?limit=abc`, {
+      headers: auth,
+    });
+    expect(badLimit.status).toBe(400);
+  });
+
+  test("public menu responds", async () => {
+    const response = await api("/menu?business=sunrise-coffee");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { slug?: string };
+    expect(body.slug).toBe("sunrise-coffee");
   });
 
   test("platform login + read works", async () => {
@@ -113,6 +132,23 @@ suite("api smoke", () => {
     expect(pricing.status).toBe(200);
     const body = (await pricing.json()) as { plans: unknown[] };
     expect(Array.isArray(body.plans)).toBe(true);
+  });
+
+  test("query validation: numeric pagination is coerced, junk is rejected", async () => {
+    const login = await api(
+      "/platform/auth/login",
+      json({ email: platformEmail, password: platformPassword }),
+    );
+    const { access_token: token } = (await login.json()) as { access_token: string };
+    const headers = { authorization: `Bearer ${token}` };
+
+    const ok = await api("/platform/users?page=1&limit=5", { headers });
+    expect(ok.status).toBe(200);
+
+    const bad = await api("/platform/users?page=abc", { headers });
+    expect(bad.status).toBe(400);
+    const badBody = (await bad.json()) as { detail?: string };
+    expect(badBody.detail).toContain("page");
   });
 
   test("public kiosk unlock requires a pin", async () => {

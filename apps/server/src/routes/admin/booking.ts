@@ -54,11 +54,13 @@ export async function registerAdminBookingRoutes(app: Elysia): Promise<void> {
     try {
       const { businessId } = request.params as { businessId: string };
       await requireBusinessAccess(request, businessId);
-      const { date } = request.query as { date?: string };
+      const { date } = request.query;
       return listAppointments(businessId, date);
     } catch (err) {
       return sendAuthError(request, err);
     }
+  }, {
+    query: t.Object({ date: optionalString }),
   });
 
   app.patch("/admin/businesses/:businessId/appointments/:appointmentId/cancel", async (request) => {
