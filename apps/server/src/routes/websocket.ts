@@ -115,14 +115,26 @@ export async function registerWebSocketRoutes(app: FastifyInstance): Promise<voi
   app.get("/ws/session", { websocket: true }, (socket, request) => {
     void handleSession(
       socket,
-      request.query as { business?: string; language?: string; kiosk_id?: string; token?: string },
+      request.query as {
+        business?: string;
+        language?: string;
+        kiosk_id?: string;
+        token?: string;
+        embed?: string;
+      },
     );
   });
 }
 
 async function handleSession(
   socket: WebSocket,
-  query: { business?: string; language?: string; kiosk_id?: string; token?: string },
+  query: {
+    business?: string;
+    language?: string;
+    kiosk_id?: string;
+    token?: string;
+    embed?: string;
+  },
 ): Promise<void> {
   const slug = query.business || env.DEFAULT_BUSINESS_SLUG;
   console.info(`Session websocket connected for business=${slug}`);
@@ -138,8 +150,10 @@ async function handleSession(
     const { assertKioskSocketAccess } = await import("../services/kiosk-displays.js");
     await assertKioskSocketAccess({
       businessId: tenant.id,
+      businessSlug: slug,
       kioskSlug: query.kiosk_id,
       token: query.token,
+      embed: query.embed,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Kiosk unlock required.";

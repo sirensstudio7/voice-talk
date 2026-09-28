@@ -22,6 +22,8 @@ const envSchema = z.object({
   /** Render/Railway set PORT; prefer it over API_PORT in production. */
   PORT: z.coerce.number().optional(),
   DEFAULT_BUSINESS_SLUG: z.string().default("sunrise-coffee"),
+  /** Public marketing hero iframe — pinless access is limited to this slug. */
+  HERO_DEMO_SLUG: z.string().default("lorescale"),
   ADMIN_EMAIL: z.string().default("admin@sunrise.coffee"),
   ADMIN_PASSWORD: z.string().default("admin123"),
   LORESCALE_ADMIN_EMAIL: z.string().default("admin@lorescale.com"),

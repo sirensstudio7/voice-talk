@@ -1,3 +1,5 @@
+import { isHeroEmbedSearchParam } from "@/lib/display-orientation";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const DEFAULT_KIOSK_SLUG = "default";
 
@@ -41,6 +43,9 @@ export function appendKioskAuth(url: URL, businessSlug: string): void {
   const token = getStoredKioskToken(businessSlug, kioskSlug);
   url.searchParams.set("kiosk_id", kioskSlug);
   if (token) url.searchParams.set("token", token);
+  if (typeof window !== "undefined" && isHeroEmbedSearchParam(window.location.search)) {
+    url.searchParams.set("embed", "hero");
+  }
 }
 
 export async function unlockKioskDisplay(opts: {

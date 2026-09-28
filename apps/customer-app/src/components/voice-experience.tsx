@@ -566,7 +566,7 @@ export function VoiceExperience() {
   const experienceHeader = (
     <ExperienceHeader
       onDisconnect={disconnect}
-      onLockKiosk={handleLockKiosk}
+      onLockKiosk={isHeroEmbed ? undefined : handleLockKiosk}
       orderingEnabled={showOrdering}
       bookingEnabled={showBooking}
       compact={layout.compactUi}

@@ -380,10 +380,21 @@ export function verifyKioskAccessToken(
   return parseKioskAccessToken(token, businessId, kioskSlug) !== null;
 }
 
+export function isPublicHeroDemoAccess(opts: {
+  businessSlug?: string | null;
+  embed?: string | null;
+}): boolean {
+  const slug = opts.businessSlug?.trim().toLowerCase();
+  const demoSlug = env.HERO_DEMO_SLUG.trim().toLowerCase();
+  return Boolean(slug && demoSlug && slug === demoSlug && opts.embed === "hero");
+}
+
 export async function assertKioskSocketAccess(opts: {
   businessId: string;
+  businessSlug?: string;
   kioskSlug?: string;
   token?: string;
+  embed?: string;
 }): Promise<string> {
   const rows = await rankedDisplays(opts.businessId);
   const slug = normalizeDisplaySlug(opts.kioskSlug || DEFAULT_KIOSK_SLUG) || DEFAULT_KIOSK_SLUG;
@@ -397,6 +408,9 @@ export async function assertKioskSocketAccess(opts: {
       "This kiosk is over your plan limit. Delete extra displays or upgrade.",
       403,
     );
+  }
+  if (isPublicHeroDemoAccess({ businessSlug: opts.businessSlug, embed: opts.embed })) {
+    return row.slug;
   }
   if (!row.passwordHash) {
     throw httpError("Ask your admin to set a PIN for this kiosk.", 403);
