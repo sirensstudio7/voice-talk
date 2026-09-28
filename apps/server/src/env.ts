@@ -33,6 +33,7 @@ const envSchema = z.object({
   MERCHANT_ADMIN_URL: z.string().default("http://localhost:6680"),
   /** S3-compatible object storage (Cloudflare R2 in production). */
   S3_ENDPOINT: z.string().url().optional(),
+  S3_BUCKET: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   S3_REGION: z.string().default("auto"),
@@ -53,7 +54,13 @@ export const env = envSchema.parse(process.env);
 /** Object storage is mandatory in production: Render's disk is ephemeral. */
 if (process.env.NODE_ENV === "production") {
   const missing = (
-    ["S3_ENDPOINT", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_PUBLIC_BASE_URL"] as const
+    [
+      "S3_ENDPOINT",
+      "S3_BUCKET",
+      "S3_ACCESS_KEY_ID",
+      "S3_SECRET_ACCESS_KEY",
+      "S3_PUBLIC_BASE_URL",
+    ] as const
   ).filter((key) => !env[key]);
   if (missing.length > 0) {
     throw new Error(`Object storage is required in production; missing ${missing.join(", ")}`);
@@ -161,6 +168,10 @@ export function isAllowedOrigin(origin: string | undefined): boolean {
 
 export function hasObjectStorage(): boolean {
   return Boolean(
-    env.S3_ENDPOINT && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY && env.S3_PUBLIC_BASE_URL,
+    env.S3_ENDPOINT &&
+      env.S3_BUCKET &&
+      env.S3_ACCESS_KEY_ID &&
+      env.S3_SECRET_ACCESS_KEY &&
+      env.S3_PUBLIC_BASE_URL,
   );
 }

@@ -26,15 +26,21 @@ the driver connects with prepared statements disabled.
 
 ## 2. Object storage (Cloudflare R2)
 
-Create one bucket per storage area (same names the code uses):
+Create **one** bucket (e.g. `lorescale`) and attach a public custom domain (or
+use the bucket's `r2.dev` URL). Uploads are stored under a prefix per area —
+`lorescale-photos/`, `photo-branding/`, `presentation-assets/`,
+`campaign-banners/`, `lucky-spin-prizes/`, `payment-qr/`, `payment-proofs/`,
+`product-images/`, `assistant-avatars/` — so a single public domain serves
+everything:
 
-`lorescale-photos`, `photo-branding`, `presentation-assets`,
-`campaign-banners`, `lucky-spin-prizes`, `payment-qr`, `payment-proofs`,
-`product-images`, `assistant-avatars`.
+```env
+S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+S3_BUCKET=lorescale
+S3_PUBLIC_BASE_URL=https://media.yourdomain.com
+```
 
-Then create an R2 API token and either use the bucket's public `r2.dev` URL or
-attach a custom domain as the public base. Migrating existing Supabase Storage
-objects (photos, avatars, payment QR, presentation assets, banners):
+Migrating existing Supabase Storage objects (photos, avatars, payment QR,
+presentation assets, banners):
 
 ```bash
 # in apps/server, with SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY for the source

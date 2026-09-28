@@ -25,6 +25,11 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
+        hostname: "lorescale.benelabs.tech",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
         hostname: "images.unsplash.com",
       },
       {

@@ -41,6 +41,7 @@ function required(name: string): string {
 const supabaseUrl = required("SUPABASE_URL").replace(/\/+$/, "");
 const supabaseKey = required("SUPABASE_SERVICE_ROLE_KEY");
 const s3Endpoint = required("S3_ENDPOINT");
+const s3Bucket = required("S3_BUCKET");
 const s3AccessKeyId = required("S3_ACCESS_KEY_ID");
 const s3SecretAccessKey = required("S3_SECRET_ACCESS_KEY");
 const s3Region = process.env.S3_REGION?.trim() || "auto";
@@ -97,8 +98,10 @@ async function copyBucket(bucket: string): Promise<{ objects: number; bytes: num
     const buffer = Buffer.from(await response.arrayBuffer());
     bytes += buffer.byteLength;
     if (!dryRun) {
-      await s3.write(path, buffer, {
-        bucket,
+      // Single physical bucket: the Supabase bucket name becomes the prefix,
+      // matching src/storage/index.ts.
+      await s3.write(`${bucket}/${path}`, buffer, {
+        bucket: s3Bucket,
         type: response.headers.get("content-type") ?? "application/octet-stream",
       });
     }

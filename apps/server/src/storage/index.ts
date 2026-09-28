@@ -11,10 +11,13 @@ export const PRESENTATION_BUCKET = "presentation-assets";
 export const MAX_PRESENTATION_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 /**
- * S3-compatible object storage (Cloudflare R2 in production, configured with
- * S3_ENDPOINT/S3_PUBLIC_BASE_URL). Without those variables the local disk is
- * used, which is the development and test path — production requires object
- * storage in env.ts because container disks are ephemeral.
+ * S3-compatible object storage (Cloudflare R2 in production).
+ *
+ * Everything lives in a single physical bucket (S3_BUCKET) under a prefix
+ * named after the logical bucket, so one public domain serves all uploads:
+ * `https://<S3_PUBLIC_BASE_URL>/<bucket>/<path>`. Without S3 configured the
+ * local disk is used, which is the development and test path — production
+ * requires object storage in env.ts because container disks are ephemeral.
  */
 let s3: Bun.S3Client | null = null;
 
@@ -29,6 +32,11 @@ function getS3(): Bun.S3Client | null {
     });
   }
   return s3;
+}
+
+/** Object key inside the physical bucket: logical bucket acts as prefix. */
+function objectKey(bucket: string, path: string): string {
+  return `${bucket}/${path}`;
 }
 
 function publicBase(): string {
@@ -49,8 +57,11 @@ export async function uploadToStorage(
 ): Promise<string> {
   const client = getS3();
   if (client) {
-    await client.write(path, data, { bucket, type: contentType });
-    return `${publicBase()}/${bucket}/${path}`;
+    await client.write(objectKey(bucket, path), data, {
+      bucket: env.S3_BUCKET!,
+      type: contentType,
+    });
+    return `${publicBase()}/${objectKey(bucket, path)}`;
   }
   await writeLocal(bucket, path, data);
   return `/uploads/${bucket}/${path}`;
@@ -65,7 +76,10 @@ export async function uploadPrivateToStorage(
 ): Promise<string> {
   const client = getS3();
   if (client) {
-    await client.write(path, data, { bucket, type: contentType });
+    await client.write(objectKey(bucket, path), data, {
+      bucket: env.S3_BUCKET!,
+      type: contentType,
+    });
   } else {
     await writeLocal(bucket, path, data);
   }
@@ -79,7 +93,9 @@ export async function createSignedDownloadUrl(
 ): Promise<string> {
   const client = getS3();
   if (client) {
-    return client.file(path, { bucket }).presign({ expiresIn: expiresInSeconds });
+    return client
+      .file(objectKey(bucket, path), { bucket: env.S3_BUCKET! })
+      .presign({ expiresIn: expiresInSeconds });
   }
 
   // Local-dev: temporary tokenized path resolved by the download API.
@@ -112,7 +128,7 @@ export async function downloadFromStorage(bucket: string, pathOrUrl: string): Pr
   }
 
   if (client) {
-    const object = client.file(path, { bucket });
+    const object = client.file(objectKey(bucket, path), { bucket: env.S3_BUCKET! });
     if (!(await object.exists())) return null;
     return Buffer.from(await object.arrayBuffer());
   }
@@ -127,7 +143,7 @@ export async function downloadFromStorage(bucket: string, pathOrUrl: string): Pr
 export async function deleteStorageObject(bucket: string, path: string): Promise<void> {
   const client = getS3();
   if (client) {
-    await client.delete(path, { bucket });
+    await client.delete(objectKey(bucket, path), { bucket: env.S3_BUCKET! });
     return;
   }
   await rm(join(UPLOAD_ROOT, bucket, path), { force: true });
@@ -136,15 +152,16 @@ export async function deleteStorageObject(bucket: string, path: string): Promise
 export async function deleteFromStorage(bucket: string, prefix: string): Promise<void> {
   const client = getS3();
   if (client) {
+    const fullPrefix = `${objectKey(bucket, prefix)}/`;
     let startAfter: string | undefined;
     for (;;) {
       const page = await client.list(
-        { prefix: `${prefix}/`, maxKeys: 1000, ...(startAfter ? { startAfter } : {}) },
-        { bucket },
+        { prefix: fullPrefix, maxKeys: 1000, ...(startAfter ? { startAfter } : {}) },
+        { bucket: env.S3_BUCKET! },
       );
       const contents = page.contents ?? [];
       for (const object of contents) {
-        await client.delete(object.key, { bucket });
+        await client.delete(object.key, { bucket: env.S3_BUCKET! });
       }
       if (!page.isTruncated || contents.length === 0) break;
       startAfter = contents[contents.length - 1]!.key;
