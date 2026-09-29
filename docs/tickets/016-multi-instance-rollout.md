@@ -18,7 +18,7 @@ scripted sequence with rollback criteria rather than an ad-hoc flip.
 
 - Branch merged to `main` (or explicitly deployed from a branch-tip image such as
   `ghcr.io/sirensstudio7/voice-talk:sha-<branch tip>`).
-- **Migrations 066–069 applied** before the new code serves traffic:
+- **Migrations 066–070 applied** before the new code serves traffic:
   `bun run seed:db` (066 python→auto, 067 appointment overlap constraints,
   068 share-token lifecycle, 069 analytics indexes).
   - If 067 aborts, production has overlapping appointments; it lists the ids.
@@ -41,7 +41,7 @@ scripted sequence with rollback criteria rather than an ad-hoc flip.
 > then needs a redeploy to pick it up.
 
 1. **Migrations first.** The new image selects the migrated columns
-   (`share_token_*`), so apply 066–069 before it serves traffic:
+   (`share_token_*`), so apply 066–070 before it serves traffic:
 
    ```bash
    DATABASE_URL="<prod-url>" bun run --filter server db:migrate
@@ -100,7 +100,7 @@ Run the read-only verifier first, then the manual checks:
 ## Rollback
 
 1. Kubeletto: redeploy the previous revision (the old image is pinned by digest).
-2. App-level rollbacks are not needed for the schema: 066–069 are additive
+2. App-level rollbacks are not needed for the schema: 066–070 are additive
    (columns, indexes, constraints); the previous code ignores them.
    - If the 067 constraints cause unexpected conflicts, drop them:
      `ALTER TABLE appointments DROP CONSTRAINT appointments_staff_no_overlap,
