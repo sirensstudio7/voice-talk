@@ -15,6 +15,7 @@ suite("instance registry", () => {
     const { activeInstanceCount, assertSingleInstanceForLive } = await import(
       "../src/services/instance-registry.js"
     );
+    const { metricsSnapshot } = await import("../src/http/metrics.js");
 
     const suffix = randomUUID().slice(0, 8);
     const keys = [
@@ -29,6 +30,11 @@ suite("instance registry", () => {
       await redis.set(keys[1]!, "1", "EX", String(30));
       expect(await activeInstanceCount()).toBeGreaterThanOrEqual(2);
       await expect(assertSingleInstanceForLive()).rejects.toThrow(/single-instance/);
+
+      // TKT-020: command accounting is visible for budget planning.
+      const snapshot = metricsSnapshot();
+      expect(snapshot["redis.commands.instance_count_total"]).toBeGreaterThanOrEqual(1);
+      expect(snapshot["redis.commands_total"]).toBeGreaterThanOrEqual(1);
     } finally {
       for (const key of keys) {
         await redis.del(key);

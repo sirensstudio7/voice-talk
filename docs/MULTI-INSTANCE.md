@@ -73,13 +73,38 @@ never blocks the next bucket.
 ## Connection budget
 
 - `DB_POOL_MAX` is per instance; keep `instances × DB_POOL_MAX` below the
-  Postgres plan's connection limit (Aiven free = 20). Default is 8, so two
-  instances use 16, leaving headroom for migrations/tooling and the one-off
-  login/health connections.
-- Redis is billed per command on Upstash. The health `PING` is cached for 60 s;
-  `/health?db=1` forces a probe. Job locks and rate limits are a handful of
-  commands per minute; the kiosk bus adds one `PUBLISH` per settings change
-  plus one command per delivered message.
+  Postgres plan's connection limit (Aiven free = 20). Default is 4: two
+  instances use 8, and a rolling deploy with both revisions live uses 16.
+  Health checks and logins share the pool (TKT-021); no other client opens
+  permanent connections.
+- Postgres connections are held open deliberately: Bun's client
+  `idleTimeout`/`maxLifetime` timers hard-fail in-flight queries instead of
+  draining them (oven-sh/bun#30646, unmerged), so `db/client.ts` sets neither.
+  The pool watchdog and `statement_timeout` handle wedged connections.
+
+## Redis command budget
+
+Upstash bills per command (500k/month on the free tier). Measured/estimated at
+two pods, after TKT-020:
+
+| Purpose | Rate | Commands/month |
+|---|---|---|
+| Instance heartbeat (`instances:heartbeat:*`) | 1/min/pod, TTL 150 s | ~86k |
+| Redis health `PING` (60 s cache) | ≤1/min/pod | ~86k |
+| Job interval locks (5 jobs, 5–60 min ticks) | ~20k/pod | ~29k |
+| Rate limits (`EVAL` per public mutation/login) | request-bound | ~5–50k |
+| Kiosk bus `PUBLISH` (+ deliveries) | settings changes only | negligible |
+| **Total** | | **~210–260k** |
+
+Rules of thumb:
+
+- Before adding periodic Redis work, price it: `interval × pods × 43,200 min`.
+- Prefer in-process caches invalidated by the kiosk bus over a shared Redis
+  cache for small per-tenant config (no network hop, no commands).
+- Never aggregate fleet metrics through Redis (~1M+ commands/month); read pods
+  individually or use logs.
+- `/health?metrics=1` exposes `redis.commands_total` and
+  `redis.commands_<purpose>_total` so the budget is observable.
 
 ## Observability
 
@@ -98,6 +123,9 @@ never blocks the next bucket.
 | `kiosk_bus.handler_failed_total` | remote payload apply errors |
 | `redis.rate_limit_unavailable_total` | fail-open rate limits |
 | `redis.job_lock_unavailable_total` | skipped job runs |
+| `redis.commands_total` / `redis.commands.<purpose>_total` | client-side Redis command budget |
+| `db.pool_reset_total` | Postgres pool recycles |
+| `db.health_ping_total` | successful DB health probes |
 | `rate_limit.denied_total` / `rate_limit.denied.<bucket>` | public request denials |
 | `menu.cache_hits_total` / `menu.cache_misses_total` | `/menu` cache behaviour |
 | `menu.request_ms.*` / `menu.build_ms.*` | `/menu` latency (all vs uncached builds) |

@@ -21,10 +21,21 @@ return n
 `;
 
 /**
+ * Client-side command accounting so the Upstash budget is visible on
+ * `/health?metrics=1` instead of discovered at the quota limit (TKT-020).
+ * One command attempt = one count, successful or not.
+ */
+export function countRedisCommand(purpose: string): void {
+  inc("redis.commands_total");
+  inc(`redis.commands.${purpose}_total`);
+}
+
+/**
  * Fixed-window counter shared by every instance. Fails open with a warning:
  * a Redis outage must not lock users out of login or kiosk unlock.
  */
 export async function rateLimit(key: string, limit: number, windowMs: number): Promise<boolean> {
+  countRedisCommand("rate_limit");
   try {
     const count = Number(
       await redis.send("EVAL", [RATE_LIMIT_SCRIPT, "1", key, String(windowMs)]),
@@ -54,6 +65,7 @@ export async function withIntervalLock(
 ): Promise<boolean> {
   const bucket = Math.floor(Date.now() / intervalMs);
   const key = `jobs:interval:${name}:${bucket}`;
+  countRedisCommand("lock");
   try {
     const acquired = await redis.set(key, "1", "NX", "PX", String(intervalMs + 30_000));
     if (acquired !== "OK") return false;
@@ -85,6 +97,7 @@ export async function checkRedisHealth(force = false): Promise<RedisHealth> {
   }
 
   const started = Date.now();
+  countRedisCommand("health");
   try {
     const pong = await redis.send("PING", []);
     cachedHealth = {

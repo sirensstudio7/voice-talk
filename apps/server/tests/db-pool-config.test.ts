@@ -9,7 +9,7 @@ import { resolve } from "node:path";
  * 500s until they were removed. This guard stops them from creeping back.
  */
 describe("database pool configuration", () => {
-  const files = ["../src/db/client.ts", "../src/db/login-db.ts"];
+  const files = ["../src/db/client.ts", "../src/db/login-db.ts", "../src/db/health.ts"];
 
   for (const file of files) {
     test(`${file} does not set connection timers`, () => {

@@ -1,6 +1,6 @@
-import { SQL } from "bun";
-import { env } from "../env.js";
+import { getDbPoolClient } from "./client.js";
 import { logger } from "../http/logger.js";
+import { inc } from "../http/metrics.js";
 
 const log = logger.child({ component: "db" });
 
@@ -18,33 +18,21 @@ let cachedAt = 0;
 let inflightCheck: Promise<DbHealth> | null = null;
 
 /**
- * Ping with a disposable 1-connection client.
+ * Ping through the shared pool.
  *
- * Important: never race `db.execute` on the shared pool — a timed-out query
- * keeps holding a pool slot and will exhaust max connections (common with
- * transaction poolers).
+ * TKT-021: this used to create a disposable 1-connection client per check,
+ * which opened and closed a fresh Postgres connection on every probe (up to
+ * 4/min per pod) — needless churn against a 20-connection plan and another
+ * victim of Bun's connection-timer bug. `select 1` is tiny; if the pool is
+ * genuinely wedged the watchdog and statement_timeout recycle it.
  */
 async function pingDb(timeoutMs: number): Promise<DbHealth> {
   const started = Date.now();
-  const connectTimeoutSec = Math.max(1, Math.ceil(timeoutMs / 1000));
-
-  const ping = new SQL({
-    url: env.DATABASE_URL,
-    prepare: false,
-    max: 1,
-    connectionTimeout: connectTimeoutSec,
-    idleTimeout: 1,
-    maxLifetime: 5,
-    connection: {
-      application_name: "voice-talk-api-health",
-    },
-  });
-
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   try {
     await Promise.race([
-      ping.unsafe("select 1"),
+      getDbPoolClient().unsafe("select 1"),
       new Promise<never>((_, reject) => {
         timer = setTimeout(
           () => reject(new Error("Database ping timed out")),
@@ -53,6 +41,7 @@ async function pingDb(timeoutMs: number): Promise<DbHealth> {
       }),
     ]);
 
+    inc("db.health_ping_total");
     return { online: true, latencyMs: Date.now() - started };
   } catch (error) {
     return {
@@ -62,9 +51,6 @@ async function pingDb(timeoutMs: number): Promise<DbHealth> {
     };
   } finally {
     if (timer) clearTimeout(timer);
-    await ping.close({ timeout: 1 }).catch(() => {
-      // Ignore close errors — connection may already be dead.
-    });
   }
 }
 

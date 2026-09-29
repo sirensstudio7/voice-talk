@@ -38,6 +38,8 @@ the product does, this directory describes what we intend to change and why.
 | [TKT-017](017-atomic-billing-writes.md) | Atomic, conflict-safe billing writes | money | P0 | S | TKT-001 |
 | [TKT-018](018-order-confirm-idempotency.md) | Idempotent order confirmation | orders | P1 | S | — |
 | [TKT-019](019-db-connection-timers.md) | Stop connection timers from killing DB queries | reliability | P0 | S | — |
+| [TKT-020](020-redis-command-budget.md) | Cheaper Redis heartbeat + command accounting | cost | P1 | S | TKT-006 |
+| [TKT-021](021-health-check-connection-churn.md) | Health checks reuse the pool (no connection per probe) | reliability | P1 | S | TKT-019 |
 
 Priority reflects business risk first, then user-visible performance, then
 upkeep. Effort: S ≤ 1 day · M 2–4 days · L > 1 week.

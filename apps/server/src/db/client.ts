@@ -38,6 +38,15 @@ function createSqlClient(): SQL {
 let client = createSqlClient();
 export let db: AppDb = drizzle(client, { schema });
 
+/**
+ * Direct access to the current pooled client (TKT-021). Used by the health
+ * probe so it does not open a fresh Postgres connection per check; callers must
+ * not trigger `resetDbPool` from here.
+ */
+export function getDbPoolClient(): SQL {
+  return client;
+}
+
 let resetting: Promise<void> | null = null;
 
 /** Drop and recreate the shared pool when queries start hanging. */

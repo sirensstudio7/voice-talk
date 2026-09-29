@@ -1,21 +1,27 @@
-import { redis } from "../redis.js";
+import { countRedisCommand, redis } from "../redis.js";
 import { instanceId } from "./kiosk-bus.js";
 
 /**
- * Lightweight instance presence (TKT-006).
+ * Lightweight instance presence (TKT-006 / TKT-020).
  *
  * LIVE rooms, host loops and TTS caches are per-instance, so a room started
  * while several API instances run is half-broken (viewers on other pods see no
  * chat, no audio). Every instance refreshes a short-lived key; room start
  * refuses to go live when more than one is present. Redis hiccups fail open —
  * never block a product feature because the presence check could not run.
+ *
+ * The interval is 60s (was 15s) to keep the Upstash command budget free for
+ * product traffic. A new pod still registers on boot, so multi-instance
+ * detection is immediate; only stale detection after scaling down lags by up
+ * to the TTL (~2.5 min), which is acceptable for a guard.
  */
 const HEARTBEAT_PREFIX = "instances:heartbeat:";
-const HEARTBEAT_TTL_SECONDS = 45;
-const HEARTBEAT_INTERVAL_MS = 15_000;
+const HEARTBEAT_TTL_SECONDS = 150;
+const HEARTBEAT_INTERVAL_MS = 60_000;
 
 export function startInstanceHeartbeat(): void {
   const beat = async () => {
+    countRedisCommand("heartbeat");
     try {
       await redis.set(
         `${HEARTBEAT_PREFIX}${instanceId}`,
@@ -34,6 +40,7 @@ export function startInstanceHeartbeat(): void {
 }
 
 export async function activeInstanceCount(): Promise<number> {
+  countRedisCommand("instance_count");
   try {
     const keys = (await redis.send("KEYS", [`${HEARTBEAT_PREFIX}*`])) as unknown;
     if (!Array.isArray(keys)) return 1;

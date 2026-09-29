@@ -3,7 +3,7 @@ import { RedisClient } from "bun";
 import { env } from "../env.js";
 import { logger } from "../http/logger.js";
 import { inc, setGauge } from "../http/metrics.js";
-import { redis } from "../redis.js";
+import { countRedisCommand, redis } from "../redis.js";
 
 const log = logger.child({ component: "kiosk-bus" });
 
@@ -46,6 +46,7 @@ export async function publishKioskPayload(
 ): Promise<void> {
   try {
     const message: FanoutMessage = { origin: instanceId, businessSlug, payload };
+    countRedisCommand("bus_publish");
     await redis.send("PUBLISH", [CHANNEL, JSON.stringify(message)]);
     inc("kiosk_bus.published_total");
   } catch (err) {
