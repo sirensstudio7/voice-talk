@@ -32,11 +32,12 @@ const envSchema = z.object({
   /**
    * Max pooled Postgres connections per API instance. Keep
    * instances × DB_POOL_MAX under the plan's connection limit (Aiven free
-   * tier allows 20 total). Login and health checks use one extra connection
-   * at a time. Default of 8 leaves headroom for two instances (16 total)
-   * plus migrations and one-off tooling.
+   * tier allows 20 total). The default of 4 covers the worst case: two
+   * instances (8) plus the overlap while a rolling deploy runs both revisions
+   * (4 pods × 4 = 16), leaving room for the login client and tooling.
+   * Idle connections are held open deliberately — see db/client.ts.
    */
-  DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(8),
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(4),
   /** Merchant admin app URL used for impersonation redirects. */
   MERCHANT_ADMIN_URL: z.string().default("http://localhost:6680"),
   /** S3-compatible object storage (Cloudflare R2 in production). */

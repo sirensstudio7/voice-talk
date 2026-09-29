@@ -86,7 +86,7 @@ Set these variables on the host (or in the env file):
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | Aiven (or any managed Postgres) URL, `?sslmode=require` |
-| `DB_POOL_MAX` | Pooled Postgres connections per API instance (default 8). Keep `instances × DB_POOL_MAX` under the service's connection limit; Aiven's free tier allows only 20 total. Set 5 for one instance on free tier. |
+| `DB_POOL_MAX` | Pooled Postgres connections per API instance (default 4). Keep `instances × DB_POOL_MAX` under the service's connection limit — including the overlap while a rolling deploy runs both revisions. Aiven's free tier allows only 20 total, so 4 means 16 in the worst case. |
 | `REDIS_URL` | Upstash `rediss://` URL — rate limits + background-job locks |
 | `S3_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` |
 | `S3_BUCKET` | Bucket name (prefixes separate the storage areas) |

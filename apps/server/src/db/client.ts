@@ -2,6 +2,7 @@ import { SQL } from "bun";
 import { drizzle, type BunSQLDatabase } from "drizzle-orm/bun-sql";
 import { env } from "../env.js";
 import { logger } from "../http/logger.js";
+import { inc } from "../http/metrics.js";
 import * as schema from "./schema.js";
 
 const log = logger.child({ component: "db" });
@@ -20,10 +21,12 @@ function createSqlClient(): SQL {
     prepare: false,
     max: env.DB_POOL_MAX,
     connectionTimeout: 25,
-    // Recycle idle / old sockets so a bad pooler connection cannot linger.
-    idleTimeout: 20,
-    maxLifetime: 60 * 5,
-    // Fail stuck queries instead of holding pool slots forever (login/UI hang).
+    // Deliberately NO idleTimeout / maxLifetime: Bun's client timers hard-fail
+    // in-flight queries instead of draining them ("Max lifetime timeout reached
+    // after 5m", ERR_POSTGRES_LIFETIME_TIMEOUT — oven-sh/bun#30646; fix PRs
+    // #28587/#28591/#30648 are unmerged as of Bun 1.4.2). Connections are
+    // bounded by `max`; a wedged pool is handled by statement_timeout below,
+    // the pool watchdog, and resetDbPool.
     connection: {
       statement_timeout: 20_000,
       // Visible as the application_name in pg_stat_activity.
@@ -43,6 +46,7 @@ export async function resetDbPool(reason: string): Promise<void> {
 
   resetting = (async () => {
     log.warn({ reason }, "db.pool.reset");
+    inc("db.pool_reset_total");
     const old = client;
     client = createSqlClient();
     db = drizzle(client, { schema });
@@ -78,7 +82,9 @@ export async function withDbTimeout<T>(
   } catch (error) {
     if (
       error instanceof Error &&
-      (/timed out|CONNECT_TIMEOUT|ECONNRESET|connection/i.test(error.message) ||
+      (/timed out|CONNECT_TIMEOUT|ECONNRESET|connection|ERR_POSTGRES_LIFETIME_TIMEOUT|ERR_POSTGRES_IDLE_TIMEOUT/i.test(
+        error.message,
+      ) ||
         (error as Error & { statusCode?: number }).statusCode === 503)
     ) {
       void resetDbPool(error.message);

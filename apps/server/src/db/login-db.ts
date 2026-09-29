@@ -21,8 +21,8 @@ export async function withLoginDb<T>(fn: (db: AppDb) => Promise<T>): Promise<T> 
     prepare: false,
     max: 1,
     connectionTimeout: 25,
-    idleTimeout: 5,
-    maxLifetime: 30,
+    // No idleTimeout/maxLifetime: the client lives for one call and is closed
+    // below, and Bun's timers hard-fail in-flight queries (oven-sh/bun#30646).
     connection: {
       statement_timeout: 10_000,
       application_name: "voice-talk-api-login",

@@ -128,6 +128,7 @@ in code but is not mounted. Privacy/Terms/Contact links are placeholders.
 | Billing writes | Debit steps are separate; grant/ledger inserts race across instances | TKT-017 in-progress |
 | Booking | Availability check + insert is not atomic — double bookings possible | TKT-002 in-progress |
 | Orders | Confirm has no idempotency — retries can duplicate an order | TKT-018 in-progress |
+| Database | Bun client timers kill in-flight queries; connection budget too tight for rolling deploys | TKT-019 in-progress |
 | `/menu` | 8 service calls per request, no cache; observed 1.6–2.3 s in production | TKT-005 in-progress |
 | Analytics | Banner/vision metrics load unbounded rows and aggregate in JS; no retention on `analytics_events`/`vision_events` | TKT-008 in-progress |
 | Presenter | No durable queue; embeddings unused; per-viewer Gemini sessions; share token cannot be revoked | TKT-007 + TKT-010 + TKT-012 in-progress |

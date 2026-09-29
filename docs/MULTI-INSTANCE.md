@@ -115,7 +115,8 @@ can be tied to a specific instance and deploy.
 ## Scaling checklist
 
 - [ ] Two instances: `kubeletto deploy lorescale-api --min-instances 1 --max-instances 2`
-- [ ] `DB_POOL_MAX ≤ 8` when running 2 instances against a 20-connection plan
+- [ ] `DB_POOL_MAX ≤ 4` when running 2 instances against a 20-connection plan
+      (worst case is a rolling deploy with both revisions live: 4 pods × 4 = 16)
 - [ ] Rolling restart test: active voice call + kiosk session survive a pod kill
 - [ ] Kiosk on instance A + settings change → kiosk updates without reconnecting
 - [ ] `/health?metrics=1` on both instances shows `kiosk_bus.subscribed: 1`
