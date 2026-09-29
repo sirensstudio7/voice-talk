@@ -166,6 +166,39 @@ suite("api smoke", () => {
     expect(Array.isArray(booking.services)).toBe(true);
   });
 
+  test("order confirm is idempotent per Idempotency-Key", async () => {
+    const menuResponse = await api("/menu?business=sunrise-coffee");
+    const menu = (await menuResponse.json()) as { products: Array<{ id: string }> };
+    const productId = menu.products[0]?.id;
+    expect(productId).toBeTruthy();
+
+    const key = `smoke-${crypto.randomUUID()}`;
+    const body = JSON.stringify({ items: [{ product_id: productId, quantity: 1 }] });
+    const confirm = (idemKey?: string) =>
+      api("/businesses/sunrise-coffee/orders/confirm", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(idemKey ? { "idempotency-key": idemKey } : {}),
+        },
+        body,
+      });
+
+    const first = await confirm(key);
+    expect(first.status).toBe(200);
+    const firstOrder = (await first.json()) as { id: string };
+
+    // A retry with the same key returns the same order, not a duplicate.
+    const second = await confirm(key);
+    expect(second.status).toBe(200);
+    const secondOrder = (await second.json()) as { id: string };
+    expect(secondOrder.id).toBe(firstOrder.id);
+
+    // Supplied but malformed keys are rejected instead of silently ignored.
+    const bad = await confirm("short");
+    expect(bad.status).toBe(400);
+  });
+
   test("platform login + read works", async () => {
     const login = await api(
       "/platform/auth/login",

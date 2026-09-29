@@ -480,6 +480,8 @@ export const orders = pgTable("orders", {
   customerPhone: varchar("customer_phone", { length: 50 }).notNull().default(""),
   customerAddress: text("customer_address").notNull().default(""),
   customerNotes: text("customer_notes").notNull().default(""),
+  /** Client idempotency key for kiosk order confirmation (TKT-018). */
+  clientRequestId: varchar("client_request_id", { length: 64 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
 });

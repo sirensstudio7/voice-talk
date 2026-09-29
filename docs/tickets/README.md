@@ -35,6 +35,8 @@ the product does, this directory describes what we intend to change and why.
 | [TKT-014](014-ws-regression-tests.md) | Regression tests for prompts and WS contracts | testing | P1 | S | — |
 | [TKT-015](015-latency-metrics.md) | Latency metrics (menu, first audio) | observability | P2 | S | TKT-005 |
 | [TKT-016](016-multi-instance-rollout.md) | Roll the multi-instance branch to production | ops | P0 | S | merge of `feat/multi-instance-hardening` |
+| [TKT-017](017-atomic-billing-writes.md) | Atomic, conflict-safe billing writes | money | P0 | S | TKT-001 |
+| [TKT-018](018-order-confirm-idempotency.md) | Idempotent order confirmation | orders | P1 | S | — |
 
 Priority reflects business risk first, then user-visible performance, then
 upkeep. Effort: S ≤ 1 day · M 2–4 days · L > 1 week.

@@ -7,6 +7,9 @@ import * as schema from "./schema.js";
 const log = logger.child({ component: "db" });
 
 export type AppDb = BunSQLDatabase<typeof schema>;
+/** Transaction handle derived from the client, so helpers can take either. */
+export type AppTx = Parameters<Parameters<AppDb["transaction"]>[0]>[0];
+export type DbClient = AppDb | AppTx;
 
 function createSqlClient(): SQL {
   return new SQL({

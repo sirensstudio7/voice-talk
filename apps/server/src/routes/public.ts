@@ -1,10 +1,10 @@
 import { t, type Elysia } from "elysia";
-import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { demoRequests, orderItems } from "../db/schema.js";
+import { demoRequests } from "../db/schema.js";
 import { env } from "../env.js";
 import {
   buildValidatedOrderSnapshot,
+  normalizeClientRequestId,
   OrderValidationError,
   persistConfirmedOrder,
 } from "../services/order-persistence.js";
@@ -54,6 +54,8 @@ export const orderConfirmBody = t.Object({
       quantity: t.Number(),
     }),
   ),
+  /** Optional idempotency key; the `Idempotency-Key` header wins when both set. */
+  idempotency_key: optionalString,
 });
 
 export const appointmentCreateBody = t.Object({
@@ -229,13 +231,24 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
     }
 
     try {
+      const suppliedKey =
+        String(request.headers["idempotency-key"] ?? "").trim() ||
+        String(body.idempotency_key ?? "").trim();
+      const clientRequestId = suppliedKey ? normalizeClientRequestId(suppliedKey) : null;
+      if (suppliedKey && !clientRequestId) {
+        return request.status(400, {
+          detail: "Invalid Idempotency-Key. Use 8-64 characters: letters, digits, . _ : -",
+        });
+      }
+
       const snapshot = buildValidatedOrderSnapshot(
         getSellableProducts(business),
         body.items.map((i) => ({ productId: i.product_id, quantity: i.quantity })),
       );
-      const order = await persistConfirmedOrder(business.id, null, snapshot);
-      const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
-      return orderToOut({ ...order, items });
+      const order = await persistConfirmedOrder(business.id, null, snapshot, {
+        clientRequestId,
+      });
+      return orderToOut({ ...order, items: order.items });
     } catch (exc) {
       if (exc instanceof OrderValidationError) {
         return request.status(400, { detail: exc.detail });

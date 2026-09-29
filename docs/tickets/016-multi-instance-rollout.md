@@ -34,38 +34,68 @@ scripted sequence with rollback criteria rather than an ad-hoc flip.
 
 ## Rollout sequence
 
-1. **Deploy burst capacity only:** `--min-instances 1 --max-instances 2 --wait`.
-   Watch for 10 minutes.
-2. **Verification matrix** (also in `docs/MULTI-INSTANCE.md`). Run the
-   read-only verifier first, then the manual checks:
+> Current state check (2026-09-29): `lorescale-api` runs
+> `ghcr.io/sirensstudio7/voice-talk:preview-deploy`, built from the PR #3 merge
+> before TKT-001…016 landed, with `min/max = 2/2`. Pushing the new commits to
+> `preview-deploy` (or merging to `main`) publishes a fresh image; the service
+> then needs a redeploy to pick it up.
+
+1. **Migrations first.** The new image selects the migrated columns
+   (`share_token_*`), so apply 066–069 before it serves traffic:
 
    ```bash
-   bun run verify:deploy -- --url https://<api-host> --business <slug>
+   DATABASE_URL="<prod-url>" bun run --filter server db:migrate
    ```
 
-   It checks `/health?db=1` (db + redis), `/health?metrics=1` (kiosk bus
-   subscribed, menu traffic) and the `/menu` contract with cold/warm timings —
-   no voice session is started, so it consumes no minutes. Manual checks:
-   - `GET /health?metrics=1` on both pods shows `kiosk_bus.subscribed: 1`.
-   - `/menu` warm requests: `menu.request_ms.avg_ms` well under 300 ms and
-     `menu.cache_hits_total` rising.
-   - Voice call survives a pod kill: client reconnects without a tap, transcript
-     preserved (`ws.connections_active` moves between pods).
-   - Kiosk on pod A + an admin settings change → kiosk updates without a
-     reconnect, and the new `/menu` payload appears within ~1 s.
-   - Admin force-end with the session on the other pod closes it
-     (`voice.force_end_remote_total` increments).
-   - Two concurrent bookings for one slot → exactly one succeeds (409 for the
-     loser) and `booking.slot_conflict_total` is 0 or small.
-   - One voice session ends → the minute ledger matches the session duration
-     (watch `minutes.debit_retry_total` stay 0).
-   - All five greeting paths still answer: `bun scripts/ws-probe.ts --url
-     wss://<api>/ws/session?business=<slug>` returns `RESULT: ok`.
-3. **Raise to `--min-instances 2`** once step 2 is clean, and re-check
-   `kiosk_bus.subscribed: 1` on both.
-4. **LIVE tenants stay on one instance.** Starting a room while both pods are
+2. **Publish the image** — merge this branch to `main`, or fast-forward
+   `preview-deploy` with it. CI builds both `:main`/`:preview-deploy` and
+   `:sha-<short>` tags.
+3. **Deploy burst capacity first** (min 1, max 2) and wait for readiness:
+
+   ```bash
+   kubeletto deploy lorescale-api \
+     --image ghcr.io/sirensstudio7/voice-talk:sha-<short> \
+     --min-instances 1 --max-instances 2 --wait
+   ```
+
+4. **Verify** (read-only; no Gemini minutes):
+
+   ```bash
+   bun run verify:deploy -- --url https://lorescale-api.kubeletto.app --business lorescale
+   ```
+
+   Then walk the manual matrix below.
+5. **Raise to `--min-instances 2`** once clean:
+
+   ```bash
+   kubeletto deploy lorescale-api \
+     --image ghcr.io/sirensstudio7/voice-talk:sha-<short> \
+     --min-instances 2 --max-instances 2 --wait
+   ```
+
+6. **LIVE tenants stay on one instance.** Starting a room while both pods are
    live now fails with a clear 409 (`services/instance-registry.ts`); do not
    override.
+
+## Verification matrix
+
+Run the read-only verifier first, then the manual checks:
+- `GET /health?metrics=1` on both pods shows `kiosk_bus.subscribed: 1`.
+- `/menu` warm requests: `menu.request_ms.avg_ms` well under 300 ms and
+  `menu.cache_hits_total` rising (the verifier prints cold/warm timings).
+- Voice call survives a pod kill: client reconnects without a tap, transcript
+  preserved (`ws.connections_active` moves between pods).
+- Kiosk on pod A + an admin settings change → kiosk updates without a
+  reconnect, and the new `/menu` payload appears within ~1 s.
+- Admin force-end with the session on the other pod closes it
+  (`voice.force_end_remote_total` increments).
+- Two concurrent bookings for one slot → exactly one succeeds (409 for the
+  loser) and `booking.slot_conflict_total` is 0 or small.
+- One voice session ends → the minute ledger matches the session duration
+  (watch `minutes.debit_retry_total` stay 0).
+- All five greeting paths still answer: `bun scripts/ws-probe.ts --url
+  wss://<api>/ws/session?business=<slug>` returns `RESULT: ok` (this one starts
+  a short, billable session).
 
 ## Rollback
 
