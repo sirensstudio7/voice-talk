@@ -23,6 +23,7 @@ import {
 import { adminPath } from "@/lib/admin-path";
 import { peekAddonStatus } from "@/lib/addon-status-cache";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useAddonStatus } from "@/lib/use-addon-status";
 
 type ManageTab = "display" | "branding" | "gallery" | "analytics";
@@ -93,7 +94,7 @@ export function SmartPhotoMomentPageClient() {
 
   useEffect(() => {
     if (status?.subscription_status === "active" && status.settings) {
-      setSettings((current) => current ?? status.settings);
+      deferEffectRun(() => setSettings((current) => current ?? status?.settings ?? null));
     }
   }, [status]);
 
@@ -114,7 +115,7 @@ export function SmartPhotoMomentPageClient() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     }
-  }, [token, business?.id, fromDate, toDate, setError]);
+  }, [token, business, fromDate, toDate, setError]);
 
   useEffect(() => {
     if (!token || !business?.id || !isActive) return;

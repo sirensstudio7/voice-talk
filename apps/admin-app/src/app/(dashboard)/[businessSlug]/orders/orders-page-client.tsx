@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { api, type Order } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { formatFilterDateLabel, parseApiDate } from "@/lib/dates";
 import { formatCurrency } from "@/lib/currency";
 import { exportOrdersCsv, exportOrdersXls } from "@/lib/export-orders";
@@ -83,7 +84,7 @@ function useNow(tickMs: number) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    setNow(Date.now());
+    deferEffectRun(() => setNow(Date.now()));
     const id = window.setInterval(() => setNow(Date.now()), tickMs);
     return () => window.clearInterval(id);
   }, [tickMs]);

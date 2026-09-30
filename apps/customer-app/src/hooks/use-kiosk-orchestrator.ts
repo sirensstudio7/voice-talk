@@ -61,17 +61,6 @@ type KioskVisionSignals = {
 
 const KIOSK_RECONNECT_MS = 800;
 
-async function waitForVoiceConnected(maxMs = 20000): Promise<boolean> {
-  const started = Date.now();
-  while (Date.now() - started < maxMs) {
-    const status = useSessionStore.getState().status;
-    if (status === "connected") return true;
-    if (status === "error") return false;
-    await new Promise((resolve) => setTimeout(resolve, 40));
-  }
-  return useSessionStore.getState().status === "connected";
-}
-
 export function useKioskOrchestrator(
   voice: VoiceSessionApi,
   visionSignals: KioskVisionSignals = {
@@ -89,7 +78,9 @@ export function useKioskOrchestrator(
   const setPythonVisionConnected = useKioskStore((s) => s.setPythonVisionConnected);
   const setBrowserVisionError = useKioskStore((s) => s.setBrowserVisionError);
   const lostTimeoutSecondsRef = useRef(visionConfig.lost_timeout_seconds);
-  lostTimeoutSecondsRef.current = visionConfig.lost_timeout_seconds;
+  useEffect(() => {
+    lostTimeoutSecondsRef.current = visionConfig.lost_timeout_seconds;
+  }, [visionConfig.lost_timeout_seconds]);
   const setKioskPhase = useKioskStore((s) => s.setKioskPhase);
   const setVisionConfig = useKioskStore((s) => s.setVisionConfig);
   const kioskPhase = useKioskStore((s) => s.kioskPhase);
@@ -121,7 +112,9 @@ export function useKioskOrchestrator(
   }, []);
 
   const voiceRef = useRef(voice);
-  voiceRef.current = voice;
+  useEffect(() => {
+    voiceRef.current = voice;
+  }, [voice]);
 
   const handleBrowserCameraReady = useCallback(() => {
     window.setTimeout(() => {
@@ -302,7 +295,9 @@ export function useKioskOrchestrator(
   }, [notifySessionEnded, releaseBrowserCamera, sendSessionStartedAck, setKioskPhase]);
 
   const handleVisionTriggerRef = useRef(handleVisionTrigger);
-  handleVisionTriggerRef.current = handleVisionTrigger;
+  useEffect(() => {
+    handleVisionTriggerRef.current = handleVisionTrigger;
+  }, [handleVisionTrigger]);
 
   // Reset if stuck on "preparing greeting" without voice ever starting.
   useEffect(() => {

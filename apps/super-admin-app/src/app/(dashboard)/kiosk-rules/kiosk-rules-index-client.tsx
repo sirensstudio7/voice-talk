@@ -16,6 +16,7 @@ import {
 import { PageHeader } from "@/components/ui-blocks";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { createBlankPlaybook, isBuiltinPlaybookId, type Playbook, type PlaybookId } from "@/lib/kiosk-rule-playbooks";
 import { deletePlaybook, listPlaybooks, upsertPlaybook } from "@/lib/kiosk-rule-storage";
 
@@ -32,7 +33,7 @@ export function KioskRulesIndexClient() {
   const [pendingDelete, setPendingDelete] = useState<Playbook | null>(null);
 
   useEffect(() => {
-    setPlaybooks(listPlaybooks());
+    deferEffectRun(() => setPlaybooks(listPlaybooks()));
   }, []);
 
   useEffect(() => {

@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api, type Appointment } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import {
   formatSelectedDateLabel,
   parseApiDate,
@@ -98,7 +99,7 @@ export function BookingCalendar({
   }, [token, businessId]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   const byDate = useMemo(() => {

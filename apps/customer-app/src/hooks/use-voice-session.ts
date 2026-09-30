@@ -88,46 +88,6 @@ function waitForSocketOpen(ws: WebSocket, timeoutMs = 10000): Promise<void> {
   });
 }
 
-function isSessionReadyForGreeting(): boolean {
-  const status = useSessionStore.getState().status;
-  return status === "connected" || status === "idle" || status === "connecting";
-}
-
-function waitForSessionReady(
-  isCurrent: () => boolean,
-  timeoutMs = 15000,
-): Promise<boolean> {
-  if (isSessionReadyForGreeting()) {
-    return Promise.resolve(true);
-  }
-
-  return new Promise((resolve) => {
-    const started = Date.now();
-    const timer = window.setInterval(() => {
-      if (!isCurrent()) {
-        window.clearInterval(timer);
-        resolve(false);
-        return;
-      }
-
-      if (isSessionReadyForGreeting()) {
-        window.clearInterval(timer);
-        resolve(true);
-        return;
-      }
-      if (useSessionStore.getState().status === "error") {
-        window.clearInterval(timer);
-        resolve(false);
-        return;
-      }
-      if (Date.now() - started >= timeoutMs) {
-        window.clearInterval(timer);
-        resolve(false);
-      }
-    }, 40);
-  });
-}
-
 function isEmbeddedPreviewBrowser(): boolean {
   const ua = navigator.userAgent;
   return ua.includes("Electron") || ua.includes("Cursor");
@@ -412,7 +372,7 @@ export function useVoiceSession() {
     }
   }, [clearTurnCompleteTimer]);
 
-  const runRevealTick = useCallback(() => {
+  const runRevealTick = useCallback(function tick() {
     const fullText = assistantFullTextRef.current;
     if (!fullText) {
       revealLoopRef.current = null;
@@ -435,7 +395,7 @@ export function useVoiceSession() {
     setAssistantDisplayText(visibleText);
 
     if (visibleText.length < fullText.length && hasAudio && progress < 1) {
-      revealLoopRef.current = requestAnimationFrame(runRevealTick);
+      revealLoopRef.current = requestAnimationFrame(tick);
     } else {
       if (visibleText.length < fullText.length) {
         setAssistantDisplayText(fullText);
@@ -676,7 +636,9 @@ export function useVoiceSession() {
     }, 150);
   }, [clearContinuousSilenceTimer, setConversationPhase, setTalking, signalUtteranceEnd]);
 
-  signalUtteranceStartRef.current = signalUtteranceStart;
+  useEffect(() => {
+    signalUtteranceStartRef.current = signalUtteranceStart;
+  }, [signalUtteranceStart]);
 
   const processContinuousChunk = useCallback(
     (chunk: ArrayBuffer) => {

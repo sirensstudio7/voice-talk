@@ -52,16 +52,20 @@ export function SearchableSelect({
   }, [options, query]);
 
   useEffect(() => {
-    if (!open) {
-      setQuery("");
-      return;
-    }
+    if (!open) return;
     const frame = requestAnimationFrame(() => searchRef.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
   return (
-    <Popover open={open} onOpenChange={(next) => !disabled && setOpen(next)}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (disabled) return;
+        setOpen(next);
+        if (!next) setQuery("");
+      }}
+    >
       {name ? (
         <input type="hidden" name={name} value={value} required={required} />
       ) : null}
@@ -129,6 +133,7 @@ export function SearchableSelect({
                     onClick={() => {
                       onChange(option.value);
                       setOpen(false);
+                      setQuery("");
                     }}
                   >
                     <CheckIcon

@@ -39,6 +39,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { customerAppUrl } from "@/lib/customer-app";
 import { CURRENCY_PREFIX, formatCurrency } from "@/lib/currency";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { playLivePcm, playLiveWavBase64, speakLiveText, unlockLiveAudio } from "@/lib/live-audio";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -880,7 +881,7 @@ export function LiveControlRoomClient() {
     } catch {
       setLiveOrders([]);
     }
-  }, [token, business?.id, sessionId]);
+  }, [token, business, sessionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -962,7 +963,7 @@ export function LiveControlRoomClient() {
   useEffect(() => {
     tabRef.current = tab;
     if (tab !== "chat") return;
-    setUnreadChat(0);
+    deferEffectRun(() => setUnreadChat(0));
     pinChatToBottom.current = true;
   }, [tab]);
 
@@ -983,11 +984,11 @@ export function LiveControlRoomClient() {
     } catch {
       // Keep the last known list if a poll fails.
     }
-  }, [token, business?.id, sessionId]);
+  }, [token, business, sessionId]);
 
   useEffect(() => {
     if (tab !== "orders") return;
-    void loadOrders();
+    deferEffectRun(loadOrders);
     if (session?.status !== "live") return;
     const id = window.setInterval(() => void loadOrders(), 8000);
     return () => window.clearInterval(id);

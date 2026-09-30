@@ -1,6 +1,6 @@
 # TKT-011 — Frontend CI: typecheck + lint for all apps
 
-- **Status:** in-progress (workflow on `feat/multi-instance-hardening`)
+- **Status:** done (on `fix-fe-linter`; lint blocking on errors)
 - **Priority:** P1
 - **Area:** tooling
 - **Effort:** M (2–4 days)
@@ -49,9 +49,10 @@ typecheck.
       errors (`.github/workflows/frontend.yml`, matrix over all four apps,
       blocking; all four are currently clean).
 - [x] `tsbuildinfo` files are untracked and ignored (`*.tsbuildinfo`).
-- [x] Lint runs non-blocking with a documented decision (see workflow header):
-      admin/super-admin ESLint is still on the ESLint 9 migration error and the
-      other apps carry a pre-existing backlog; flip to blocking after cleanup.
+- [x] Lint runs blocking on errors with a documented decision (see workflow
+      header): all four apps have working flat configs, zero findings, and the
+      React Compiler rules enforced as errors (TKT-039 done on
+      `fix-fe-linter`).
 - [x] Workflow completes quickly: typecheck matrix only, bun install cache.
 
 ## Implementation notes
@@ -59,9 +60,10 @@ typecheck.
 - `next build` is intentionally not part of PR checks; Vercel still builds, and
   tsc catches the type-level regressions the workflow is for. Add builds only if
   a real regression slips through.
-- Follow-up decision recorded in the workflow: migrate the two broken ESLint
-  configs to flat config, or adopt Biome across the frontends and delete the
-  ESLint dependency.
+- Follow-up decision recorded in the workflow, now resolved on `fix-fe-linter`:
+  the two broken configs were migrated to `eslint.config.mjs` (not Biome), the
+  React Compiler backlog was burned down in TKT-039, and the compiler rules are
+  enforced again. Biome was left as an option if maintainers prefer it later.
 
 ## Out of scope
 

@@ -57,6 +57,7 @@ the product does, this directory describes what we intend to change and why.
 | [TKT-036](036-member-roles-invites.md) | Member roles and invitations | product | P3 | M/L | TKT-035 |
 | [TKT-037](037-platform-admin-management.md) | Platform-admin management: CRUD, roles, audit | product | P3 | M | TKT-028 |
 | [TKT-038](038-presenter-analytics-export.md) | Presenter analytics export and operator controls | product | P3 | M | TKT-007/010 |
+| [TKT-039](039-frontend-compiler-lint-burndown.md) | Burn down the frontend React Compiler lint backlog | tooling | P2 | M | TKT-011 |
 
 Priority reflects business risk first, then user-visible performance, then
 upkeep. Effort: S ≤ 1 day · M 2–4 days · L > 1 week.

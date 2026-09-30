@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpTrayIcon,
   CakeIcon,
@@ -17,6 +17,7 @@ import { PageHeader, StatCard } from "@/components/ui";
 import { api, type Product } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { CURRENCY_PREFIX, formatCurrency } from "@/lib/currency";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -661,7 +662,7 @@ export function MenuPageClient() {
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token || !business) return;
     setLoading(true);
     try {
@@ -669,11 +670,11 @@ export function MenuPageClient() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, business]);
 
   useEffect(() => {
-    void load();
-  }, [token, business]);
+    deferEffectRun(load);
+  }, [load]);
 
   const categories = useMemo(
     () => [...new Set(products.map((product) => product.category))].sort(),

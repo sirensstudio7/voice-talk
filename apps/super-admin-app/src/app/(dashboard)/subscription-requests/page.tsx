@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { api, type SubscriptionRequestDetail, type SubscriptionRequestItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const STATUS_OPTIONS = [
   { value: "pending", label: "Pending" },
@@ -70,7 +71,7 @@ export default function SubscriptionRequestsPage() {
   }, [token, page, status, search]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   async function openDetail(id: string) {

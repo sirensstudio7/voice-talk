@@ -38,16 +38,17 @@ export function SchedulePageClient() {
   useEffect(() => {
     if (!token || !business) return;
 
-    setLoading(true);
-    void api
-      .getSchedule(token, business.id)
-      .then((data) => {
+    void (async () => {
+      setLoading(true);
+      try {
+        const data = await api.getSchedule(token, business.id);
         setHours(sortHours(data.length > 0 ? data : defaultHours()));
-      })
-      .catch(() => {
+      } catch {
         setHours(defaultHours());
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [token, business]);
 
   const updateHour = (dayOfWeek: number, patch: Partial<BusinessHour>) => {

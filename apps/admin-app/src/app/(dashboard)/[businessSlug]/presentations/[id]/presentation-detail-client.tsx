@@ -28,6 +28,7 @@ import {
 } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useAddonStatus } from "@/lib/use-addon-status";
 import { cn } from "@/lib/cn";
 import {
@@ -386,7 +387,7 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
     } finally {
       setShareBusy(false);
     }
-  }, [business, presentationId, token]);
+  }, [business, presentationId, setShareDialogOpen, token]);
 
   const onRotateShare = useCallback(async () => {
     if (!token || !business) return;
@@ -422,19 +423,21 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
   }, [business, presentationId, token]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
+  const detailStatus = detail?.status;
+
   useEffect(() => {
-    if (!detail || detail.status !== "processing") return;
+    if (detailStatus !== "processing") return;
     const id = window.setInterval(() => void load(), 2000);
     return () => window.clearInterval(id);
-  }, [detail?.status, load]);
+  }, [detailStatus, load]);
 
   // After Prepare with AI finishes, open preview in a new tab once.
   useEffect(() => {
-    if (!detail || !openPreviewWhenReadyRef.current) return;
-    if (detail.status === "ready" || detail.status === "completed") {
+    if (!detailStatus || !openPreviewWhenReadyRef.current) return;
+    if (detailStatus === "ready" || detailStatus === "completed") {
       openPreviewWhenReadyRef.current = false;
       window.open(
         adminPath(business?.slug ?? "", `/presentations/${presentationId}/preview`),
@@ -443,13 +446,13 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
       );
       return;
     }
-    if (detail.status === "failed") {
+    if (detailStatus === "failed") {
       openPreviewWhenReadyRef.current = false;
     }
-  }, [detail?.status, presentationId]);
+  }, [detailStatus, business?.slug, presentationId]);
 
   useEffect(() => {
-    setSelectedSlide(0);
+    deferEffectRun(() => setSelectedSlide(0));
   }, [presentationId, detail?.slides.length]);
 
   const onUpload = async (file: File | null) => {
@@ -1038,6 +1041,7 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
               <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                 <div className="relative aspect-[16/9] bg-[#f4f4f5]">
                   {thumbUrl && selectedSlide === 0 ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- thumbnail can be any API/storage host
                     <img
                       src={thumbUrl}
                       alt=""

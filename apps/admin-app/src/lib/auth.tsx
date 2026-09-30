@@ -10,6 +10,7 @@ import {
   type Business,
 } from "@/lib/api";
 import { detectCountryCode } from "@/lib/country";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 type AuthUser = { id: string; email: string; name: string; country?: string };
 
@@ -46,50 +47,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Platform super-admin impersonation handoff via URL hash
-    if (typeof window !== "undefined" && window.location.hash.includes("platform_impersonate=")) {
-      const hash = new URLSearchParams(window.location.hash.slice(1));
-      const impersonateToken = hash.get("platform_impersonate");
-      const businessId = hash.get("business");
-      if (impersonateToken) {
-        localStorage.setItem(TOKEN_KEY, impersonateToken);
-        if (businessId) localStorage.setItem(BUSINESS_KEY, businessId);
-        window.history.replaceState(null, "", window.location.pathname + window.location.search);
-        setToken(impersonateToken);
-        setBusinessIdState(businessId);
-        setUser({ id: "impersonated", email: "", name: "Impersonating…" });
-        localStorage.setItem(
-          USER_KEY,
-          JSON.stringify({ id: "impersonated", email: "", name: "Impersonating…" }),
-        );
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-        void fetch(`${apiUrl}/admin/auth/me`, {
-          headers: { Authorization: `Bearer ${impersonateToken}` },
-        })
-          .then((res) => (res.ok ? res.json() : null))
-          .then((me) => {
-            if (!me) return;
-            const nextUser = { id: me.id as string, email: me.email as string, name: `[Impersonating] ${me.name}` };
-            localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
-            setUser(nextUser);
+    deferEffectRun(() => {
+      if (typeof window !== "undefined" && window.location.hash.includes("platform_impersonate=")) {
+        const hash = new URLSearchParams(window.location.hash.slice(1));
+        const impersonateToken = hash.get("platform_impersonate");
+        const businessId = hash.get("business");
+        if (impersonateToken) {
+          localStorage.setItem(TOKEN_KEY, impersonateToken);
+          if (businessId) localStorage.setItem(BUSINESS_KEY, businessId);
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          setToken(impersonateToken);
+          setBusinessIdState(businessId);
+          setUser({ id: "impersonated", email: "", name: "Impersonating…" });
+          localStorage.setItem(
+            USER_KEY,
+            JSON.stringify({ id: "impersonated", email: "", name: "Impersonating…" }),
+          );
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+          void fetch(`${apiUrl}/admin/auth/me`, {
+            headers: { Authorization: `Bearer ${impersonateToken}` },
           })
-          .catch(() => undefined);
-        setHydrated(true);
-        return;
+            .then((res) => (res.ok ? res.json() : null))
+            .then((me) => {
+              if (!me) return;
+              const nextUser = { id: me.id as string, email: me.email as string, name: `[Impersonating] ${me.name}` };
+              localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+              setUser(nextUser);
+            })
+            .catch(() => undefined);
+          setHydrated(true);
+          return;
+        }
       }
-    }
 
-    const savedToken = localStorage.getItem(TOKEN_KEY);
-    const savedUser = localStorage.getItem(USER_KEY);
-    const savedBusiness = localStorage.getItem(BUSINESS_KEY);
-    if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser) as AuthUser);
-      setBusinessIdState(savedBusiness);
-    } else {
-      setBusinessesLoading(false);
-    }
-    setHydrated(true);
+      const savedToken = localStorage.getItem(TOKEN_KEY);
+      const savedUser = localStorage.getItem(USER_KEY);
+      const savedBusiness = localStorage.getItem(BUSINESS_KEY);
+      if (savedToken && savedUser) {
+        setToken(savedToken);
+        setUser(JSON.parse(savedUser) as AuthUser);
+        setBusinessIdState(savedBusiness);
+      } else {
+        setBusinessesLoading(false);
+      }
+      setHydrated(true);
+    });
   }, []);
+
+  const logout = () => {
+    setToken(null);
+    setUser(null);
+    setBusinesses([]);
+    setBusinessIdState(null);
+    setBusinessesError(null);
+    setBusinessesLoading(false);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(BUSINESS_KEY);
+  };
 
   const refreshBusinesses = async (opts?: { silent?: boolean }) => {
     if (!token) {
@@ -155,8 +170,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!hydrated) return;
     if (token) {
-      void refreshBusinesses();
+      deferEffectRun(refreshBusinesses);
     }
+    // refreshBusinesses is recreated every render and reads the latest token;
+    // this effect intentionally runs only when the session hydrates or the token changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, hydrated]);
 
   const persistSession = (accessToken: string, nextUser: AuthUser) => {
@@ -202,18 +220,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setBusinessesError(null);
     setBusinessesLoading(false);
     return "active";
-  };
-
-  const logout = () => {
-    setToken(null);
-    setUser(null);
-    setBusinesses([]);
-    setBusinessIdState(null);
-    setBusinessesError(null);
-    setBusinessesLoading(false);
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    localStorage.removeItem(BUSINESS_KEY);
   };
 
   const setBusinessId = (id: string) => {

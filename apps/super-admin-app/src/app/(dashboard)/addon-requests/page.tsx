@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { api, type AddonRequestItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const STATUS_OPTIONS = [
   { value: "pending", label: "Pending" },
@@ -149,7 +150,7 @@ export default function AddonRequestsPage() {
   }, [token, page, status, search]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   useEffect(() => {

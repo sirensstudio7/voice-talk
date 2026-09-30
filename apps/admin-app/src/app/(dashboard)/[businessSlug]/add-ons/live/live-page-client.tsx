@@ -90,8 +90,8 @@ export function LivePageClient() {
   useEffect(() => {
     if (!token || !business?.id || !isActive) return;
     let cancelled = false;
-    setSessionsLoading(true);
     void (async () => {
+      setSessionsLoading(true);
       try {
         const live = await api.listLiveSessions(token, business.id);
         if (cancelled) return;

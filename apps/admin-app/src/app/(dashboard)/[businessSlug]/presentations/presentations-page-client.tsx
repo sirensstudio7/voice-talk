@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRightIcon,
   ClockIcon,
@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { api, ApiRequestError, type AiLanguage, type Presentation } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useAddonStatus } from "@/lib/use-addon-status";
 import { cn } from "@/lib/cn";
 import { availableLanguageOptions } from "@voicetalk/shared";
@@ -108,7 +109,7 @@ export function PresentationsPageClient() {
     setLanguage("id");
   };
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token || !business) return;
     setLoading(true);
     try {
@@ -122,12 +123,12 @@ export function PresentationsPageClient() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, business, router]);
 
   useEffect(() => {
     thumbRefreshScheduled.current = false;
-    void load();
-  }, [token, business]);
+    deferEffectRun(load);
+  }, [load]);
 
   // Backfill renders thumbnails async on the server; refresh once so cards update.
   useEffect(() => {
@@ -247,6 +248,7 @@ export function PresentationsPageClient() {
                         className="relative block aspect-[16/10] outline-none focus-visible:ring-2 focus-visible:ring-orange-500/50 focus-visible:ring-inset"
                       >
                         {item.thumbnail_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- thumbnail can be any API/storage host
                           <img
                             src={resolveMediaUrl(item.thumbnail_url)}
                             alt=""

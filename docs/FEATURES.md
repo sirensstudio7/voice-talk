@@ -134,5 +134,5 @@ in code but is not mounted. Privacy/Terms/Contact links are placeholders.
 | Analytics | Banner/vision metrics load unbounded rows and aggregate in JS; no retention on `analytics_events`/`vision_events` | TKT-008 in-progress |
 | Presenter | No durable queue; embeddings unused; per-viewer Gemini sessions; share token cannot be revoked | TKT-007 + TKT-010 + TKT-012 in-progress |
 | LIVE | Single-instance by design; in-memory room state | TKT-006 guard + ADR in-progress |
-| Frontends | No CI typecheck (real errors found in super-admin); admin/super-admin ESLint config broken under ESLint 9 | TKT-011 typecheck blocking, lint non-blocking |
+| Frontends | No frontend unit/E2E tests; CI covers typecheck + lint with zero findings | TKT-011 + TKT-039 done; Playwright considered later |
 | Dead code | `apps-legacy`, several unused components, `getPhotoDownloadBaseUrl` | TKT-013 in-progress |

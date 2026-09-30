@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ArrowUpTrayIcon,
   CameraIcon,
@@ -41,6 +41,7 @@ import { useAssistantTemplate } from "@/lib/assistant-template-context";
 import { templateToAiRules } from "@/lib/assistant-templates";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useAddonStatus } from "@/lib/use-addon-status";
 import {
   playVoicePresetPreview,
@@ -642,8 +643,10 @@ function VoicePresetSelector({
   }, []);
 
   useEffect(() => {
-    stopVoicePresetPreview();
-    setPreviewing(null);
+    deferEffectRun(() => {
+      stopVoicePresetPreview();
+      setPreviewing(null);
+    });
   }, [language, gender]);
 
   const handlePreview = async (preset: VoicePreset, event: ReactMouseEvent) => {
@@ -1005,7 +1008,7 @@ export function AiRulesPageClient() {
   } | null>(null);
   const [savingHotkey, setSavingHotkey] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token || !business) return;
     setLoading(true);
     setError(null);
@@ -1036,11 +1039,11 @@ export function AiRulesPageClient() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, business]);
 
   useEffect(() => {
-    void load();
-  }, [token, business]);
+    deferEffectRun(load);
+  }, [load]);
 
   const isDirty = useMemo(
     () => rules !== null && savedRules !== null && !rulesEqual(rules, savedRules),

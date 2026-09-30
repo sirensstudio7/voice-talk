@@ -18,6 +18,7 @@ import {
   getSavedPoseClip,
   type SavedPoseClipRecord,
 } from "@/lib/avatar-pose-clip";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 export default function AvatarPoseClipDetailPage() {
   const params = useParams<{ id: string }>();
@@ -28,8 +29,10 @@ export default function AvatarPoseClipDetailPage() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    setClip(getSavedPoseClip(clipId));
-    setReady(true);
+    deferEffectRun(() => {
+      setClip(getSavedPoseClip(clipId));
+      setReady(true);
+    });
   }, [clipId]);
 
   const jsonText = clip ? JSON.stringify(clip, null, 2) : "";

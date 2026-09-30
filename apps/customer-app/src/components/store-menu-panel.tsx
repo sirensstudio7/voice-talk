@@ -14,6 +14,7 @@ import { slideOverBackdropClass, slideOverPanelClass, useSlideOver } from "@/com
 
 import { useBusinessSlug } from "@/context/business-context";
 import { fetchMenu, menuFetchErrorMessage, type MenuProduct } from "@/lib/menu-api";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useSessionStore } from "@/store/session-store";
 import { formatCurrency } from "@voicetalk/shared";
 
@@ -251,8 +252,10 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
 
   useEffect(() => {
     if (menuCacheSlug !== businessSlug || !menuCache) return;
-    setBusiness(menuCache.business);
-    setProducts(catalogFromMenu(menuCache));
+    deferEffectRun(() => {
+      setBusiness(menuCache.business);
+      setProducts(catalogFromMenu(menuCache));
+    });
   }, [businessSlug, menuCache, menuCacheSlug]);
 
   const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -296,7 +299,7 @@ function StoreMenuPanel({ onClose, visible }: StoreMenuPanelProps) {
 
   useEffect(() => {
     if (!visible) return;
-    void loadMenu();
+    deferEffectRun(loadMenu);
   }, [visible, loadMenu, reloadKey]);
 
   const grouped = useMemo(() => groupByCategory(products), [products]);

@@ -10,6 +10,7 @@ import {
   todayDateInputValue,
   yesterdayDateInputValue,
 } from "@/lib/dates";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 function pillClass(active: boolean) {
   return [
@@ -35,9 +36,11 @@ export function DateFilter({
   const [dayKeys, setDayKeys] = useState<{ today: string; yesterday: string } | null>(null);
 
   useEffect(() => {
-    setDayKeys({
-      today: todayDateInputValue(),
-      yesterday: yesterdayDateInputValue(),
+    deferEffectRun(() => {
+      setDayKeys({
+        today: todayDateInputValue(),
+        yesterday: yesterdayDateInputValue(),
+      });
     });
   }, []);
 

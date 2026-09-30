@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
   ChatBubbleLeftRightIcon,
   CommandLineIcon,
@@ -132,12 +132,15 @@ export const KioskRuleGraph = forwardRef<
   const [scale, setScale] = useState(1);
   const camRef = useRef(cam);
   const scaleRef = useRef(scale);
-  camRef.current = cam;
-  scaleRef.current = scale;
   const nodesRef = useRef(nodes);
-  nodesRef.current = nodes;
 
-  const zoomTo = (nextScale: number, originClientX: number, originClientY: number) => {
+  useEffect(() => {
+    camRef.current = cam;
+    scaleRef.current = scale;
+    nodesRef.current = nodes;
+  }, [cam, scale, nodes]);
+
+  const zoomTo = useCallback((nextScale: number, originClientX: number, originClientY: number) => {
     const el = viewportRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -154,16 +157,16 @@ export const KioskRuleGraph = forwardRef<
       x: ox - worldX * clamped,
       y: oy - worldY * clamped,
     });
-  };
+  }, [onScaleChange]);
 
-  const zoomBy = (factor: number) => {
+  const zoomBy = useCallback((factor: number) => {
     const el = viewportRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     zoomTo(scaleRef.current * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
-  };
+  }, [zoomTo]);
 
-  const fitView = () => {
+  const fitView = useCallback(() => {
     const el = viewportRef.current;
     const list = nodesRef.current;
     if (!el || list.length === 0) return;
@@ -181,7 +184,7 @@ export const KioskRuleGraph = forwardRef<
       x: pad - minX * next,
       y: (el.clientHeight - (maxY - minY) * next) / 2 - minY * next,
     });
-  };
+  }, [onScaleChange]);
 
   useImperativeHandle(ref, () => ({
     zoomIn: () => zoomBy(ZOOM_STEP),
@@ -201,7 +204,7 @@ export const KioskRuleGraph = forwardRef<
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => fitView());
     return () => window.cancelAnimationFrame(frame);
-  }, [fitKey]);
+  }, [fitKey, fitView]);
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -213,7 +216,7 @@ export const KioskRuleGraph = forwardRef<
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [zoomTo]);
 
   const byId = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
 

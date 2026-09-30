@@ -25,6 +25,7 @@ import {
 } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useAddonStatus } from "@/lib/use-addon-status";
 
 const FEATURES = [
@@ -148,7 +149,7 @@ export function LuckySpinPageClient() {
 
   useEffect(() => {
     if (!token || !business?.id || !isActive) {
-      setSettingsReady(false);
+      deferEffectRun(() => setSettingsReady(false));
       return;
     }
     let cancelled = false;
@@ -186,11 +187,11 @@ export function LuckySpinPageClient() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load prizes");
     }
-  }, [token, business?.id, selectedCampaignId, isActive]);
+  }, [token, business, selectedCampaignId, isActive, setError]);
 
   useEffect(() => {
     if (isActive && (manageTab === "prizes" || manageTab === "campaigns")) {
-      void loadPrizes();
+      deferEffectRun(loadPrizes);
     }
   }, [isActive, manageTab, loadPrizes]);
 
@@ -203,7 +204,7 @@ export function LuckySpinPageClient() {
         setWinnersTotal(res.total);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load winners"));
-  }, [token, business?.id, isActive, manageTab, voucherSearch]);
+  }, [token, business?.id, isActive, manageTab, voucherSearch, setError]);
 
   async function toggleEnabled(next: boolean) {
     if (!token || !business?.id) return;
