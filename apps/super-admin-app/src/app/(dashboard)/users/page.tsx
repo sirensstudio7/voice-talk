@@ -17,6 +17,7 @@ import { UsersTable } from "@/components/users-table";
 import { api, type PlatformUser } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const USER_STATUS_OPTIONS = [
   { value: "active", label: "Active" },
@@ -107,7 +108,7 @@ export default function UsersPage() {
   }, [token, page, search, status]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   return (

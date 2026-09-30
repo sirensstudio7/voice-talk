@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 export default function BusinessDetailPage({
   params,
@@ -32,7 +33,7 @@ export default function BusinessDetailPage({
   }, [token, id]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   async function setStatus(status: "active" | "disabled") {

@@ -28,6 +28,7 @@ import {
 } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useAddonStatus } from "@/lib/use-addon-status";
 import { cn } from "@/lib/cn";
 import {
@@ -386,7 +387,7 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
     } finally {
       setShareBusy(false);
     }
-  }, [business, presentationId, token]);
+  }, [business, presentationId, setShareDialogOpen, token]);
 
   const onRotateShare = useCallback(async () => {
     if (!token || !business) return;
@@ -422,7 +423,7 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
   }, [business, presentationId, token]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   const detailStatus = detail?.status;
@@ -451,7 +452,7 @@ export function PresentationDetailClient({ presentationId }: { presentationId: s
   }, [detailStatus, business?.slug, presentationId]);
 
   useEffect(() => {
-    setSelectedSlide(0);
+    deferEffectRun(() => setSelectedSlide(0));
   }, [presentationId, detail?.slides.length]);
 
   const onUpload = async (file: File | null) => {

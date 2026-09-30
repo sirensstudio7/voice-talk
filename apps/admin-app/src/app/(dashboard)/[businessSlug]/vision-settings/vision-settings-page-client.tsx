@@ -17,6 +17,7 @@ import { useSidebar } from "@/components/ui/sidebar";
 import { api, type VisionMetrics, type VisionSettings } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { customerAppUrl } from "@/lib/customer-app";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const DEFAULT_SETTINGS: VisionSettings = {
   camera_trigger_enabled: false,
@@ -82,8 +83,10 @@ export function VisionSettingsPageClient() {
     if (!token || !business) return;
 
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    deferEffectRun(() => {
+      setLoading(true);
+      setError(null);
+    });
 
     void Promise.all([
       api.getVisionSettings(token, business.id),

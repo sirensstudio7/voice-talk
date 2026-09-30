@@ -22,6 +22,7 @@ import {
 } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -76,17 +77,19 @@ export function PresentationPreviewClient({ presentationId }: { presentationId: 
 
   // Restore director controls if a live session was already started for this deck.
   useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem(liveSessionStorageKey(presentationId));
-      if (saved) setLiveSessionId(saved);
-    } catch {
-      // ignore
-    }
+    deferEffectRun(() => {
+      try {
+        const saved = sessionStorage.getItem(liveSessionStorageKey(presentationId));
+        if (saved) setLiveSessionId(saved);
+      } catch {
+        // ignore
+      }
+    });
   }, [presentationId]);
 
   useEffect(() => {
     if (!token || !business || !liveSessionId) {
-      setLiveDetail(null);
+      deferEffectRun(() => setLiveDetail(null));
       return;
     }
     let cancelled = false;

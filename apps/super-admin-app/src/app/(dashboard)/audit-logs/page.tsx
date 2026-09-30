@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api, type AuditLogItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 export default function AuditLogsPage() {
   const { token } = useAuth();
@@ -27,7 +28,7 @@ export default function AuditLogsPage() {
   }, [token, page]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   return (

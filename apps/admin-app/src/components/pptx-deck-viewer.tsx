@@ -12,6 +12,7 @@ import {
 // Admin-app already uses Tailwind v4, which the viewer resolves against.
 
 import { loadPptxBytes } from "@/lib/pptx-content-cache";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { pptxI18n } from "@/lib/pptx-i18n";
 
 type Props = {
@@ -146,15 +147,19 @@ export function PptxDeckViewer({
 
   useEffect(() => {
     if (!pptxUrl) {
-      setContent(null);
-      setLoadError("No PPTX file on this presentation.");
+      deferEffectRun(() => {
+        setContent(null);
+        setLoadError("No PPTX file on this presentation.");
+      });
       return;
     }
 
     let cancelled = false;
-    setReady(false);
-    setLoadError("");
-    setContent(null);
+    deferEffectRun(() => {
+      setReady(false);
+      setLoadError("");
+      setContent(null);
+    });
     lastSynced.current = null;
 
     void (async () => {

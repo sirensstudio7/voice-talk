@@ -17,6 +17,7 @@ import { PageHeader, StatCard } from "@/components/ui";
 import { api, type Product } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { CURRENCY_PREFIX, formatCurrency } from "@/lib/currency";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -672,7 +673,7 @@ export function MenuPageClient() {
   }, [token, business]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   const categories = useMemo(

@@ -8,6 +8,7 @@ import {
 } from "@/lib/browser-vision/presence-detector";
 import { PresenceStateMachine } from "@/lib/browser-vision/state-machine";
 import type { BrowserVisionEventType } from "@/lib/browser-vision/types";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import type { VisionConfig } from "@/types/kiosk";
 import { useKioskStore } from "@/store/kiosk-store";
 
@@ -114,7 +115,7 @@ export function useBrowserVision({
     }
 
     if (!visionEnabled || !visionConfigSynced) {
-      setAutoGraceReady(false);
+      deferEffectRun(() => setAutoGraceReady(false));
       return;
     }
 
@@ -122,22 +123,22 @@ export function useBrowserVision({
       visionConfig.vision_source === "browser" ||
       visionConfig.vision_source === "human"
     ) {
-      setAutoGraceReady(true);
+      deferEffectRun(() => setAutoGraceReady(true));
       return;
     }
 
     if (visionConfig.vision_source === "python") {
-      setAutoGraceReady(false);
+      deferEffectRun(() => setAutoGraceReady(false));
       return;
     }
 
     // auto
     if (pythonVisionConnected) {
-      setAutoGraceReady(false);
+      deferEffectRun(() => setAutoGraceReady(false));
       return;
     }
 
-    setAutoGraceReady(false);
+    deferEffectRun(() => setAutoGraceReady(false));
     graceTimerRef.current = setTimeout(() => {
       setAutoGraceReady(true);
     }, AUTO_GRACE_MS);

@@ -26,6 +26,7 @@ import { api, type AccountSubscription, type SubscriptionPlan } from "@/lib/api"
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { detectCountryCode, isIndonesiaCountry } from "@/lib/country";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 function CircleCheckIcon({ className }: { className?: string }) {
   return (
@@ -201,7 +202,7 @@ export function BillingPageClient() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    setLoading(true);
+    deferEffectRun(() => setLoading(true));
     Promise.all([api.listSubscriptionPlans(token), api.getSubscription(token)])
       .then(([planList, entitlement]) => {
         if (cancelled) return;
@@ -222,15 +223,17 @@ export function BillingPageClient() {
   // Persist detected country for accounts that signed up before country was stored
   useEffect(() => {
     if (!token) return;
-    const stored = (user?.country ?? "").trim().toUpperCase();
-    if (stored) {
-      setCountry(stored);
-      return;
-    }
-    const detected = detectCountryCode();
-    if (!detected) return;
-    setCountry(detected);
-    void api.updateProfile(token, { country: detected }).catch(() => undefined);
+    deferEffectRun(() => {
+      const stored = (user?.country ?? "").trim().toUpperCase();
+      if (stored) {
+        setCountry(stored);
+        return;
+      }
+      const detected = detectCountryCode();
+      if (!detected) return;
+      setCountry(detected);
+      void api.updateProfile(token, { country: detected }).catch(() => undefined);
+    });
   }, [token, user?.country]);
 
   async function selectPlan(code: string) {

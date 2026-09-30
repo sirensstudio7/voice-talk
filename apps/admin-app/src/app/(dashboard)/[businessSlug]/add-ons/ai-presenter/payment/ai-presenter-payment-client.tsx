@@ -19,6 +19,7 @@ import { api } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const FALLBACK_MONTHLY_IDR = 199_000;
 
@@ -192,9 +193,11 @@ export function AiPresenterPaymentClient() {
   const needsProof = paymentMethod === "bank_transfer" || paymentMethod === "qris";
 
   useEffect(() => {
-    if (user?.name) setBillingName((prev) => prev || user.name);
-    if (user?.email) setBillingEmail((prev) => prev || user.email);
-    if (business?.name) setCompany((prev) => prev || business.name);
+    deferEffectRun(() => {
+      if (user?.name) setBillingName((prev) => prev || user.name);
+      if (user?.email) setBillingEmail((prev) => prev || user.email);
+      if (business?.name) setCompany((prev) => prev || business.name);
+    });
   }, [user?.name, user?.email, business?.name]);
 
   useEffect(() => {

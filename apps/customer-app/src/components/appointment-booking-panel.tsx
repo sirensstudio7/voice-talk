@@ -13,6 +13,7 @@ import { slideOverBackdropClass, slideOverPanelClass, useSlideOver } from "@/com
 import { useBusinessSlug } from "@/context/business-context";
 import { bookAppointment, fetchAvailability } from "@/lib/appointment-api";
 import { resolveMediaUrl } from "@/lib/menu-api";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useSessionStore } from "@/store/session-store";
 
 function formatSlotLabel(iso: string) {
@@ -73,13 +74,15 @@ function AppointmentBookingPanel({ visible, onClose }: { visible: boolean; onClo
   useEffect(() => {
     if (!visible || !selectedTreatment) return;
     if (staffOptions.length > 0 && !selectedStaffId) {
-      setSlots([]);
+      deferEffectRun(() => setSlots([]));
       return;
     }
 
-    setLoadingSlots(true);
-    setError(null);
-    setSelectedSlot(null);
+    deferEffectRun(() => {
+      setLoadingSlots(true);
+      setError(null);
+      setSelectedSlot(null);
+    });
     void fetchAvailability(
       businessSlug,
       selectedTreatment.productId,
@@ -96,12 +99,14 @@ function AppointmentBookingPanel({ visible, onClose }: { visible: boolean; onClo
 
   useEffect(() => {
     if (!visible) {
-      setSuccess(false);
-      setError(null);
-      setSelectedSlot(null);
-      setCustomerName("");
-      setCustomerPhone("");
-      setSelectedStaffId("");
+      deferEffectRun(() => {
+        setSuccess(false);
+        setError(null);
+        setSelectedSlot(null);
+        setCustomerName("");
+        setCustomerPhone("");
+        setSelectedStaffId("");
+      });
     }
   }, [visible]);
 

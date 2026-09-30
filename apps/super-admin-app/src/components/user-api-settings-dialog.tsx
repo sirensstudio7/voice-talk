@@ -57,9 +57,9 @@ export function UserApiSettingsDialog({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     void (async () => {
+      setLoading(true);
+      setError(null);
       try {
         const result = await api.getUserApiKeys(token, userId);
         if (cancelled) return;

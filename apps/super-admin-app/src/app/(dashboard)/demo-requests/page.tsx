@@ -23,6 +23,7 @@ import {
 import { api, type DemoRequestItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const STATUS_OPTIONS = [
   { value: "new", label: "New" },
@@ -112,7 +113,7 @@ export default function DemoRequestsPage() {
   }, [token, page, search, status]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   async function updateStatus(id: string, nextStatus: string) {

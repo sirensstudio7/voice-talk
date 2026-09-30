@@ -57,6 +57,7 @@ import {
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 type IconComponent = ComponentType<{ className?: string }>;
 
@@ -296,9 +297,11 @@ export function Shell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!authReady) return;
-    void loadPendingUsers();
-    void loadNewDemoRequests();
-    void loadPendingSubRequests();
+    deferEffectRun(() => {
+      void loadPendingUsers();
+      void loadNewDemoRequests();
+      void loadPendingSubRequests();
+    });
   }, [authReady, loadPendingUsers, loadNewDemoRequests, loadPendingSubRequests, pathname, statusFilter]);
 
   useEffect(() => {

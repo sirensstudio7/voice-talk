@@ -22,6 +22,7 @@ import {
 import type { VisionPreviewSource } from "@/components/vision-preview-types";
 import { api, type VisionWorkspaceItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const VisionPreviewPanel = dynamic(
   () =>
@@ -113,7 +114,7 @@ export default function VisionPage() {
   }, [token, page, search, visionSource]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));

@@ -44,6 +44,7 @@ import { api, type KnowledgeEntry } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 import {
   filterKnowledgeImportFiles,
@@ -251,7 +252,7 @@ export function KnowledgePageClient() {
   }, [token, business]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   const onImportFiles = useCallback(

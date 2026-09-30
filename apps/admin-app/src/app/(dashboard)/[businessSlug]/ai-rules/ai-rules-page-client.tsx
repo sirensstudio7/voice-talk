@@ -41,6 +41,7 @@ import { useAssistantTemplate } from "@/lib/assistant-template-context";
 import { templateToAiRules } from "@/lib/assistant-templates";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useAddonStatus } from "@/lib/use-addon-status";
 import {
   playVoicePresetPreview,
@@ -642,8 +643,10 @@ function VoicePresetSelector({
   }, []);
 
   useEffect(() => {
-    stopVoicePresetPreview();
-    setPreviewing(null);
+    deferEffectRun(() => {
+      stopVoicePresetPreview();
+      setPreviewing(null);
+    });
   }, [language, gender]);
 
   const handlePreview = async (preset: VoicePreset, event: ReactMouseEvent) => {
@@ -1039,7 +1042,7 @@ export function AiRulesPageClient() {
   }, [token, business]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   const isDirty = useMemo(

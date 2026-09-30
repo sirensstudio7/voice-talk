@@ -29,6 +29,7 @@ import {
 } from "@/lib/audience-speech";
 import { useAuth } from "@/lib/auth";
 import { DEFAULT_TEMPLATE_ID, getAssistantTemplate } from "@/lib/assistant-templates";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { PresenterPcmPlayer, buildPresenterWsUrl } from "@/lib/presenter-pcm";
 
 const PptxDeckViewer = dynamic(
@@ -334,8 +335,10 @@ export function LiveSessionClient({
     talkGestureKeyRef.current = "";
     minProgressRef.current = 0;
     clearPoseTimer();
-    setAvatarMode("idle");
-    setMouthOpen(0);
+    deferEffectRun(() => {
+      setAvatarMode("idle");
+      setMouthOpen(0);
+    });
   }, [sessionId, clearPoseTimer]);
 
   const load = useCallback(async (opts?: { force?: boolean }) => {
@@ -497,7 +500,7 @@ export function LiveSessionClient({
   }, [finishStage]);
 
   useEffect(() => {
-    if (isQnaStage) setAskOpen(true);
+    if (isQnaStage) deferEffectRun(() => setAskOpen(true));
   }, [isQnaStage]);
 
   useEffect(() => {
@@ -695,7 +698,7 @@ export function LiveSessionClient({
 
   useEffect(() => {
     if (!isQnaStage || stage === "thinking" || stage === "answering") {
-      stopListening({ skipSubmit: true });
+      deferEffectRun(() => stopListening({ skipSubmit: true }));
     }
   }, [isQnaStage, stage, stopListening]);
 

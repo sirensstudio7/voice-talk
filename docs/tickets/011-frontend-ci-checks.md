@@ -50,9 +50,9 @@ typecheck.
       blocking; all four are currently clean).
 - [x] `tsbuildinfo` files are untracked and ignored (`*.tsbuildinfo`).
 - [x] Lint runs blocking on errors with a documented decision (see workflow
-      header): all four apps have working flat configs and 0 errors; the React
-      Compiler backlog is visible as warnings (TKT-039). Was non-blocking until
-      `fix-fe-linter` cleared the error backlog.
+      header): all four apps have working flat configs, zero findings, and the
+      React Compiler rules enforced as errors (TKT-039 done on
+      `fix-fe-linter`).
 - [x] Workflow completes quickly: typecheck matrix only, bun install cache.
 
 ## Implementation notes
@@ -61,9 +61,9 @@ typecheck.
   tsc catches the type-level regressions the workflow is for. Add builds only if
   a real regression slips through.
 - Follow-up decision recorded in the workflow, now resolved on `fix-fe-linter`:
-  the two broken configs were migrated to `eslint.config.mjs` (not Biome), and
-  the React Compiler rules remain advisory warnings until TKT-039 burns them
-  down. Biome was left as an option if the compiler backlog proves too costly.
+  the two broken configs were migrated to `eslint.config.mjs` (not Biome), the
+  React Compiler backlog was burned down in TKT-039, and the compiler rules are
+  enforced again. Biome was left as an option if maintainers prefer it later.
 
 ## Out of scope
 

@@ -8,6 +8,7 @@ import {
   type DisplayOrientationSetting,
 } from "@/lib/display-orientation";
 
+import { deferEffectRun } from "@/lib/defer-effect-run";
 function initialResolvedOrientation(setting: DisplayOrientationSetting): DisplayOrientation {
   if (setting === "auto") {
     if (typeof window !== "undefined") {
@@ -27,7 +28,7 @@ export function useResolvedDisplayOrientation(
 
   useLayoutEffect(() => {
     if (setting !== "auto") {
-      setResolved(setting);
+      deferEffectRun(() => setResolved(setting));
       return;
     }
 

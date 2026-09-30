@@ -22,6 +22,7 @@ import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const AI_MODELS = [
   "gemini-3.1-flash-live-preview",
@@ -229,11 +230,13 @@ function ProviderKeyDialog({
 
   useEffect(() => {
     if (!open) return;
-    setProvider(editing?.provider || "gemini");
-    setLabel(editing?.label ?? "");
-    setKey("");
-    setVisible(false);
-    setError(null);
+    deferEffectRun(() => {
+      setProvider(editing?.provider || "gemini");
+      setLabel(editing?.label ?? "");
+      setKey("");
+      setVisible(false);
+      setError(null);
+    });
   }, [open, editing]);
 
   useEffect(() => {
@@ -394,7 +397,7 @@ export default function SettingsPage() {
   }, [token]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   const dirty = useMemo(() => {

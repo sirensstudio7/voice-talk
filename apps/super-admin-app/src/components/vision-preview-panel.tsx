@@ -23,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { VisionPreviewSource } from "@/components/vision-preview-types";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { loadHumanFromCdn, type HumanInstance } from "@/lib/load-human-cdn";
 
 export type { VisionPreviewSource };
@@ -97,22 +98,24 @@ export function VisionPreviewPanel({ source, onClose }: VisionPreviewPanelProps)
 
   useEffect(() => {
     if (open) {
-      setRendered(true);
+      deferEffectRun(() => setRendered(true));
       const frame = requestAnimationFrame(() => {
         requestAnimationFrame(() => setVisible(true));
       });
       return () => cancelAnimationFrame(frame);
     }
-    setVisible(false);
+    deferEffectRun(() => setVisible(false));
     const timer = window.setTimeout(() => setRendered(false), 300);
     return () => window.clearTimeout(timer);
   }, [open]);
 
   useEffect(() => {
     if (!open) {
-      setFullscreen(false);
-      setPaused(false);
-      setHumanMenu(null);
+      deferEffectRun(() => {
+        setFullscreen(false);
+        setPaused(false);
+        setHumanMenu(null);
+      });
     }
   }, [open]);
 
@@ -161,24 +164,26 @@ export function VisionPreviewPanel({ source, onClose }: VisionPreviewPanelProps)
 
   useEffect(() => {
     if (!source || source === "auto") {
-      stopPreview();
-      setError(null);
-      setStatus(
-        source === "auto"
-          ? "Auto uses the browser camera on the kiosk display."
-          : "Idle",
-      );
+      deferEffectRun(() => {
+        stopPreview();
+        setError(null);
+        setStatus(
+          source === "auto"
+            ? "Auto uses the browser camera on the kiosk display."
+            : "Idle",
+        );
+      });
       return;
     }
 
     cancelledRef.current = false;
-    setError(null);
-    setStatus("Starting camera…");
-    setRunning(false);
-    setHumanFps(0);
-    setResultsJson(null);
 
     const start = async () => {
+      setError(null);
+      setStatus("Starting camera…");
+      setRunning(false);
+      setHumanFps(0);
+      setResultsJson(null);
       try {
         const facingMode =
           source === "human" && !humanDisplay.facingUser ? "environment" : "user";

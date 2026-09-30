@@ -19,6 +19,7 @@ import {
   type LiveSession,
 } from "@/lib/live-api";
 import { fetchMenu, resolveMediaUrl } from "@/lib/menu-api";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import type { OrderState } from "@/types/voice";
 
 const AvatarHero = dynamic(
@@ -300,7 +301,7 @@ export function LiveWatchClient({ slug, sessionId }: { slug: string; sessionId: 
 
   useEffect(() => {
     const stored = window.localStorage.getItem(NAME_KEY)?.trim();
-    if (stored) setGuestName(stored.slice(0, 80));
+    if (stored) deferEffectRun(() => setGuestName(stored.slice(0, 80)));
   }, []);
 
   useEffect(() => {
@@ -485,7 +486,7 @@ export function LiveWatchClient({ slug, sessionId }: { slug: string; sessionId: 
 
   useEffect(() => {
     if (!isTalking) {
-      setMouthOpen(0);
+      deferEffectRun(() => setMouthOpen(0));
       return;
     }
     const id = window.setInterval(() => {

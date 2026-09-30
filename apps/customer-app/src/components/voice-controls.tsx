@@ -14,6 +14,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { BasketButton } from "@/components/basket-panel";
 import { KeyboardInputPanel } from "@/components/keyboard-input-panel";
 import { DEFAULT_ASSISTANT_AVATAR, resolveMediaUrl } from "@/lib/menu-api";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useSessionStore } from "@/store/session-store";
 import { StoreMenuButton } from "@/components/store-menu-panel";
 import { AiLanguage } from "@/types/voice";
@@ -53,7 +54,7 @@ function AnimatedStatusLabel({ label }: { label: string }) {
 
     if (!canAnimate) {
       labelRef.current = label;
-      setCurrent(label);
+      deferEffectRun(() => setCurrent(label));
       return;
     }
 

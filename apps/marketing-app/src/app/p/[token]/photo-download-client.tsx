@@ -12,13 +12,12 @@ export function PhotoDownloadClient({ token, apiUrl }: { token: string; apiUrl: 
   const [state, setState] = useState<DownloadState>({ status: "loading" });
 
   useEffect(() => {
-    if (!token) {
-      setState({ status: "error", message: "Invalid link" });
-      return;
-    }
-
     let cancelled = false;
     void (async () => {
+      if (!token) {
+        setState({ status: "error", message: "Invalid link" });
+        return;
+      }
       try {
         const res = await fetch(`${apiUrl}/public/photo/download/${encodeURIComponent(token)}`);
         if (cancelled) return;

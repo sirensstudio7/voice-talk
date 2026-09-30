@@ -4,6 +4,8 @@ import { ArrowPathIcon } from "@heroicons/react/24/outline";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
+import { useIsClient } from "@/lib/use-is-client";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const ITEM_SIZE = 168;
 const ITEM_GAP = 20;
@@ -206,7 +208,7 @@ function confettiRandom(seed: number, index: number, field: number): number {
 }
 
 function WinConfetti({ burstKey }: { burstKey: number }) {
-  const [mounted, setMounted] = useState(false);
+  const isClient = useIsClient();
   const pieces = useMemo<ConfettiPiece[]>(() => {
     return Array.from({ length: 100 }, (_, i) => ({
       id: `${burstKey}-${i}`,
@@ -221,11 +223,7 @@ function WinConfetti({ burstKey }: { burstKey: number }) {
     }));
   }, [burstKey]);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) return null;
+  if (!isClient) return null;
 
   return createPortal(
     <div

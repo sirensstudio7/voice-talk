@@ -16,6 +16,7 @@ import {
 import { api, type BusinessListItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const WORKSPACE_STATUS_OPTIONS = [
   { value: "active", label: "Active" },
@@ -103,7 +104,7 @@ export default function BusinessesPage() {
   }, [token, page, search, status]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   return (

@@ -14,6 +14,7 @@ import { PageHeader, StatCard } from "@/components/ui";
 import { api, type Appointment } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatFilterDateLabel, parseApiDate } from "@/lib/dates";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 function formatTimeRange(startsAt: string, endsAt: string) {
   const start = parseApiDate(startsAt);
@@ -154,7 +155,7 @@ export function AppointmentsPageClient() {
   }, [token, business, selectedDate]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
     const interval = window.setInterval(() => {
       if (!token || !business) return;
       void api

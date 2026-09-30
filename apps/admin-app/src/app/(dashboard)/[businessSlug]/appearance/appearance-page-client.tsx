@@ -31,6 +31,7 @@ import {
   type DisplayOrientationSetting,
 } from "@/lib/display-orientation";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const DEFAULT_GRADIENT_COLOR = "#f1f5f9";
@@ -484,7 +485,7 @@ export function AppearancePageClient() {
   }, [token, business]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   const handleUpload = async (file: File | null) => {

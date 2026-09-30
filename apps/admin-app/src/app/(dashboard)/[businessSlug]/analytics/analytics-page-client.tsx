@@ -29,14 +29,16 @@ export function AnalyticsPageClient() {
   useEffect(() => {
     if (!token || !business) return;
 
-    setLoading(true);
-    void api
-      .statsSummary(token, business.id)
-      .then((summary) => {
+    void (async () => {
+      setLoading(true);
+      try {
+        const summary = await api.statsSummary(token, business.id);
         setDaily(summary.daily);
         setTopProducts(summary.top_products);
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [token, business]);
 
   const exportData = business

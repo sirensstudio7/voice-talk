@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { deferEffectRun } from "@/lib/defer-effect-run";
+
 export type DisplayOrientation = "portrait" | "landscape";
 
 export type DisplayOrientationSetting = DisplayOrientation | "auto";
@@ -34,7 +36,7 @@ export function useResolvedDisplayOrientation(
 
   useEffect(() => {
     if (setting !== "auto") {
-      setResolved(setting);
+      deferEffectRun(() => setResolved(setting));
       return;
     }
 

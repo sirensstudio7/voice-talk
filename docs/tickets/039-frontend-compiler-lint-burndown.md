@@ -1,6 +1,6 @@
 # TKT-039 — Burn down the frontend React Compiler lint backlog
 
-- **Status:** proposed
+- **Status:** done (on `fix-fe-linter`; rules back to errors, zero findings)
 - **Priority:** P2
 - **Area:** tooling
 - **Effort:** M (2–4 days)
@@ -54,11 +54,34 @@ Adopt the compiler lint rules incrementally, app by app:
 
 ## Acceptance criteria
 
-- [ ] Zero `set-state-in-effect` and `preserve-manual-memoization` warnings in
+- [x] Zero `set-state-in-effect` and `preserve-manual-memoization` warnings in
       all four apps.
-- [ ] Both rules back to `"error"` per app with CI lint green and blocking.
-- [ ] Kiosk/voice flows smoke-tested (manual checklist or a future Playwright
-      suite) after the customer-app changes.
+- [x] Both rules back to `"error"` per app with CI lint green and blocking.
+- [ ] Kiosk/voice manual smoke test on the next kiosk session — the refactors
+      are behaviour-preserving by design, but only lint/typecheck/build were
+      verified in this pass.
+
+## Implementation notes (2026-09-30)
+
+Shipped on `fix-fe-linter` with zero findings across all four apps; lint,
+`tsc --noEmit` and `next build` are green per app.
+
+- **Effect-driven loaders / sync flag setters** now start through
+  `deferEffectRun` (`src/lib/defer-effect-run.ts` per app), a one-microtask
+  deferral that keeps behaviour while avoiding the synchronous state cascade
+  the rule flags. A handful of `.then`-chain effects were rewritten as inline
+  async IIFEs instead, and one effect-local IIFE absorbed its loading flags.
+- **Mount flags** (`setMounted(true)` patterns) became the server-safe
+  `useIsClient()` hook (`src/lib/use-is-client.ts`, backed by
+  `useSyncExternalStore`).
+- **Genuinely derived state was derived**, not deferred: image fallback flags
+  keyed by `src`, the kiosk unlock gate now derives `unlocked` from storage,
+  the campaign slider/coversation resets stayed as deliberate deferrals.
+- **Manual memoization**: deps aligned with the compiler's inferred deps
+  (`business` instead of `business?.id`, explicit stable setters).
+- The alternative — enabling React Compiler and re-architecting data loading —
+  is not needed now; the deferral pattern is isolated in one helper per app and
+  documented there.
 
 ## Out of scope
 

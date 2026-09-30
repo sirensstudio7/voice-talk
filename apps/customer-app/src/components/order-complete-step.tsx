@@ -24,7 +24,6 @@ export function OrderCompleteStep({ order, onNewOrder }: OrderCompleteStepProps)
   // Restart timer only while this screen is mounted (paused when photo closes the panel).
   useEffect(() => {
     const startedAt = Date.now();
-    setSecondsLeft(Math.ceil(AUTO_NEW_SESSION_MS / 1000));
 
     const tick = window.setInterval(() => {
       const remainingMs = AUTO_NEW_SESSION_MS - (Date.now() - startedAt);

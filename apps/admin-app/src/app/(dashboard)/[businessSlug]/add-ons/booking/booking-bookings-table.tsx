@@ -28,6 +28,7 @@ import {
   todayDateInputValue,
   yesterdayDateInputValue,
 } from "@/lib/dates";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { exportBookingsCsv, exportBookingsXls } from "@/lib/export-bookings";
 
 type StatusFilter = "all" | "scheduled" | "cancelled";
@@ -117,7 +118,7 @@ export function BookingBookingsTable({
   }, [token, businessId]);
 
   useEffect(() => {
-    void load(true);
+    deferEffectRun(() => void load(true));
     const interval = window.setInterval(() => {
       void api.listAppointments(token, businessId).then(setAppointments).catch(() => undefined);
     }, 15000);

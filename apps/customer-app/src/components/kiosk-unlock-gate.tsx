@@ -11,6 +11,8 @@ import {
   unlockKioskDisplay,
 } from "@/lib/kiosk-access";
 
+import { deferEffectRun } from "@/lib/defer-effect-run";
+import { useIsClient } from "@/lib/use-is-client";
 const PIN_LENGTH = 6;
 
 function displayLabel(slug: string) {
@@ -59,8 +61,8 @@ export function KioskUnlockGate({
 }) {
   const kioskSlug = getKioskSlugFromLocation();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [unlocked, setUnlocked] = useState(false);
-  const [ready, setReady] = useState(false);
+  const isClient = useIsClient();
+  const [unlockedBySubmit, setUnlockedBySubmit] = useState(false);
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -68,16 +70,13 @@ export function KioskUnlockGate({
 
   const displayName = displayLabel(kioskSlug);
   const businessName = businessLabel(businessSlug);
+  const unlocked =
+    unlockedBySubmit || (isClient && Boolean(getStoredKioskToken(businessSlug, kioskSlug)));
 
   useEffect(() => {
-    setUnlocked(Boolean(getStoredKioskToken(businessSlug, kioskSlug)));
-    setReady(true);
-  }, [businessSlug, kioskSlug]);
-
-  useEffect(() => {
-    if (!ready || unlocked) return;
+    if (!isClient || unlocked) return;
     inputRef.current?.focus({ preventScroll: true });
-  }, [ready, unlocked]);
+  }, [isClient, unlocked]);
 
   async function submit(nextPin = pin) {
     if (nextPin.length !== PIN_LENGTH || submitting) return;
@@ -85,7 +84,7 @@ export function KioskUnlockGate({
     setError(null);
     try {
       await unlockKioskDisplay({ businessSlug, kioskSlug, pin: nextPin });
-      setUnlocked(true);
+      setUnlockedBySubmit(true);
     } catch (err) {
       if (err instanceof KioskAccessError && err.status === 409) {
         setError(
@@ -135,13 +134,13 @@ export function KioskUnlockGate({
 
   useEffect(() => {
     if (submitting || error || pin.length !== PIN_LENGTH) return;
-    void submit(pin);
+    deferEffectRun(() => void submit(pin));
     // submit is recreated each render and reads the latest pin/business/kiosk values;
     // the guards keep this effect from re-submitting after a completed attempt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pin, submitting, error]);
 
-  if (!ready) {
+  if (!isClient) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#fafafa]">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-neutral-200 border-t-neutral-600" />

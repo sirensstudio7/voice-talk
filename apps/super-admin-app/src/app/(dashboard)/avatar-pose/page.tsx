@@ -55,6 +55,7 @@ import {
   type SavedPoseClipRecord,
 } from "@/lib/avatar-pose-clip";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const AvatarHero = dynamic(
   () => import("@voicetalk/avatar").then((mod) => ({ default: mod.AvatarHero })),
@@ -268,7 +269,7 @@ export default function AvatarPosePage() {
   const displayPose = idlePose;
 
   useEffect(() => {
-    setSavedClips(listSavedPoseClips());
+    deferEffectRun(() => setSavedClips(listSavedPoseClips()));
   }, []);
 
   useEffect(() => {
@@ -294,7 +295,7 @@ export default function AvatarPosePage() {
 
   useEffect(() => {
     if (!playing) return;
-    setSelectedKeyframeId(null);
+    deferEffectRun(() => setSelectedKeyframeId(null));
     let raf = 0;
     let last = performance.now();
     let time = loopTime;
@@ -706,16 +707,18 @@ export default function AvatarPosePage() {
 
   useEffect(() => {
     if (!editClipId) return;
-    const clip = getSavedPoseClip(editClipId);
-    if (!clip) {
-      setSaveMessage("Saved clip not found.");
-      return;
-    }
-    setEditingClipId(clip.id);
-    applyClipToEditor(clip);
-    setSaveMessage(`Editing “${clip.title}”.`);
-    window.setTimeout(() => setSaveMessage(null), 2000);
-    router.replace("/avatar-pose", { scroll: false });
+    deferEffectRun(() => {
+      const clip = getSavedPoseClip(editClipId);
+      if (!clip) {
+        setSaveMessage("Saved clip not found.");
+        return;
+      }
+      setEditingClipId(clip.id);
+      applyClipToEditor(clip);
+      setSaveMessage(`Editing “${clip.title}”.`);
+      window.setTimeout(() => setSaveMessage(null), 2000);
+      router.replace("/avatar-pose", { scroll: false });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once when edit query appears
   }, [editClipId]);
 

@@ -18,6 +18,7 @@ import {
   type RuleNodeKind,
 } from "@/components/kiosk-rule-graph";
 import { Button } from "@/components/ui/button";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import {
   clonePlaybook,
   createBlankPlaybook,
@@ -39,8 +40,10 @@ export function KioskRulesPageClient({ playbookId }: { playbookId: PlaybookId })
   const graphRef = useRef<KioskRuleGraphHandle | null>(null);
 
   useEffect(() => {
-    setPlaybook(getPlaybook(playbookId));
-    setHydrated(true);
+    deferEffectRun(() => {
+      setPlaybook(getPlaybook(playbookId));
+      setHydrated(true);
+    });
   }, [playbookId]);
 
   const selected = playbook?.nodes.find((node) => node.id === selectedId) ?? null;

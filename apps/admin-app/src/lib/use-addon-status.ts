@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { peekAddonStatus, rememberAddonStatus } from "@/lib/addon-status-cache";
 import { api, type AddonStatus } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 export function useAddonStatus(code: string) {
   const { token, business } = useAuth();
@@ -20,13 +21,15 @@ export function useAddonStatus(code: string) {
     if (!token || !business?.id) return;
 
     const cached = peekAddonStatus(business.id, code);
-    if (cached) {
-      setStatus(cached);
-      setLoading(false);
-    } else {
-      setStatus(null);
-      setLoading(true);
-    }
+    deferEffectRun(() => {
+      if (cached) {
+        setStatus(cached);
+        setLoading(false);
+      } else {
+        setStatus(null);
+        setLoading(true);
+      }
+    });
 
     let cancelled = false;
     void (async () => {

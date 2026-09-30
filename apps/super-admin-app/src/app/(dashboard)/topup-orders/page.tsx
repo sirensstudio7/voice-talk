@@ -14,6 +14,7 @@ import {
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const STATUS_FILTERS = [
   { value: "pending", label: "Pending" },
@@ -51,7 +52,7 @@ export default function TopupOrdersPage() {
   }, [token, status, search]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   async function approve(id: string) {

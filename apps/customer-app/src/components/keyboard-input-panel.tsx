@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 
 import { useSlideOver } from "@/components/slide-over";
 
+import { deferEffectRun } from "@/lib/defer-effect-run";
 type KeyboardInputPanelProps = {
   open: boolean;
   onClose: () => void;
@@ -87,10 +88,12 @@ export function KeyboardInputPanel({
 
   useEffect(() => {
     if (!open) {
-      setValue("");
-      setSending(false);
-      setShifted(true);
-      setMode("letters");
+      deferEffectRun(() => {
+        setValue("");
+        setSending(false);
+        setShifted(true);
+        setMode("letters");
+      });
     }
   }, [open]);
 

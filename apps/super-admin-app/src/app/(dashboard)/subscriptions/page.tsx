@@ -16,6 +16,7 @@ import {
 import { api, type SubscriptionItem, type SubscriptionsResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 type DisplayCurrency = "IDR" | "USD";
 
@@ -311,7 +312,7 @@ export default function SubscriptionsPage() {
   }, [token, page, search, status]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   async function save() {

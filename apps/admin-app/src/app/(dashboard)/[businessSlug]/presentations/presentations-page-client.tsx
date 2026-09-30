@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { api, ApiRequestError, type AiLanguage, type Presentation } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useAddonStatus } from "@/lib/use-addon-status";
 import { cn } from "@/lib/cn";
 import { availableLanguageOptions } from "@voicetalk/shared";
@@ -126,7 +127,7 @@ export function PresentationsPageClient() {
 
   useEffect(() => {
     thumbRefreshScheduled.current = false;
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   // Backfill renders thumbnails async on the server; refresh once so cards update.

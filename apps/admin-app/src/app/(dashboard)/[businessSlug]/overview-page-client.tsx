@@ -28,6 +28,7 @@ import {
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 import { customerAppUrl } from "@/lib/customer-app";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { formatCurrency } from "@/lib/currency";
 
 function formatDuration(seconds: number | null | undefined) {
@@ -59,16 +60,18 @@ export function OverviewPageClient() {
 
   useEffect(() => {
     if (!token || !business) {
-      setStatsLoading(false);
+      deferEffectRun(() => setStatsLoading(false));
       return;
     }
 
     let cancelled = false;
-    setStatsLoading(true);
-    setStats(null);
-    setDaily([]);
-    setTopProducts([]);
-    setAiRules(null);
+    deferEffectRun(() => {
+      setStatsLoading(true);
+      setStats(null);
+      setDaily([]);
+      setTopProducts([]);
+      setAiRules(null);
+    });
 
     void api
       .statsSummary(token, business.id)
