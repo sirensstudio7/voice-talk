@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpTrayIcon,
   CakeIcon,
@@ -661,7 +661,7 @@ export function MenuPageClient() {
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token || !business) return;
     setLoading(true);
     try {
@@ -669,11 +669,11 @@ export function MenuPageClient() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, business]);
 
   useEffect(() => {
     void load();
-  }, [token, business]);
+  }, [load]);
 
   const categories = useMemo(
     () => [...new Set(products.map((product) => product.category))].sort(),

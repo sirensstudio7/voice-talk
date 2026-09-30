@@ -389,7 +389,7 @@ export function LiveWatchClient({ slug, sessionId }: { slug: string; sessionId: 
   }
 
   useEffect(() => {
-    if (!guestName || !session) return;
+    if (!guestName || !session?.id) return;
     const ws = new WebSocket(buildLiveViewerWsUrl(sessionId, guestName));
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;

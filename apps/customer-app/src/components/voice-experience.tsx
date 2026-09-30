@@ -38,11 +38,7 @@ import {
   resolveHeroEmbedFrameOrientation,
   type DisplayOrientationSetting,
 } from "@/lib/display-orientation";
-import {
-  getKioskSlugFromLocation,
-  getStoredKioskToken,
-  lockKioskAndReturnToPin,
-} from "@/lib/kiosk-access";
+import { lockKioskAndReturnToPin } from "@/lib/kiosk-access";
 import {
   DEFAULT_KIOSK_UI_MODE,
   normalizeKioskUiMode,
@@ -471,7 +467,9 @@ export function VoiceExperience() {
   };
 
   const startConversationRef = useRef(handleStartConversation);
-  startConversationRef.current = handleStartConversation;
+  useEffect(() => {
+    startConversationRef.current = handleStartConversation;
+  });
 
   useEffect(() => {
     if (!showStartButton) return;

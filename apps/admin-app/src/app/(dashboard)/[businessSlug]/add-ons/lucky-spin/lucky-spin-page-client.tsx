@@ -186,7 +186,7 @@ export function LuckySpinPageClient() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load prizes");
     }
-  }, [token, business?.id, selectedCampaignId, isActive]);
+  }, [token, business?.id, selectedCampaignId, isActive, setError]);
 
   useEffect(() => {
     if (isActive && (manageTab === "prizes" || manageTab === "campaigns")) {
@@ -203,7 +203,7 @@ export function LuckySpinPageClient() {
         setWinnersTotal(res.total);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load winners"));
-  }, [token, business?.id, isActive, manageTab, voucherSearch]);
+  }, [token, business?.id, isActive, manageTab, voucherSearch, setError]);
 
   async function toggleEnabled(next: boolean) {
     if (!token || !business?.id) return;

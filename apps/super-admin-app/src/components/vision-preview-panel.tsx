@@ -84,11 +84,14 @@ export function VisionPreviewPanel({ source, onClose }: VisionPreviewPanelProps)
   const humanProcessRef = useRef(humanProcess);
   const humanModelsRef = useRef(humanModels);
   const pausedRef = useRef(paused);
-  humanDisplayRef.current = humanDisplay;
-  humanInputRef.current = humanInput;
-  humanProcessRef.current = humanProcess;
-  humanModelsRef.current = humanModels;
-  pausedRef.current = paused;
+
+  useEffect(() => {
+    humanDisplayRef.current = humanDisplay;
+    humanInputRef.current = humanInput;
+    humanProcessRef.current = humanProcess;
+    humanModelsRef.current = humanModels;
+    pausedRef.current = paused;
+  }, [humanDisplay, humanInput, humanProcess, humanModels, paused]);
 
   const humanModelsKey = JSON.stringify(humanModels);
 
@@ -510,7 +513,6 @@ export function VisionPreviewPanel({ source, onClose }: VisionPreviewPanelProps)
       stopPreview();
     };
     // Restart on model / backend / camera facing / crop; filters & draw options apply live.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     source,
     humanModelsKey,

@@ -134,7 +134,9 @@ export function PptxDeckViewer({
   const [ready, setReady] = useState(false);
   const lastSynced = useRef<number | null>(null);
   const onSlideChangeRef = useRef(onSlideChange);
-  onSlideChangeRef.current = onSlideChange;
+  useEffect(() => {
+    onSlideChangeRef.current = onSlideChange;
+  }, [onSlideChange]);
   const shellBg = background === "black" ? "bg-zinc-950" : "bg-background";
   const mutedFg = background === "black" ? "text-zinc-400" : "text-muted-foreground";
   const errorFg = background === "black" ? "text-zinc-300" : "text-muted-foreground";

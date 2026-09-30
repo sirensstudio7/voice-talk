@@ -131,6 +131,8 @@ function cloneTracks(tracks: PoseTimelineTrack[]): PoseTimelineTrack[] {
   }));
 }
 
+const EMPTY_KEYFRAMES: PoseKeyframe[] = [];
+
 export default function AvatarPosePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -149,10 +151,8 @@ export default function AvatarPosePage() {
   const [duration, setDuration] = useState(4);
   const [loopTime, setLoopTime] = useState(0);
   const [jitter, setJitter] = useState(0);
-  const initialTrackRef = useRef<PoseTimelineTrack | null>(null);
-  if (!initialTrackRef.current) initialTrackRef.current = createPoseTrack("Pose");
-  const [tracks, setTracks] = useState<PoseTimelineTrack[]>([initialTrackRef.current]);
-  const [activeTrackId, setActiveTrackId] = useState(initialTrackRef.current.id);
+  const [tracks, setTracks] = useState<PoseTimelineTrack[]>(() => [createPoseTrack("Pose")]);
+  const [activeTrackId, setActiveTrackId] = useState(() => tracks[0]?.id ?? "");
   const [selectedKeyframeId, setSelectedKeyframeId] = useState<string | null>(null);
   const [clipCopied, setClipCopied] = useState(false);
   const [keyframeCopied, setKeyframeCopied] = useState(false);
@@ -169,28 +169,31 @@ export default function AvatarPosePage() {
   const jsonTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const activeTrack = tracks.find((track) => track.id === activeTrackId) ?? tracks[0];
-  const keyframes = activeTrack?.keyframes ?? [];
+  const keyframes = activeTrack?.keyframes ?? EMPTY_KEYFRAMES;
   const sortedKeyframes = useMemo(() => sortKeyframes(keyframes), [keyframes]);
   const tracksRef = useRef(tracks);
-  tracksRef.current = tracks;
   const durationRef = useRef(duration);
-  durationRef.current = duration;
   const idlePoseRef = useRef(idlePose);
-  idlePoseRef.current = idlePose;
   const expressionRef = useRef(expression);
-  expressionRef.current = expression;
   const loopTimeRef = useRef(loopTime);
-  loopTimeRef.current = loopTime;
   const activeTrackIdRef = useRef(activeTrackId);
-  activeTrackIdRef.current = activeTrackId;
   const selectedKeyframeIdRef = useRef<string | null>(null);
-  selectedKeyframeIdRef.current = selectedKeyframeId;
+
+  useEffect(() => {
+    tracksRef.current = tracks;
+    durationRef.current = duration;
+    idlePoseRef.current = idlePose;
+    expressionRef.current = expression;
+    loopTimeRef.current = loopTime;
+    activeTrackIdRef.current = activeTrackId;
+    selectedKeyframeIdRef.current = selectedKeyframeId;
+  });
   const pastRef = useRef<PoseHistorySnapshot[]>([]);
   const futureRef = useRef<PoseHistorySnapshot[]>([]);
   const skipHistoryRef = useRef(false);
   const poseGestureArmedRef = useRef(true);
   const moveGestureArmedRef = useRef(true);
-  const [historyTick, setHistoryTick] = useState(0);
+  const [historyCounts, setHistoryCounts] = useState({ past: 0, future: 0 });
 
   const captureSnapshot = (): PoseHistorySnapshot => ({
     tracks: cloneTracks(tracksRef.current),
@@ -206,7 +209,7 @@ export default function AvatarPosePage() {
     if (skipHistoryRef.current) return;
     pastRef.current = [...pastRef.current, captureSnapshot()].slice(-HISTORY_LIMIT);
     futureRef.current = [];
-    setHistoryTick((value) => value + 1);
+    setHistoryCounts({ past: pastRef.current.length, future: 0 });
   };
 
   const applySnapshot = (snapshot: PoseHistorySnapshot) => {
@@ -222,7 +225,6 @@ export default function AvatarPosePage() {
     queueMicrotask(() => {
       skipHistoryRef.current = false;
     });
-    setHistoryTick((value) => value + 1);
   };
 
   const undo = () => {
@@ -231,6 +233,7 @@ export default function AvatarPosePage() {
     const previous = past[past.length - 1];
     pastRef.current = past.slice(0, -1);
     futureRef.current = [...futureRef.current, captureSnapshot()].slice(-HISTORY_LIMIT);
+    setHistoryCounts({ past: pastRef.current.length, future: futureRef.current.length });
     applySnapshot(previous);
   };
 
@@ -240,11 +243,12 @@ export default function AvatarPosePage() {
     const next = future[future.length - 1];
     futureRef.current = future.slice(0, -1);
     pastRef.current = [...pastRef.current, captureSnapshot()].slice(-HISTORY_LIMIT);
+    setHistoryCounts({ past: pastRef.current.length, future: futureRef.current.length });
     applySnapshot(next);
   };
 
-  const canUndo = historyTick >= 0 && pastRef.current.length > 0;
-  const canRedo = historyTick >= 0 && futureRef.current.length > 0;
+  const canUndo = historyCounts.past > 0;
+  const canRedo = historyCounts.future > 0;
 
   const setKeyframes = (
     update: PoseKeyframe[] | ((list: PoseKeyframe[]) => PoseKeyframe[]),

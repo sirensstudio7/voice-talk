@@ -136,6 +136,9 @@ export function KioskUnlockGate({
   useEffect(() => {
     if (submitting || error || pin.length !== PIN_LENGTH) return;
     void submit(pin);
+    // submit is recreated each render and reads the latest pin/business/kiosk values;
+    // the guards keep this effect from re-submitting after a completed attempt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pin, submitting, error]);
 
   if (!ready) {

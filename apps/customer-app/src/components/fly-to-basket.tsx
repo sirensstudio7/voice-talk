@@ -159,7 +159,9 @@ interface FlyingProductProps {
 
 function FlyingProduct({ request, onComplete }: FlyingProductProps) {
   const requestRef = useRef(request);
-  requestRef.current = request;
+  useEffect(() => {
+    requestRef.current = request;
+  }, [request]);
 
   useEffect(() => {
     let cancelled = false;

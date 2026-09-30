@@ -1,10 +1,9 @@
 name: Frontend
 
-# TKT-011. Typecheck is blocking on every frontend app. Lint is intentionally
-# non-blocking for now: admin-app and super-admin-app still need the ESLint 9
-# flat-config migration and the other apps carry a pre-existing error backlog.
-# Flip the lint job to blocking once that backlog is cleared or the apps move
-# to Biome.
+# TKT-011. Typecheck and lint run for all four frontend apps. Lint is blocking
+# on errors; warnings are reported but do not fail the job. The remaining
+# warnings are the React Compiler rules (set-state-in-effect,
+# preserve-manual-memoization) kept advisory until TKT-039 is done.
 
 on:
   push:
@@ -59,9 +58,8 @@ jobs:
         run: bunx tsc --noEmit
 
   lint:
-    name: Lint (${{ matrix.app }}) — non-blocking
+    name: Lint (${{ matrix.app }})
     runs-on: ubuntu-latest
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:

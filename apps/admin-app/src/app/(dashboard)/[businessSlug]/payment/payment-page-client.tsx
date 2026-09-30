@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useId, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type DragEvent } from "react";
 
 import { PageHeader } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -43,7 +43,7 @@ export function PaymentPageClient() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token || !business) return;
     setLoading(true);
     setError(null);
@@ -55,11 +55,11 @@ export function PaymentPageClient() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, business]);
 
   useEffect(() => {
     void load();
-  }, [token, business]);
+  }, [load]);
 
   const handleUpload = async (file: File | null) => {
     if (!file) return;

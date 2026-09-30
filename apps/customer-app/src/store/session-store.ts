@@ -201,17 +201,6 @@ function applyCustomerNamePaymentReveal(state: {
   };
 }
 
-function paymentRevealPatch(state: {
-  order: OrderState;
-  checkoutPhase: CheckoutPhase;
-  checkoutOpenRequest: number;
-  checkoutPanelOpen: boolean;
-  flyAnimations: FlyAnimationRequest[];
-  pendingCheckoutReveal: boolean;
-}) {
-  return tryRevealPaymentModal(state);
-}
-
 function shouldRevealPaymentAfterAnimations(state: {
   order: OrderState;
   pendingCheckoutReveal: boolean;
@@ -671,8 +660,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
   enqueueFlyAnimation: (payload) =>
     set((state) => {
-      const count = payload.count ?? 1;
-      const { count: _count, ...rest } = payload;
+      const { count = 1, ...rest } = payload;
 
       return {
         flyAnimations: [

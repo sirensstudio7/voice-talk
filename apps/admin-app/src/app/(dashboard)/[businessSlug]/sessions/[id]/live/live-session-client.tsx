@@ -266,9 +266,11 @@ export function LiveSessionClient({
   const finishingMicRef = useRef(false);
   const [transcribing, setTranscribing] = useState(false);
 
-  if (!playerRef.current) {
-    playerRef.current = new PresenterPcmPlayer();
-  }
+  useEffect(() => {
+    if (!playerRef.current) {
+      playerRef.current = new PresenterPcmPlayer();
+    }
+  }, []);
 
   const clearPoseTimer = useCallback(() => {
     if (poseTimerRef.current) {
@@ -370,7 +372,8 @@ export function LiveSessionClient({
   }, [load]);
 
   useEffect(() => {
-    if (!detail || detail.session.status === "completed") return;
+    const sessionStatus = detail?.session.status;
+    if (!sessionStatus || sessionStatus === "completed") return;
     const id = window.setInterval(() => void load(), 4000);
     return () => window.clearInterval(id);
   }, [detail?.session.status, load]);
@@ -489,7 +492,9 @@ export function LiveSessionClient({
     });
   }, [business, isShare, sessionId, shareToken, token]);
 
-  finishStageRef.current = finishStage;
+  useEffect(() => {
+    finishStageRef.current = finishStage;
+  }, [finishStage]);
 
   useEffect(() => {
     if (isQnaStage) setAskOpen(true);

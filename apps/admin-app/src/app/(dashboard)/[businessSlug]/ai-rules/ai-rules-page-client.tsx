@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ArrowUpTrayIcon,
   CameraIcon,
@@ -1005,7 +1005,7 @@ export function AiRulesPageClient() {
   } | null>(null);
   const [savingHotkey, setSavingHotkey] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token || !business) return;
     setLoading(true);
     setError(null);
@@ -1036,11 +1036,11 @@ export function AiRulesPageClient() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, business]);
 
   useEffect(() => {
     void load();
-  }, [token, business]);
+  }, [load]);
 
   const isDirty = useMemo(
     () => rules !== null && savedRules !== null && !rulesEqual(rules, savedRules),

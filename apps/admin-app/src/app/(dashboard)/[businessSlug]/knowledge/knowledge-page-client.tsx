@@ -240,7 +240,7 @@ export function KnowledgePageClient() {
   const emailMatches =
     confirmEmail.trim().toLowerCase() === confirmEmailPhrase;
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token || !business) return;
     setLoading(true);
     try {
@@ -248,11 +248,11 @@ export function KnowledgePageClient() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, business]);
 
   useEffect(() => {
     void load();
-  }, [token, business]);
+  }, [load]);
 
   const onImportFiles = useCallback(
     async (rawFiles: FileList | File[] | null) => {

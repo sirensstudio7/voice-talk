@@ -102,7 +102,9 @@ export function SmartPhotoMomentOverlay({
     setPhase("camera");
   }, [closeCheckoutPanel, disconnectVoice]);
 
-  openCameraRef.current = openCamera;
+  useEffect(() => {
+    openCameraRef.current = openCamera;
+  }, [openCamera]);
 
   // After "I've paid": dismiss order-complete shortly, then open portrait camera
   // (unless the customer explicitly said no earlier).

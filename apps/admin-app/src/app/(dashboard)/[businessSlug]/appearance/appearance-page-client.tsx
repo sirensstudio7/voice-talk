@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDownOnSquareIcon,
   ArrowPathIcon,
@@ -463,7 +463,7 @@ export function AppearancePageClient() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token || !business) return;
     setLoading(true);
     setError(null);
@@ -481,11 +481,11 @@ export function AppearancePageClient() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, business]);
 
   useEffect(() => {
     void load();
-  }, [token, business]);
+  }, [load]);
 
   const handleUpload = async (file: File | null) => {
     if (!file || !token || !business) return;

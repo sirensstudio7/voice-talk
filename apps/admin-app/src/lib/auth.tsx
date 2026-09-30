@@ -91,6 +91,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setHydrated(true);
   }, []);
 
+  const logout = () => {
+    setToken(null);
+    setUser(null);
+    setBusinesses([]);
+    setBusinessIdState(null);
+    setBusinessesError(null);
+    setBusinessesLoading(false);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(BUSINESS_KEY);
+  };
+
   const refreshBusinesses = async (opts?: { silent?: boolean }) => {
     if (!token) {
       setBusinesses([]);
@@ -157,6 +169,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token) {
       void refreshBusinesses();
     }
+    // refreshBusinesses is recreated every render and reads the latest token;
+    // this effect intentionally runs only when the session hydrates or the token changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, hydrated]);
 
   const persistSession = (accessToken: string, nextUser: AuthUser) => {
@@ -202,18 +217,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setBusinessesError(null);
     setBusinessesLoading(false);
     return "active";
-  };
-
-  const logout = () => {
-    setToken(null);
-    setUser(null);
-    setBusinesses([]);
-    setBusinessIdState(null);
-    setBusinessesError(null);
-    setBusinessesLoading(false);
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    localStorage.removeItem(BUSINESS_KEY);
   };
 
   const setBusinessId = (id: string) => {

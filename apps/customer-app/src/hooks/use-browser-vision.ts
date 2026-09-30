@@ -91,18 +91,21 @@ export function useBrowserVision({
   const gestureRef = useRef<BrowserGestureDetector | null>(null);
   const stateMachineRef = useRef<PresenceStateMachine | null>(null);
   const sessionActiveRef = useRef(sessionActive);
-  sessionActiveRef.current = sessionActive;
   const releaseCameraRef = useRef<() => void>(() => {});
   const onCameraReadyRef = useRef(onCameraReady);
-  onCameraReadyRef.current = onCameraReady;
   const onErrorRef = useRef(onError);
-  onErrorRef.current = onError;
   const setBrowserVisionReady = useKioskStore((s) => s.setBrowserVisionReady);
 
   const visionConfigRef = useRef(visionConfig);
-  visionConfigRef.current = visionConfig;
   const sendVisionEventRef = useRef(sendVisionEvent);
-  sendVisionEventRef.current = sendVisionEvent;
+
+  useEffect(() => {
+    sessionActiveRef.current = sessionActive;
+    onCameraReadyRef.current = onCameraReady;
+    onErrorRef.current = onError;
+    visionConfigRef.current = visionConfig;
+    sendVisionEventRef.current = sendVisionEvent;
+  }, [sessionActive, onCameraReady, onError, visionConfig, sendVisionEvent]);
 
   useEffect(() => {
     if (graceTimerRef.current) {
