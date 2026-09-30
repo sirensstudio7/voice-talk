@@ -25,6 +25,8 @@
     "check:deploy": "bash scripts/check-deploy-env.sh",
     "lint:api": "bun run --filter server lint",
     "test:api": "bun run --filter server test",
+    "cost:model": "node scripts/cost-model.mjs",
+    "cost:compare": "node scripts/cost-compare.mjs",
     "demo:cloudflare": "bash scripts/demo-cloudflare.sh",
     "vision:dev": "cd services/vision && python main.py --business ${BUSINESS_SLUG:-demo} --ws-url ws://localhost:8000/ws/vision --debug"
   },
