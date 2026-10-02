@@ -32,6 +32,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { parseApiDate, todayDateInputValue } from "@/lib/dates";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { formatCurrency } from "@/lib/currency";
 import {
   exportConversationsCsv,
@@ -453,7 +454,7 @@ export function ConversationsPageClient() {
   useEffect(() => {
     if (kioskFilter === "all") return;
     if (!kioskDisplays.some((display) => display.id === kioskFilter)) {
-      setKioskFilter("all");
+      deferEffectRun(() => setKioskFilter("all"));
     }
   }, [kioskDisplays, kioskFilter]);
 
@@ -504,11 +505,11 @@ export function ConversationsPageClient() {
 
   useEffect(() => {
     if (!token || !business || !expandedId) {
-      setDetail(null);
+      deferEffectRun(() => setDetail(null));
       return;
     }
 
-    setLoadingDetail(true);
+    deferEffectRun(() => setLoadingDetail(true));
     void api
       .getConversation(token, business.id, expandedId)
       .then(setDetail)
@@ -526,7 +527,7 @@ export function ConversationsPageClient() {
 
   useEffect(() => {
     if (expandedId && !filteredSessions.some((session) => session.id === expandedId)) {
-      setExpandedId(null);
+      deferEffectRun(() => setExpandedId(null));
     }
   }, [expandedId, filteredSessions]);
 

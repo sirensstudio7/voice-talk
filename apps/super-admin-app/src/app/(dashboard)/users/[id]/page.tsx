@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { UserApiSettingsDialog } from "@/components/user-api-settings-dialog";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 export default function UserDetailPage({
   params,
@@ -33,7 +34,7 @@ export default function UserDetailPage({
   }, [token, id]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   async function setStatus(status: "active" | "suspended", action: "approve" | "reject" | "suspend" | "reactivate") {
@@ -218,7 +219,7 @@ function UserVoiceMinutes({ userId }: { userId: string }) {
   }, [token, userId]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   async function adjust(delta: number) {

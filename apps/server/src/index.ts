@@ -3,14 +3,31 @@ import { closeDb, startDbPoolWatchdog } from "./db/client.js";
 import { warmDbConnection } from "./db/health.js";
 import { env, getProductionDomains, hasObjectStorage } from "./env.js";
 import { logger } from "./http/logger.js";
+import { inc } from "./http/metrics.js";
+import { activeWebSocketCount, drainWebSockets } from "./http/websocket.js";
 import { closeRedis } from "./redis.js";
+import { applyRemoteKioskPayload } from "./services/vision-orchestrator.js";
+import { startKioskBus, stopKioskBus } from "./services/kiosk-bus.js";
 import { startPhotoMomentJobs } from "./services/photo-jobs.js";
+import { startAnalyticsRetentionJobs } from "./services/analytics-jobs.js";
+import { startInstanceHeartbeat } from "./services/instance-registry.js";
+import { startPresentationJobs } from "./services/presentation-jobs.js";
 import { registerVoiceMinuteJobs } from "./services/voice-minute-jobs.js";
+
+/** Grace period for clients to reconnect elsewhere before the server stops. */
+const SHUTDOWN_DRAIN_MS = 3_000;
 
 const app = await buildApp();
 
+// Cross-instance fanout for kiosk config pushes (settings changes, banners).
+// Realtime vision events stay on the socket that owns the camera, by design.
+startKioskBus((businessSlug, payload) => applyRemoteKioskPayload(businessSlug, payload));
+
 startPhotoMomentJobs(logger.child({ component: "jobs" }));
 registerVoiceMinuteJobs(logger.child({ component: "jobs" }));
+startAnalyticsRetentionJobs();
+startPresentationJobs();
+startInstanceHeartbeat();
 
 const start = async () => {
   const allowedOrigins = env.ALLOWED_ORIGINS?.trim();
@@ -46,7 +63,19 @@ let shuttingDown = false;
 const shutdown = async (signal: string) => {
   if (shuttingDown) return;
   shuttingDown = true;
-  logger.info({ signal }, "server.shutdown");
+  const sockets = activeWebSocketCount();
+  logger.info({ signal, activeWebSockets: sockets }, "server.shutdown");
+  inc("server.shutdowns_total");
+
+  // Ask clients to reconnect elsewhere (close 1012) and give them a moment on
+  // the new instance before this one stops answering.
+  const drained = drainWebSockets();
+  if (drained > 0) {
+    logger.info({ drained }, "server.draining_websockets");
+    await new Promise((resolve) => setTimeout(resolve, SHUTDOWN_DRAIN_MS));
+  }
+
+  stopKioskBus();
   await app.stop();
   closeRedis();
   await closeDb();

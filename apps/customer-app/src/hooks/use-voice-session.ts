@@ -88,46 +88,6 @@ function waitForSocketOpen(ws: WebSocket, timeoutMs = 10000): Promise<void> {
   });
 }
 
-function isSessionReadyForGreeting(): boolean {
-  const status = useSessionStore.getState().status;
-  return status === "connected" || status === "idle" || status === "connecting";
-}
-
-function waitForSessionReady(
-  isCurrent: () => boolean,
-  timeoutMs = 15000,
-): Promise<boolean> {
-  if (isSessionReadyForGreeting()) {
-    return Promise.resolve(true);
-  }
-
-  return new Promise((resolve) => {
-    const started = Date.now();
-    const timer = window.setInterval(() => {
-      if (!isCurrent()) {
-        window.clearInterval(timer);
-        resolve(false);
-        return;
-      }
-
-      if (isSessionReadyForGreeting()) {
-        window.clearInterval(timer);
-        resolve(true);
-        return;
-      }
-      if (useSessionStore.getState().status === "error") {
-        window.clearInterval(timer);
-        resolve(false);
-        return;
-      }
-      if (Date.now() - started >= timeoutMs) {
-        window.clearInterval(timer);
-        resolve(false);
-      }
-    }, 40);
-  });
-}
-
 function isEmbeddedPreviewBrowser(): boolean {
   const ua = navigator.userAgent;
   return ua.includes("Electron") || ua.includes("Cursor");
@@ -201,6 +161,10 @@ export function useVoiceSession() {
   const conversationCompletedRef = useRef(false);
   const preserveSessionRef = useRef(false);
   const preserveTranscriptRef = useRef(false);
+  const serverDrainingRef = useRef(false);
+  const drainReconnectAttemptsRef = useRef(0);
+  /** Set after `connect` is defined so onclose can reconnect without a TDZ. */
+  const connectRef = useRef<((options?: ConnectOptions) => Promise<void>) | null>(null);
   const pendingGreetingRef = useRef(false);
   const pendingGreetingSourceRef = useRef<"vision" | "manual">("manual");
   const continuousListenRef = useRef(false);
@@ -408,7 +372,7 @@ export function useVoiceSession() {
     }
   }, [clearTurnCompleteTimer]);
 
-  const runRevealTick = useCallback(() => {
+  const runRevealTick = useCallback(function tick() {
     const fullText = assistantFullTextRef.current;
     if (!fullText) {
       revealLoopRef.current = null;
@@ -431,7 +395,7 @@ export function useVoiceSession() {
     setAssistantDisplayText(visibleText);
 
     if (visibleText.length < fullText.length && hasAudio && progress < 1) {
-      revealLoopRef.current = requestAnimationFrame(runRevealTick);
+      revealLoopRef.current = requestAnimationFrame(tick);
     } else {
       if (visibleText.length < fullText.length) {
         setAssistantDisplayText(fullText);
@@ -672,7 +636,9 @@ export function useVoiceSession() {
     }, 150);
   }, [clearContinuousSilenceTimer, setConversationPhase, setTalking, signalUtteranceEnd]);
 
-  signalUtteranceStartRef.current = signalUtteranceStart;
+  useEffect(() => {
+    signalUtteranceStartRef.current = signalUtteranceStart;
+  }, [signalUtteranceStart]);
 
   const processContinuousChunk = useCallback(
     (chunk: ArrayBuffer) => {
@@ -1161,8 +1127,15 @@ export function useVoiceSession() {
         };
 
         switch (payload.type) {
+          case "server.draining":
+            // SIGTERM on the instance hosting this session; the close frame
+            // carries 1012, but remember it in case a proxy rewrites the code.
+            serverDrainingRef.current = true;
+            break;
           case "session.status":
             if (payload.status === "connected" || payload.status === "reconnecting") {
+              drainReconnectAttemptsRef.current = 0;
+              serverDrainingRef.current = false;
               markServerSessionReady();
               if (prefetchModeRef.current && !pendingGreetingRef.current) {
                 setStatus("idle");
@@ -1317,10 +1290,26 @@ export function useVoiceSession() {
         setStatus("error");
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (generation !== connectGenerationRef.current || wsRef.current !== ws) {
           return;
         }
+        const drained = event.code === 1012 || serverDrainingRef.current;
+        const { status: liveStatus, faqMode, orderingEnabled, bookingEnabled } =
+          useSessionStore.getState();
+        const wasLive = liveStatus === "connected" || liveStatus === "connecting";
+        const wasContinuous =
+          continuousCaptureRunningRef.current || continuousListenRef.current;
+        const greetingWasPending =
+          greetingDispatchedRef.current && !assistantAudioStartedRef.current;
+        const reconnectSource = pendingGreetingSourceRef.current;
+
+        // A deploy is draining this instance: keep transcript/order so the
+        // reconnect can restore them, and skip the "session ended" banner.
+        if (drained) {
+          preserveTranscriptRef.current = true;
+        }
+
         preserveSessionRef.current = false;
         setTalking(false);
         if (continuousCaptureRunningRef.current) {
@@ -1337,15 +1326,58 @@ export function useVoiceSession() {
         setThumbsUpPoseActiveBoth(false);
         setTalkingHandPoseActiveBoth(false);
         prefetchModeRef.current = false;
-        const { status: currentStatus, faqMode, orderingEnabled, bookingEnabled } =
-          useSessionStore.getState();
         if (!preserveTranscriptRef.current && !chatResetPendingRef.current) {
           startNewConversation();
         }
+
+        if (
+          drained &&
+          wasLive &&
+          !intentionalDisconnectRef.current &&
+          !conversationCompletedRef.current
+        ) {
+          // Reconnect on a surviving instance instead of asking the customer
+          // to tap again — kiosks are unattended and deploys are routine.
+          serverDrainingRef.current = false;
+          drainReconnectAttemptsRef.current += 1;
+          const attempt = drainReconnectAttemptsRef.current;
+          if (attempt <= 3) {
+            setStatus("connecting");
+            setError(null);
+            window.setTimeout(() => {
+              if (generation !== connectGenerationRef.current) return;
+              void connectRef.current?.({
+                preserveSession: true,
+                requestGreeting: greetingWasPending,
+                source: reconnectSource === "vision" ? "vision" : undefined,
+                continuousListen: wasContinuous,
+              }).catch(() => {
+                setStatus("error");
+                setError("Voice session ended. Tap Start conversation to begin again.");
+              });
+              if (!greetingWasPending && wasContinuous) {
+                // Mid-conversation kiosk session: resume listening.
+                void beginVisionListening().catch(() => undefined);
+              }
+            }, 400 * attempt);
+          } else {
+            setError(
+              orderingEnabled
+                ? "Voice session ended. Tap Order Now to reconnect."
+                : bookingEnabled
+                  ? "Voice session ended. Tap Book appointment to reconnect."
+                  : "Voice session ended. Tap Start conversation to begin again.",
+            );
+          }
+          intentionalDisconnectRef.current = false;
+          conversationCompletedRef.current = false;
+          return;
+        }
+
         if (
           !intentionalDisconnectRef.current &&
           !conversationCompletedRef.current &&
-          (currentStatus === "connected" || currentStatus === "connecting")
+          (liveStatus === "connected" || liveStatus === "connecting")
         ) {
           if (faqMode) {
             setError("Voice session ended. Tap Start conversation to begin again.");
@@ -1409,7 +1441,12 @@ export function useVoiceSession() {
     } finally {
       connectPromiseRef.current = null;
     }
-  }, [addTranscript, activateMicAfterVisionGreeting, bufferAssistantTranscript, businessSlug, clearContinuousSilenceTimer, clearTranscript, deferChatReset, dispatchGreeting, ensureAudioEngine, ensureContinuousCapture, faqMode, finalizeAssistantTurn, finishVisionGreeting, flushPendingGreeting, markAssistantTurnBoundary, markServerSessionReady, reset, resetAssistantSync, resetServerSessionReady, revealPaymentAfterNamePrompt, scheduleFinalizeAssistantTurn, setAssistantDisplayText, setConversationPhase, setError, setGreetingPoseActiveBoth, setOrder, setPhotoSouvenirConsent, setStatus, setTalking, setTalkingHandPoseActiveBoth, setThumbsUpPoseActiveBoth, setVisionGreetingPendingBoth, signalReadyForUserTurn, startNewConversation, startRevealLoop, teardownContinuousCapture, teardownSocket, triggerGreetingWave]);
+  }, [addTranscript, activateMicAfterVisionGreeting, beginVisionListening, bufferAssistantTranscript, businessSlug, clearContinuousSilenceTimer, clearTranscript, deferChatReset, ensureAudioEngine, faqMode, finalizeAssistantTurn, finishVisionGreeting, flushPendingGreeting, markServerSessionReady, reset, resetAssistantSync, resetServerSessionReady, revealPaymentAfterNamePrompt, scheduleFinalizeAssistantTurn, setAssistantDisplayText, setConversationPhase, setError, setGreetingPoseActiveBoth, setOrder, setPhotoSouvenirConsent, setStatus, setTalking, setTalkingHandPoseActiveBoth, setThumbsUpPoseActiveBoth, setVisionGreetingPendingBoth, signalReadyForUserTurn, startNewConversation, startRevealLoop, teardownContinuousCapture, teardownSocket, triggerGreetingWave]);
+
+  // onclose needs the latest connect without depending on declaration order.
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const reconnectForLanguageChange = useCallback(async () => {
     intentionalDisconnectRef.current = true;

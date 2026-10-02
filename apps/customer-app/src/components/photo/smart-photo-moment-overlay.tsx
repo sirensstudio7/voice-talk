@@ -12,6 +12,7 @@ import {
 } from "@/lib/photo-api";
 import { useSessionStore } from "@/store/session-store";
 
+import { deferEffectRun } from "@/lib/defer-effect-run";
 const WASM_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm";
 const FACE_MODEL_PATH = "/models/blaze_face_short_range.tflite";
 const FACE_STABLE_MS = 800;
@@ -102,7 +103,9 @@ export function SmartPhotoMomentOverlay({
     setPhase("camera");
   }, [closeCheckoutPanel, disconnectVoice]);
 
-  openCameraRef.current = openCamera;
+  useEffect(() => {
+    openCameraRef.current = openCamera;
+  }, [openCamera]);
 
   // After "I've paid": dismiss order-complete shortly, then open portrait camera
   // (unless the customer explicitly said no earlier).
@@ -112,14 +115,16 @@ export function SmartPhotoMomentOverlay({
     if (!config.active || !config.enabled) return;
     lastHandledPaymentReq.current = paymentCompleteRequest;
     heardReadySpeechRef.current = false;
-    setLinkCopied(false);
-    setDownloadUrl(null);
-    setPreviewUrl(null);
-    setError(null);
+    deferEffectRun(() => {
+      setLinkCopied(false);
+      setDownloadUrl(null);
+      setPreviewUrl(null);
+      setError(null);
+    });
 
     if (photoSouvenirConsent === "no") {
       disconnectVoice();
-      finishToOrderComplete();
+      deferEffectRun(() => finishToOrderComplete());
       return;
     }
 
@@ -372,7 +377,7 @@ export function SmartPhotoMomentOverlay({
   useEffect(() => {
     if (phase !== "countdown") return;
     const seconds = Math.max(1, config.countdown_seconds || 3);
-    setCountdown(seconds);
+    deferEffectRun(() => setCountdown(seconds));
     let current = seconds;
     const interval = window.setInterval(() => {
       current -= 1;

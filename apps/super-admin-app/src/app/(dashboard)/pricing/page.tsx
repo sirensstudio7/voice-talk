@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 function formatIdr(amount: number) {
   return `Rp${Number.isFinite(amount) ? amount.toLocaleString("id-ID") : "0"}`;
@@ -129,7 +130,7 @@ export default function PricingPage() {
   }, [token]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   async function savePlan(code: string) {

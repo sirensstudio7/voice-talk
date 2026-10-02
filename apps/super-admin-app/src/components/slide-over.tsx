@@ -5,6 +5,7 @@ import { XMarkIcon } from "@heroicons/react/24/outline";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const DURATION_MS = 300;
 
@@ -28,13 +29,13 @@ export function SlideOver({
 
   useEffect(() => {
     if (open) {
-      setRendered(true);
+      deferEffectRun(() => setRendered(true));
       const frame = requestAnimationFrame(() => {
         requestAnimationFrame(() => setVisible(true));
       });
       return () => cancelAnimationFrame(frame);
     }
-    setVisible(false);
+    deferEffectRun(() => setVisible(false));
     const timer = window.setTimeout(() => setRendered(false), DURATION_MS);
     return () => window.clearTimeout(timer);
   }, [open]);

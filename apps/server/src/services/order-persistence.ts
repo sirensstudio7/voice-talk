@@ -1,6 +1,7 @@
 import { mergeTranscriptChunk } from "@voicetalk/shared";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
+import { postgresErrorCode } from "../db/errors.js";
 import {
   orderItems,
   orders,
@@ -9,6 +10,14 @@ import {
   type Product,
 } from "../db/schema.js";
 import { effectivePrice } from "./pricing.js";
+
+/** Client idempotency key shape accepted for order confirmation (TKT-018). */
+const CLIENT_REQUEST_ID_RE = /^[A-Za-z0-9._:-]{8,64}$/;
+
+export function normalizeClientRequestId(value: unknown): string | null {
+  const raw = typeof value === "string" ? value.trim() : "";
+  return CLIENT_REQUEST_ID_RE.test(raw) ? raw : null;
+}
 
 export class OrderValidationError extends Error {
   constructor(public detail: string) {
@@ -113,46 +122,82 @@ export async function persistConfirmedOrder(
   businessId: string,
   voiceSessionId: string | null,
   orderSnapshot: Record<string, unknown>,
-  extras?: { liveSessionId?: string | null },
+  extras?: { liveSessionId?: string | null; clientRequestId?: string | null },
 ) {
+  const clientRequestId = normalizeClientRequestId(extras?.clientRequestId);
+
+  // Replay of an already-confirmed request returns the original order.
+  if (clientRequestId) {
+    const existing = await findOrderByClientRequest(businessId, clientRequestId);
+    if (existing) {
+      return { ...existing, items: await listOrderItems(existing.id), replayed: true };
+    }
+  }
+
   const customerName = orderSnapshot.customer_name;
   const customerPhone = String(orderSnapshot.customer_phone ?? "").trim().slice(0, 50);
   const customerAddress = String(orderSnapshot.customer_address ?? "").trim().slice(0, 500);
   const customerNotes = String(orderSnapshot.customer_notes ?? "").trim().slice(0, 500);
-  const [order] = await db
-    .insert(orders)
-    .values({
-      businessId,
-      voiceSessionId: voiceSessionId ?? undefined,
-      liveSessionId: extras?.liveSessionId ?? undefined,
-      status: "confirmed",
-      total: Number(orderSnapshot.total ?? 0),
-      customerName:
-        customerName != null && String(customerName).trim()
-          ? String(customerName).trim()
-          : undefined,
-      customerPhone,
-      customerAddress,
-      customerNotes,
-      confirmedAt: new Date(),
-    })
-    .returning();
 
-  for (const item of (orderSnapshot.items as Array<Record<string, unknown>>) ?? []) {
-    await db.insert(orderItems).values({
-      orderId: order!.id,
-      productId: String(item.product_id),
-      name: String(item.name),
-      price: Number(item.price),
-      quantity: Number(item.quantity),
+  try {
+    // Order + items commit together so a retry never sees a half-written order.
+    return await db.transaction(async (tx) => {
+      const [order] = await tx
+        .insert(orders)
+        .values({
+          businessId,
+          voiceSessionId: voiceSessionId ?? undefined,
+          liveSessionId: extras?.liveSessionId ?? undefined,
+          clientRequestId: clientRequestId ?? undefined,
+          status: "confirmed",
+          total: Number(orderSnapshot.total ?? 0),
+          customerName:
+            customerName != null && String(customerName).trim()
+              ? String(customerName).trim()
+              : undefined,
+          customerPhone,
+          customerAddress,
+          customerNotes,
+          confirmedAt: new Date(),
+        })
+        .returning();
+
+      for (const item of (orderSnapshot.items as Array<Record<string, unknown>>) ?? []) {
+        await tx.insert(orderItems).values({
+          orderId: order!.id,
+          productId: String(item.product_id),
+          name: String(item.name),
+          price: Number(item.price),
+          quantity: Number(item.quantity),
+        });
+      }
+
+      const items = await tx
+        .select()
+        .from(orderItems)
+        .where(eq(orderItems.orderId, order!.id));
+      return { ...order!, items, replayed: false };
     });
+  } catch (error) {
+    // Concurrent confirm with the same key: the loser reads the winner's order.
+    if (clientRequestId && postgresErrorCode(error) === "23505") {
+      const existing = await findOrderByClientRequest(businessId, clientRequestId);
+      if (existing) {
+        return { ...existing, items: await listOrderItems(existing.id), replayed: true };
+      }
+    }
+    throw error;
   }
+}
 
-  const items = await db
-    .select()
-    .from(orderItems)
-    .where(eq(orderItems.orderId, order!.id));
-  return { ...order!, items };
+async function findOrderByClientRequest(businessId: string, clientRequestId: string) {
+  return db.query.orders.findFirst({
+    where: and(eq(orders.businessId, businessId), eq(orders.clientRequestId, clientRequestId)),
+  });
+}
+
+async function listOrderItems(orderId: string) {
+  return db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
 }
 
 export async function updateOrderCustomerName(

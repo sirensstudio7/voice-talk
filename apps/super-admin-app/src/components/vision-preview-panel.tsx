@@ -23,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { VisionPreviewSource } from "@/components/vision-preview-types";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { loadHumanFromCdn, type HumanInstance } from "@/lib/load-human-cdn";
 
 export type { VisionPreviewSource };
@@ -84,32 +85,37 @@ export function VisionPreviewPanel({ source, onClose }: VisionPreviewPanelProps)
   const humanProcessRef = useRef(humanProcess);
   const humanModelsRef = useRef(humanModels);
   const pausedRef = useRef(paused);
-  humanDisplayRef.current = humanDisplay;
-  humanInputRef.current = humanInput;
-  humanProcessRef.current = humanProcess;
-  humanModelsRef.current = humanModels;
-  pausedRef.current = paused;
+
+  useEffect(() => {
+    humanDisplayRef.current = humanDisplay;
+    humanInputRef.current = humanInput;
+    humanProcessRef.current = humanProcess;
+    humanModelsRef.current = humanModels;
+    pausedRef.current = paused;
+  }, [humanDisplay, humanInput, humanProcess, humanModels, paused]);
 
   const humanModelsKey = JSON.stringify(humanModels);
 
   useEffect(() => {
     if (open) {
-      setRendered(true);
+      deferEffectRun(() => setRendered(true));
       const frame = requestAnimationFrame(() => {
         requestAnimationFrame(() => setVisible(true));
       });
       return () => cancelAnimationFrame(frame);
     }
-    setVisible(false);
+    deferEffectRun(() => setVisible(false));
     const timer = window.setTimeout(() => setRendered(false), 300);
     return () => window.clearTimeout(timer);
   }, [open]);
 
   useEffect(() => {
     if (!open) {
-      setFullscreen(false);
-      setPaused(false);
-      setHumanMenu(null);
+      deferEffectRun(() => {
+        setFullscreen(false);
+        setPaused(false);
+        setHumanMenu(null);
+      });
     }
   }, [open]);
 
@@ -157,27 +163,27 @@ export function VisionPreviewPanel({ source, onClose }: VisionPreviewPanelProps)
   };
 
   useEffect(() => {
-    if (!source || source === "auto" || source === "python") {
-      stopPreview();
-      setError(null);
-      setStatus(
-        source === "python"
-          ? "Python sidecar runs on the kiosk machine — not previewable here."
-          : source === "auto"
-            ? "Auto picks Python when connected, otherwise browser camera."
+    if (!source || source === "auto") {
+      deferEffectRun(() => {
+        stopPreview();
+        setError(null);
+        setStatus(
+          source === "auto"
+            ? "Auto uses the browser camera on the kiosk display."
             : "Idle",
-      );
+        );
+      });
       return;
     }
 
     cancelledRef.current = false;
-    setError(null);
-    setStatus("Starting camera…");
-    setRunning(false);
-    setHumanFps(0);
-    setResultsJson(null);
 
     const start = async () => {
+      setError(null);
+      setStatus("Starting camera…");
+      setRunning(false);
+      setHumanFps(0);
+      setResultsJson(null);
       try {
         const facingMode =
           source === "human" && !humanDisplay.facingUser ? "environment" : "user";
@@ -512,7 +518,6 @@ export function VisionPreviewPanel({ source, onClose }: VisionPreviewPanelProps)
       stopPreview();
     };
     // Restart on model / backend / camera facing / crop; filters & draw options apply live.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     source,
     humanModelsKey,
@@ -528,18 +533,14 @@ export function VisionPreviewPanel({ source, onClose }: VisionPreviewPanelProps)
       ? "Browser camera preview"
       : source === "human"
         ? "Human preview"
-        : source === "python"
-          ? "Python sidecar"
-          : "Auto";
+        : "Auto";
 
   const description =
     source === "browser"
       ? "MediaPipe face detection on this machine’s webcam (same class as merchant Browser source)."
       : source === "human"
         ? "Live Human.js face & hand overlay — like the public Human demo, on your webcam."
-        : source === "python"
-          ? "Requires a local vision process on the kiosk."
-          : "Strategy selector, not a single detector.";
+        : "Strategy selector, not a single detector.";
 
   const isLive = source === "browser" || source === "human";
 
@@ -679,19 +680,11 @@ export function VisionPreviewPanel({ source, onClose }: VisionPreviewPanelProps)
           ) : (
             <div className="space-y-4 rounded-xl border border-border bg-muted/30 p-4 text-sm">
               <p className="text-foreground">{status}</p>
-              {source === "auto" ? (
-                <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
-                  <li>When the Python sidecar is connected → use Python.</li>
-                  <li>Otherwise → fall back to browser camera (MediaPipe).</li>
-                  <li>Use the Browser or Human preview buttons to see live camera demos.</li>
-                </ul>
-              ) : (
-                <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
-                  <li>Runs as a local process on the kiosk PC (`services/vision`).</li>
-                  <li>Uses YOLO person detection (+ MediaPipe hands for wave modes).</li>
-                  <li>Cannot stream that kiosk camera into this dashboard.</li>
-                </ul>
-              )}
+              <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                <li>Detection runs in the kiosk browser tab (MediaPipe / Human).</li>
+                <li>No process to install on the kiosk machine.</li>
+                <li>Use the Browser or Human preview buttons to see live camera demos.</li>
+              </ul>
             </div>
           )}
         </div>

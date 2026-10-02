@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:with-services": "bash scripts/test-with-services.sh",
+    "verify:deploy": "bun scripts/verify-deploy.ts",
     "lint": "biome check src scripts tests",
     "lint:fix": "biome check --write src scripts tests",
     "seed": "bun scripts/seed.ts",

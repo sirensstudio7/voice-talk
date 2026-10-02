@@ -28,6 +28,7 @@ import { hasActiveAddon, LIVE_CODE } from "./addon-entitlement.js";
 import { hasServiceAccessForBusiness } from "./entitlement.js";
 import { synthesizeSpeechWav } from "./presentation-ai.js";
 import { speakWithGeminiLive, stopLiveHostVoice } from "./live-narrator.js";
+import { assertSingleInstanceForLive } from "./instance-registry.js";
 import { resolveGeminiApiKeyForBusiness } from "./user-api-keys.js";
 
 const log = logger.child({ component: "live" });
@@ -593,6 +594,7 @@ export async function startLiveSession(
   sessionId: string,
 ): Promise<LiveSessionOut> {
   await assertLiveAccess(businessId);
+  await assertSingleInstanceForLive();
   const row = await db.query.liveSessions.findFirst({
     where: and(eq(liveSessions.id, sessionId), eq(liveSessions.businessId, businessId)),
   });

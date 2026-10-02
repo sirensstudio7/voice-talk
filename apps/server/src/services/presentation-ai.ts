@@ -39,6 +39,11 @@ export function estimateScriptDurationSeconds(script: string): number {
   return estimateDurationSeconds(script);
 }
 
+/**
+ * Dormant (TKT-010): the live Gemini narrator replaced per-slide script
+ * generation. Kept for the TKT-007 decision on pre-rendered audio; delete
+ * together with the stage-audio helpers if live narration stays the design.
+ */
 export async function generateSlideScript(input: {
   language: string;
   presentationTitle: string;

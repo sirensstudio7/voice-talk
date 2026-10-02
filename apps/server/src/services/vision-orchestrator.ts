@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { SocketBridge } from "../http/websocket.js";
-import { eq } from "drizzle-orm";
+import { and, count, eq, gte } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { logger } from "../http/logger.js";
-import { redis } from "../redis.js";
+import { publishKioskPayload } from "./kiosk-bus.js";
+import { inc } from "../http/metrics.js";
+import { invalidateMenuCache } from "./menu-cache.js";
+import { handleRemoteVoiceForceEnd } from "./voice-session-runtime.js";
 import { visionEvents, visionSettings, type VisionSettings } from "../db/schema.js";
 import {
   DEFAULT_VISION_SETTINGS,
-  isBrowserClassVisionSource,
-  normalizeVisionSource,
   visionSettingsOut,
 } from "./vision-settings.js";
 
@@ -26,48 +27,10 @@ type KioskClient = {
   kioskId: string;
 };
 
-type VisionSourceClient = {
-  socket: SocketBridge;
-  kioskId: string;
-};
-
-type VisionEventSource = "python" | "browser";
-
-function shouldIgnoreVisionEvent(
-  hub: BusinessVisionHub,
-  source: VisionEventSource,
-  event: VisionEventType,
-): boolean {
-  const visionSource = normalizeVisionSource(hub.settings.visionSource);
-
-  // Browser-class only (MediaPipe browser or Human): ignore Python sidecar events.
-  if (source === "python" && isBrowserClassVisionSource(visionSource)) {
-    return true;
-  }
-
-  if (source === "browser" && visionSource === "python") {
-    return true;
-  }
-
-  if (
-    source === "browser" &&
-    visionSource === "auto" &&
-    hub.visionSources.size > 0 &&
-    (event === "PERSON_CONFIRMED" ||
-      event === "PERSON_ENTER" ||
-      event === "PERSON_EXIT")
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
 type BusinessVisionHub = {
   businessId: string;
   businessSlug: string;
   settings: VisionSettings;
-  visionSources: Map<string, VisionSourceClient>;
   kioskClients: Map<string, KioskClient>;
   sessionActive: boolean;
   sessionActiveSince: number;
@@ -160,15 +123,68 @@ export function broadcastKioskPayload(
   businessSlug: string,
   payload: Record<string, unknown>,
 ): number {
+  // Recipients on this instance first (no cross-instance latency), then fan out
+  // so instances hosting other kiosks of the same business pick it up too.
+  const delivered = broadcastKioskPayloadLocally(businessSlug, payload);
+  void publishKioskPayload(businessSlug, payload);
+  return delivered;
+}
+
+/** Local-only variant used both by the public helper and the bus subscriber. */
+export function broadcastKioskPayloadLocally(
+  businessSlug: string,
+  payload: Record<string, unknown>,
+): number {
+  // Any kiosk config push also invalidates the cached /menu payload for that
+  // business — the next kiosk fetch rebuilds it (TKT-005).
+  invalidateMenuCache(businessSlug);
   const hub = getVisionHub(businessSlug);
   if (!hub) return 0;
   return broadcastToKiosks(hub, payload);
 }
 
-function notifyVisionSources(hub: BusinessVisionHub, payload: Record<string, unknown>): void {
-  for (const source of hub.visionSources.values()) {
-    safeSend(source.socket, payload);
+/**
+ * Applies a payload published by another instance. `vision.config` is rebuilt
+ * from this instance's hub (session state is per-instance) instead of copying
+ * the sender's snapshot.
+ */
+export async function applyRemoteKioskPayload(
+  businessSlug: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  // Voice force-end must work even on instances without a vision hub: handled
+  // before the hub lookup (TKT-004).
+  if (payload.type === "voice.force_end") {
+    if (handleRemoteVoiceForceEnd(payload)) {
+      inc("voice.force_end_remote_total");
+    }
+    return;
   }
+
+  const hub = getVisionHub(businessSlug);
+  if (!hub) return;
+
+  if (payload.type === "vision.config") {
+    await refreshHubSettings(businessSlug);
+    broadcastVisionConfig(hub);
+    return;
+  }
+
+  broadcastKioskPayloadLocally(businessSlug, payload);
+}
+
+/**
+ * Announce a vision-settings change: refresh the local hub, push it to local
+ * kiosks immediately, and fan out so other instances refresh and push too.
+ */
+export async function announceVisionConfigChange(businessSlug: string): Promise<void> {
+  invalidateMenuCache(businessSlug);
+  await refreshHubSettings(businessSlug);
+  const hub = getVisionHub(businessSlug);
+  if (hub) {
+    broadcastVisionConfig(hub);
+  }
+  await publishKioskPayload(businessSlug, { type: "vision.config" });
 }
 
 export function buildVisionConfigPayload(hub: BusinessVisionHub): Record<string, unknown> {
@@ -176,14 +192,11 @@ export function buildVisionConfigPayload(hub: BusinessVisionHub): Record<string,
     type: "vision.config",
     config: visionSettingsOut(hub.settings),
     session_active: hub.sessionActive,
-    python_vision_connected: hub.visionSources.size > 0,
   };
 }
 
 export function broadcastVisionConfig(hub: BusinessVisionHub): void {
-  const payload = buildVisionConfigPayload(hub);
-  broadcastToKiosks(hub, payload);
-  notifyVisionSources(hub, payload);
+  broadcastToKiosks(hub, buildVisionConfigPayload(hub));
 }
 
 function deliverGreetingTrigger(
@@ -297,7 +310,6 @@ export async function ensureVisionHub(
       businessId,
       businessSlug,
       settings,
-      visionSources: new Map(),
       kioskClients: new Map(),
       sessionActive: false,
       sessionActiveSince: 0,
@@ -314,20 +326,6 @@ export async function ensureVisionHub(
     hub.settings = settings;
   }
   return hub;
-}
-
-export function registerVisionSource(
-  hub: BusinessVisionHub,
-  kioskId: string,
-  socket: SocketBridge,
-): void {
-  hub.visionSources.set(kioskId, { socket, kioskId });
-  broadcastVisionConfig(hub);
-}
-
-export function unregisterVisionSource(hub: BusinessVisionHub, kioskId: string): void {
-  hub.visionSources.delete(kioskId);
-  broadcastVisionConfig(hub);
 }
 
 export function registerKioskClient(
@@ -379,7 +377,6 @@ export function setKioskSessionActive(hub: BusinessVisionHub, active: boolean): 
   const payload = active
     ? { type: "vision.session.active" }
     : { type: "vision.session.ended" };
-  notifyVisionSources(hub, payload);
   broadcastToKiosks(hub, payload);
 }
 
@@ -393,7 +390,6 @@ export function startKioskCooldown(hub: BusinessVisionHub): void {
   hub.triggerPendingUntil = 0;
   hub.pendingGreetingTrigger = null;
   hub.lastConfirmedTrackId = null;
-  notifyVisionSources(hub, { type: "vision.session.ended" });
   broadcastToKiosks(hub, { type: "vision.session.ended" });
 }
 
@@ -407,7 +403,6 @@ export function releaseKioskSession(hub: BusinessVisionHub): void {
   // Clear pending triggers so an accidental PERSON_CONFIRMED cannot fire minutes later.
   hub.pendingGreetingTrigger = null;
   hub.lastConfirmedTrackId = null;
-  notifyVisionSources(hub, { type: "vision.session.released" });
   broadcastToKiosks(hub, { type: "vision.session.ended" });
   broadcastVisionConfig(hub);
 }
@@ -417,12 +412,7 @@ export async function handleVisionEvent(
   kioskId: string,
   event: VisionEventType,
   trackId?: number,
-  source: VisionEventSource = "python",
 ): Promise<void> {
-  if (shouldIgnoreVisionEvent(hub, source, event)) {
-    return;
-  }
-
   if (
     hub.triggerPendingUntil > 0 &&
     Date.now() > hub.triggerPendingUntil &&
@@ -522,14 +512,16 @@ export async function handleVisionEvent(
 
 export async function getVisionMetrics(businessId: string, days = 7) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const events = await db
-    .select()
+  // Aggregate in SQL over the window instead of loading every event (TKT-008).
+  const rows = await db
+    .select({ eventType: visionEvents.eventType, events: count() })
     .from(visionEvents)
-    .where(eq(visionEvents.businessId, businessId));
+    .where(and(eq(visionEvents.businessId, businessId), gte(visionEvents.createdAt, since)))
+    .groupBy(visionEvents.eventType);
 
-  const recent = events.filter((e) => e.createdAt >= since);
-  const confirmed = recent.filter((e) => e.eventType === "PERSON_CONFIRMED").length;
-  const enters = recent.filter((e) => e.eventType === "PERSON_ENTER").length;
+  const counts = new Map(rows.map((row) => [row.eventType, Number(row.events)]));
+  const confirmed = counts.get("PERSON_CONFIRMED") ?? 0;
+  const enters = counts.get("PERSON_ENTER") ?? 0;
   const falseRate = enters > 0 ? Math.max(0, (enters - confirmed) / enters) : 0;
 
   return {
@@ -540,19 +532,4 @@ export async function getVisionMetrics(businessId: string, days = 7) {
     false_greeting_rate: falseRate,
     conversation_start_rate: confirmed > 0 ? confirmed / enters : 0,
   };
-}
-
-/**
- * Publish vision events to every API instance, so kiosk dashboards connected
- * to another instance still see person/entry events.
- */
-export async function publishVisionEvent(
-  businessSlug: string,
-  payload: Record<string, unknown>,
-): Promise<void> {
-  try {
-    await redis.send("PUBLISH", [`vision:${businessSlug}`, JSON.stringify(payload)]);
-  } catch (err) {
-    log.error({ err, businessSlug }, "vision.publish_failed");
-  }
 }

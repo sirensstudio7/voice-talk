@@ -2,6 +2,7 @@ import { t, type Elysia } from "elysia";
 import { checkDbHealth } from "../db/health.js";
 import { env } from "../env.js";
 import { optionalString } from "../http/validation.js";
+import { metricsSnapshot } from "../http/metrics.js";
 import { checkRedisHealth } from "../redis.js";
 
 export async function registerHealthRoutes(app: Elysia): Promise<void> {
@@ -19,8 +20,10 @@ export async function registerHealthRoutes(app: Elysia): Promise<void> {
       redis_online: redis.online,
       redis_latency_ms: redis.latencyMs,
       ...(checkDb && !db.online && db.error ? { db_error: db.error } : {}),
+      // Opt-in so the public probe stays tiny: `/health?metrics=1`.
+      ...(query.metrics === "1" ? { metrics: metricsSnapshot() } : {}),
     };
   }, {
-    query: t.Object({ db: optionalString }),
+    query: t.Object({ db: optionalString, metrics: optionalString }),
   });
 }

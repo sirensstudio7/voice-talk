@@ -112,7 +112,9 @@ export async function ensureEntitlementForExistingUser(
   }
 
   const now = new Date();
-  const [created] = await db
+  // Conflict-safe (TKT-017): concurrent debits can both find no entitlement and
+  // race this insert; the unique user_id makes the loser re-read the winner.
+  const [inserted] = await db
     .insert(accountSubscriptions)
     .values({
       userId,
@@ -121,14 +123,23 @@ export async function ensureEntitlementForExistingUser(
       startsAt: now,
       workspaceLimit: starter.workspaceLimit,
     })
+    .onConflictDoNothing()
     .returning();
+  const created =
+    inserted ??
+    (await db.query.accountSubscriptions.findFirst({
+      where: eq(accountSubscriptions.userId, userId),
+    }));
+  if (!created) {
+    throw new Error("Could not create the account entitlement");
+  }
   try {
     const { ensurePeriodGrant } = await import("./voice-minutes.js");
     await ensurePeriodGrant(userId);
   } catch {
     // Minute tables may not be migrated yet.
   }
-  return created!;
+  return created;
 }
 
 /** Lazy expiry: flip trialing → expired and active → past_due when clocks pass. */

@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
-import { db } from "../db/client.js";
+import { and, asc, desc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { db, type DbClient } from "../db/client.js";
+import { postgresErrorCode } from "../db/errors.js";
 import { logger } from "../http/logger.js";
+import { inc } from "../http/metrics.js";
 import {
   businessMembers,
   minuteGrants,
@@ -123,9 +125,9 @@ async function planVoiceSeconds(planCode: string): Promise<number> {
   return Math.max(0, plan?.monthlyVoiceSeconds ?? 0);
 }
 
-async function sumRemaining(userId: string): Promise<number> {
+async function sumRemaining(userId: string, database: DbClient = db): Promise<number> {
   const now = new Date();
-  const rows = await db
+  const rows = await database
     .select({ remaining: minuteGrants.remainingSeconds })
     .from(minuteGrants)
     .where(
@@ -138,38 +140,46 @@ async function sumRemaining(userId: string): Promise<number> {
   return rows.reduce((sum, row) => sum + row.remaining, 0);
 }
 
-async function writeLedger(opts: {
-  userId: string;
-  workspaceId?: string | null;
-  voiceSessionId?: string | null;
-  grantId?: string | null;
-  type: string;
-  deltaSeconds: number;
-  idempotencyKey: string;
-  sourceRef?: string;
-}): Promise<void> {
-  const existing = await db.query.minuteLedger.findFirst({
+async function writeLedger(
+  opts: {
+    userId: string;
+    workspaceId?: string | null;
+    voiceSessionId?: string | null;
+    grantId?: string | null;
+    type: string;
+    deltaSeconds: number;
+    idempotencyKey: string;
+    sourceRef?: string;
+  },
+  database: DbClient = db,
+): Promise<void> {
+  const existing = await database.query.minuteLedger.findFirst({
     where: eq(minuteLedger.idempotencyKey, opts.idempotencyKey),
   });
   if (existing) return;
 
-  const balanceAfter = await sumRemaining(opts.userId);
-  await db.insert(minuteLedger).values({
-    userId: opts.userId,
-    workspaceId: opts.workspaceId ?? null,
-    voiceSessionId: opts.voiceSessionId ?? null,
-    grantId: opts.grantId ?? null,
-    type: opts.type,
-    deltaSeconds: opts.deltaSeconds,
-    balanceAfterSeconds: balanceAfter,
-    idempotencyKey: opts.idempotencyKey,
-    sourceRef: opts.sourceRef ?? "",
-  });
+  const balanceAfter = await sumRemaining(opts.userId, database);
+  // Conflict-safe: two instances can both pass the check above before either
+  // inserts; the idempotency key makes the loser a no-op (TKT-017).
+  await database
+    .insert(minuteLedger)
+    .values({
+      userId: opts.userId,
+      workspaceId: opts.workspaceId ?? null,
+      voiceSessionId: opts.voiceSessionId ?? null,
+      grantId: opts.grantId ?? null,
+      type: opts.type,
+      deltaSeconds: opts.deltaSeconds,
+      balanceAfterSeconds: balanceAfter,
+      idempotencyKey: opts.idempotencyKey,
+      sourceRef: opts.sourceRef ?? "",
+    })
+    .onConflictDoNothing();
 }
 
-async function expireStaleLots(userId: string): Promise<void> {
+async function expireStaleLots(userId: string, database: DbClient = db): Promise<void> {
   const now = new Date();
-  const expired = await db
+  const expired = await database
     .select()
     .from(minuteGrants)
     .where(
@@ -178,24 +188,29 @@ async function expireStaleLots(userId: string): Promise<void> {
         gt(minuteGrants.remainingSeconds, 0),
         lte(minuteGrants.expiresAt, now),
       ),
-    );
+    )
+    // Deterministic lock order keeps concurrent transactions from deadlocking.
+    .orderBy(asc(minuteGrants.id));
   for (const lot of expired) {
-    await db
+    await database
       .update(minuteGrants)
       .set({ remainingSeconds: 0 })
       .where(eq(minuteGrants.id, lot.id));
-    await writeLedger({
-      userId,
-      grantId: lot.id,
-      type: "EXPIRATION",
-      deltaSeconds: -lot.remainingSeconds,
-      idempotencyKey: `expire:${lot.id}`,
-      sourceRef: lot.sourceRef,
-    });
+    await writeLedger(
+      {
+        userId,
+        grantId: lot.id,
+        type: "EXPIRATION",
+        deltaSeconds: -lot.remainingSeconds,
+        idempotencyKey: `expire:${lot.id}`,
+        sourceRef: lot.sourceRef,
+      },
+      database,
+    );
   }
 }
 
-export async function ensurePeriodGrant(userId: string): Promise<void> {
+export async function ensurePeriodGrant(userId: string, database: DbClient = db): Promise<void> {
   const snap = await getEntitlementSnapshot(userId);
   const period = periodForEntitlement(snap);
   if (!period) return;
@@ -204,7 +219,7 @@ export async function ensurePeriodGrant(userId: string): Promise<void> {
   if (seconds <= 0) return;
 
   const sourceRef = `sub:${userId}:${period.start.toISOString()}`;
-  const existing = await db.query.minuteGrants.findFirst({
+  const existing = await database.query.minuteGrants.findFirst({
     where: and(
       eq(minuteGrants.userId, userId),
       eq(minuteGrants.kind, "subscription"),
@@ -215,43 +230,55 @@ export async function ensurePeriodGrant(userId: string): Promise<void> {
   if (existing) {
     if (seconds > existing.grantedSeconds) {
       const extra = seconds - existing.grantedSeconds;
-      await db
+      await database
         .update(minuteGrants)
         .set({
           grantedSeconds: seconds,
           remainingSeconds: existing.remainingSeconds + extra,
         })
         .where(eq(minuteGrants.id, existing.id));
-      await writeLedger({
-        userId,
-        grantId: existing.id,
-        type: "SUBSCRIPTION_GRANT",
-        deltaSeconds: extra,
-        idempotencyKey: `sub-upgrade:${sourceRef}:${seconds}`,
-        sourceRef,
-      });
+      await writeLedger(
+        {
+          userId,
+          grantId: existing.id,
+          type: "SUBSCRIPTION_GRANT",
+          deltaSeconds: extra,
+          idempotencyKey: `sub-upgrade:${sourceRef}:${seconds}`,
+          sourceRef,
+        },
+        database,
+      );
     }
     return;
   }
 
-  const stale = await db
+  const stale = await database
     .select()
     .from(minuteGrants)
-    .where(and(eq(minuteGrants.userId, userId), eq(minuteGrants.kind, "subscription")));
+    .where(and(eq(minuteGrants.userId, userId), eq(minuteGrants.kind, "subscription")))
+    .orderBy(asc(minuteGrants.id));
   for (const lot of stale) {
     if (lot.remainingSeconds <= 0) continue;
-    await db.update(minuteGrants).set({ remainingSeconds: 0 }).where(eq(minuteGrants.id, lot.id));
-    await writeLedger({
-      userId,
-      grantId: lot.id,
-      type: "EXPIRATION",
-      deltaSeconds: -lot.remainingSeconds,
-      idempotencyKey: `expire-period:${lot.id}`,
-      sourceRef: lot.sourceRef,
-    });
+    await database
+      .update(minuteGrants)
+      .set({ remainingSeconds: 0 })
+      .where(eq(minuteGrants.id, lot.id));
+    await writeLedger(
+      {
+        userId,
+        grantId: lot.id,
+        type: "EXPIRATION",
+        deltaSeconds: -lot.remainingSeconds,
+        idempotencyKey: `expire-period:${lot.id}`,
+        sourceRef: lot.sourceRef,
+      },
+      database,
+    );
   }
 
-  const [created] = await db
+  // Conflict-safe: a concurrent instance may have inserted the same lot while
+  // this transaction waited on the unique index; re-read the winner.
+  const [inserted] = await database
     .insert(minuteGrants)
     .values({
       userId,
@@ -263,16 +290,30 @@ export async function ensurePeriodGrant(userId: string): Promise<void> {
       expiresAt: period.end,
       sourceRef,
     })
+    .onConflictDoNothing()
     .returning();
+  const created =
+    inserted ??
+    (await database.query.minuteGrants.findFirst({
+      where: and(
+        eq(minuteGrants.userId, userId),
+        eq(minuteGrants.kind, "subscription"),
+        eq(minuteGrants.sourceRef, sourceRef),
+      ),
+    }));
+  if (!created) return;
 
-  await writeLedger({
-    userId,
-    grantId: created!.id,
-    type: "SUBSCRIPTION_GRANT",
-    deltaSeconds: seconds,
-    idempotencyKey: `sub:${sourceRef}`,
-    sourceRef,
-  });
+  await writeLedger(
+    {
+      userId,
+      grantId: created.id,
+      type: "SUBSCRIPTION_GRANT",
+      deltaSeconds: seconds,
+      idempotencyKey: `sub:${sourceRef}`,
+      sourceRef,
+    },
+    database,
+  );
 }
 
 export async function getVoiceMinuteWallet(userId: string): Promise<VoiceMinuteWallet> {
@@ -333,9 +374,32 @@ export async function assertCanStartVoiceSession(userId: string): Promise<VoiceM
   return wallet;
 }
 
-async function consumeLots(userId: string, seconds: number): Promise<number> {
+/**
+ * Take `seconds` from the user's live lots, subscription lots first.
+ *
+ * Runs as one transaction with the lots row-locked (`FOR UPDATE`). Two
+ * concurrent debits — two API instances, or a session ending while the orphan
+ * sweep runs — serialize instead of both reading the same `remaining_seconds`,
+ * so the wallet can never be spent twice. The per-lot update is additionally
+ * conditional on the locked value, which keeps `remaining_seconds` >= 0 even if
+ * a future call path bypasses the lock.
+ *
+ * Exported for the concurrency test (TKT-001); application code charges through
+ * `debitVoiceSession`.
+ */
+export async function consumeLots(userId: string, seconds: number): Promise<number> {
+  if (seconds <= 0) return 0;
+  return db.transaction((tx) => consumeLotsIn(tx, userId, seconds));
+}
+
+/** Transaction-scoped consume, shared by `consumeLots` and `debitVoiceSession`. */
+async function consumeLotsIn(
+  database: DbClient,
+  userId: string,
+  seconds: number,
+): Promise<number> {
   const now = new Date();
-  const lots: MinuteGrant[] = await db
+  const lots: MinuteGrant[] = await database
     .select()
     .from(minuteGrants)
     .where(
@@ -349,21 +413,39 @@ async function consumeLots(userId: string, seconds: number): Promise<number> {
       sql`case when ${minuteGrants.kind} = 'subscription' then 0 else 1 end`,
       asc(minuteGrants.expiresAt),
       asc(minuteGrants.createdAt),
-    );
+      asc(minuteGrants.id),
+    )
+    .for("update");
 
   let left = seconds;
   for (const lot of lots) {
     if (left <= 0) break;
     const take = Math.min(lot.remainingSeconds, left);
-    await db
+    const [updated] = await database
       .update(minuteGrants)
-      .set({ remainingSeconds: lot.remainingSeconds - take })
-      .where(eq(minuteGrants.id, lot.id));
+      .set({ remainingSeconds: sql`${minuteGrants.remainingSeconds} - ${take}` })
+      .where(and(eq(minuteGrants.id, lot.id), gte(minuteGrants.remainingSeconds, take)))
+      .returning({ remainingSeconds: minuteGrants.remainingSeconds });
+    if (!updated) {
+      // Unreachable while the row lock holds; counted so a future regression
+      // (an update path that skips the lock) is visible instead of silent.
+      inc("minutes.debit_retry_total");
+      continue;
+    }
     left -= take;
   }
   return seconds - left;
 }
 
+/**
+ * Charge one ended session (TKT-001 + TKT-017).
+ *
+ * The whole debit — expiry, period grant, lot consumption, ledger entry — runs
+ * in one transaction so a failure cannot leave lots decremented without an
+ * audit row. Inserts are conflict-safe, and the transaction is retried on
+ * serialization/deadlock errors; the ledger idempotency key keeps it
+ * exactly-once per session.
+ */
 export async function debitVoiceSession(opts: {
   userId: string;
   businessId: string;
@@ -375,25 +457,53 @@ export async function debitVoiceSession(opts: {
   const charge = billableSeconds(duration);
   if (charge <= 0) return;
 
-  const existing = await db.query.minuteLedger.findFirst({
-    where: eq(minuteLedger.idempotencyKey, `usage:${opts.sessionId}`),
-  });
-  if (existing) return;
+  const idempotencyKey = `usage:${opts.sessionId}`;
+  const run = async () => {
+    // Materialize the lazy entitlement (and its nested period grant) before the
+    // transaction: that auto-create writes on its own connections and would
+    // otherwise nest inside our row locks on a user's first-ever debit.
+    await getEntitlementSnapshot(opts.userId);
 
-  await expireStaleLots(opts.userId);
-  await ensurePeriodGrant(opts.userId);
-  const taken = await consumeLots(opts.userId, charge);
-  if (taken <= 0) return;
+    await db.transaction(async (tx) => {
+      const existing = await tx.query.minuteLedger.findFirst({
+        where: eq(minuteLedger.idempotencyKey, idempotencyKey),
+      });
+      if (existing) return;
 
-  await writeLedger({
-    userId: opts.userId,
-    workspaceId: opts.businessId,
-    voiceSessionId: opts.sessionId,
-    type: "VOICE_USAGE",
-    deltaSeconds: -taken,
-    idempotencyKey: `usage:${opts.sessionId}`,
-    sourceRef: opts.sessionId,
-  });
+      await expireStaleLots(opts.userId, tx);
+      await ensurePeriodGrant(opts.userId, tx);
+      const taken = await consumeLotsIn(tx, opts.userId, charge);
+      if (taken <= 0) return;
+
+      await writeLedger(
+        {
+          userId: opts.userId,
+          workspaceId: opts.businessId,
+          voiceSessionId: opts.sessionId,
+          type: "VOICE_USAGE",
+          deltaSeconds: -taken,
+          idempotencyKey,
+          sourceRef: opts.sessionId,
+        },
+        tx,
+      );
+    });
+  };
+
+  // Serialization/deadlock are safe to retry: the transaction rolled back.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await run();
+      return;
+    } catch (error) {
+      const code = postgresErrorCode(error);
+      if ((code === "40001" || code === "40P01") && attempt < 2) {
+        inc("minutes.debit_retry_total");
+        continue;
+      }
+      throw error;
+    }
+  }
 }
 
 export async function debitEndedSession(sessionId: string): Promise<void> {
@@ -558,7 +668,9 @@ export async function creditTopupOrder(order: TopupOrder, adminId?: string): Pro
     ),
   });
   if (!existing) {
-    const [grant] = await db
+    // Conflict-safe: two concurrent approvals both pass the check above; the
+    // unique (user, kind, sourceRef) makes the loser a no-op (TKT-017).
+    const [inserted] = await db
       .insert(minuteGrants)
       .values({
         userId: order.userId,
@@ -568,15 +680,27 @@ export async function creditTopupOrder(order: TopupOrder, adminId?: string): Pro
         expiresAt: expires,
         sourceRef,
       })
+      .onConflictDoNothing()
       .returning();
-    await writeLedger({
-      userId: order.userId,
-      grantId: grant!.id,
-      type: "TOPUP_PURCHASE",
-      deltaSeconds: seconds,
-      idempotencyKey: sourceRef,
-      sourceRef,
-    });
+    const grant =
+      inserted ??
+      (await db.query.minuteGrants.findFirst({
+        where: and(
+          eq(minuteGrants.userId, order.userId),
+          eq(minuteGrants.kind, "topup"),
+          eq(minuteGrants.sourceRef, sourceRef),
+        ),
+      }));
+    if (grant) {
+      await writeLedger({
+        userId: order.userId,
+        grantId: grant.id,
+        type: "TOPUP_PURCHASE",
+        deltaSeconds: seconds,
+        idempotencyKey: sourceRef,
+        sourceRef,
+      });
+    }
   }
 
   const now = new Date();

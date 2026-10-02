@@ -16,6 +16,7 @@ import {
   getAssistantTemplate,
   type AssistantTemplate,
 } from "@/lib/assistant-templates";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const STORAGE_KEY = "lorescale_admin_assistant_template";
 
@@ -31,14 +32,16 @@ export function AssistantTemplateProvider({ children }: { children: ReactNode })
   const [selectedTemplateId, setSelectedTemplateIdState] = useState(DEFAULT_TEMPLATE_ID);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem(STORAGE_KEY);
-    // Drop removed templates (e.g. Lorescale) so Alex stays the default.
-    if (stored && getAssistantTemplate(stored)) {
-      setSelectedTemplateIdState(stored);
-    } else if (stored) {
-      sessionStorage.removeItem(STORAGE_KEY);
-      setSelectedTemplateIdState(DEFAULT_TEMPLATE_ID);
-    }
+    deferEffectRun(() => {
+      const stored = sessionStorage.getItem(STORAGE_KEY);
+      // Drop removed templates (e.g. Lorescale) so Alex stays the default.
+      if (stored && getAssistantTemplate(stored)) {
+        setSelectedTemplateIdState(stored);
+      } else if (stored) {
+        sessionStorage.removeItem(STORAGE_KEY);
+        setSelectedTemplateIdState(DEFAULT_TEMPLATE_ID);
+      }
+    });
   }, []);
 
   const setSelectedTemplateId = useCallback((id: string) => {

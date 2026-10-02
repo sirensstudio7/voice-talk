@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 
 import { db } from "../db/client.js";
+import { isAppointmentOverlapError } from "../db/errors.js";
 import {
   bookingServices,
   bookingSettings,
@@ -253,7 +254,19 @@ export async function updateStaff(
 export async function deleteStaff(businessId: string, staffId: string) {
   const existing = await getStaff(businessId, staffId);
   if (!existing) throw httpError("Doctor not found", 404);
-  await db.delete(bookingStaff).where(eq(bookingStaff.id, staffId));
+  try {
+    await db.delete(bookingStaff).where(eq(bookingStaff.id, staffId));
+  } catch (error) {
+    // Deleting a doctor sets their appointments' staff_id to NULL, which is
+    // re-checked against the unassigned-overlap constraint (migration 067).
+    if (isAppointmentOverlapError(error)) {
+      throw httpError(
+        "This doctor has appointments that overlap unassigned bookings. Cancel or reassign them first.",
+        409,
+      );
+    }
+    throw error;
+  }
   return { ok: true };
 }
 

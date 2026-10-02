@@ -29,6 +29,11 @@ import {
   uploadToStorage,
 } from "../storage/index.js";
 import { readUploadedFile } from "../http/multipart.js";
+import {
+  allowPublicRequest,
+  RATE_LIMITS,
+  RATE_LIMIT_DETAIL,
+} from "../http/rate-limit.js";
 import { nonEmptyString, optionalBoolean, optionalNullableString, optionalString, queryNumber } from "../http/validation.js";
 import { t, type Elysia } from "elysia";
 
@@ -414,6 +419,9 @@ export async function registerLuckySpinRoutes(app: Elysia): Promise<void> {
   app.post("/public/lucky-spin/:slug/spin", async (request) => {
     try {
       const { slug } = request.params as { slug: string };
+      if (!(await allowPublicRequest(request, RATE_LIMITS.spin, slug))) {
+        return request.status(429, { detail: RATE_LIMIT_DETAIL });
+      }
       const tenant = await getBusinessBySlug(slug);
       if (!tenant) return request.status(404, { detail: "Business not found" });
       const body: { phone?: string; name?: string } = request.body ?? {};

@@ -12,6 +12,7 @@ import {
 import { ApiRequestError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isReservedAdminSlug } from "@/lib/admin-path";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import {
   clearBusinessDraft,
   clearWorkspaceDraft,
@@ -105,28 +106,30 @@ export function WorkspaceOnboardingClient() {
         }
       }
     },
-    [token, business?.slug, isNewWorkspace],
+    [token, business, isNewWorkspace, setSlugStatus, setSlugSuggestions, setSlugError],
   );
 
   useEffect(() => {
     if (!token || !name.trim()) {
-      setSlugStatus("idle");
+      deferEffectRun(() => setSlugStatus("idle"));
       return;
     }
 
     if (!slugIsValid) {
-      setSlugStatus("invalid");
+      deferEffectRun(() => setSlugStatus("invalid"));
       return;
     }
 
     if (!isNewWorkspace && business?.slug === slug) {
-      setSlugStatus("available");
-      setSlugSuggestions([]);
-      setSlugError(null);
+      deferEffectRun(() => {
+        setSlugStatus("available");
+        setSlugSuggestions([]);
+        setSlugError(null);
+      });
       return;
     }
 
-    setSlugStatus("checking");
+    deferEffectRun(() => setSlugStatus("checking"));
 
     const timer = window.setTimeout(() => {
       void checkSlug(slug);

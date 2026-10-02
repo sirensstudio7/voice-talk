@@ -11,7 +11,7 @@ import {
 } from "@heroicons/react/24/outline";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
@@ -19,6 +19,7 @@ import { api } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const FALLBACK_MONTHLY_IDR = 199_000;
 
@@ -182,19 +183,21 @@ export function AiPresenterPaymentClient() {
   const [durationOff, setDurationOff] = useState({ 3: 0.05, 6: 0.1, 12: 0.15 });
   const [transactionCode] = useState(() => createTransactionCode());
 
-  const discountFor = (months: number) => {
+  const discountFor = useCallback((months: number) => {
     if (months === 3) return durationOff[3];
     if (months === 6) return durationOff[6];
     if (months === 12) return durationOff[12];
     return 0;
-  };
+  }, [durationOff]);
 
   const needsProof = paymentMethod === "bank_transfer" || paymentMethod === "qris";
 
   useEffect(() => {
-    if (user?.name) setBillingName((prev) => prev || user.name);
-    if (user?.email) setBillingEmail((prev) => prev || user.email);
-    if (business?.name) setCompany((prev) => prev || business.name);
+    deferEffectRun(() => {
+      if (user?.name) setBillingName((prev) => prev || user.name);
+      if (user?.email) setBillingEmail((prev) => prev || user.email);
+      if (business?.name) setCompany((prev) => prev || business.name);
+    });
   }, [user?.name, user?.email, business?.name]);
 
   useEffect(() => {
@@ -236,7 +239,7 @@ export function AiPresenterPaymentClient() {
   const selectedDuration = DURATIONS.find((d) => d.months === durationMonths) ?? DURATIONS[3];
   const total = useMemo(
     () => priceForMonths(monthlyIdr, selectedDuration.months, discountFor(selectedDuration.months)),
-    [monthlyIdr, selectedDuration, durationOff],
+    [monthlyIdr, selectedDuration, discountFor],
   );
   const monthlyEquivalent = Math.round(total / selectedDuration.months);
 

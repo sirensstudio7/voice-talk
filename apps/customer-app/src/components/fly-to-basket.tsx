@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { useSessionStore, type FlyAnimationRequest } from "@/store/session-store";
+
+import { useIsClient } from "@/lib/use-is-client";
 
 export const basketButtonRef: { current: HTMLButtonElement | null } = { current: null };
 
@@ -159,7 +161,9 @@ interface FlyingProductProps {
 
 function FlyingProduct({ request, onComplete }: FlyingProductProps) {
   const requestRef = useRef(request);
-  requestRef.current = request;
+  useEffect(() => {
+    requestRef.current = request;
+  }, [request]);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,11 +213,7 @@ export function FlyToBasketLayer() {
   const flyAnimations = useSessionStore((s) => s.flyAnimations);
   const completeFlyAnimation = useSessionStore((s) => s.completeFlyAnimation);
   const fallbackTargetRef = useRef<HTMLButtonElement>(null);
-  const [portalReady, setPortalReady] = useState(false);
-
-  useEffect(() => {
-    setPortalReady(true);
-  }, []);
+  const isClient = useIsClient();
 
   useEffect(() => {
     if (!basketButtonRef.current && fallbackTargetRef.current) {
@@ -221,7 +221,7 @@ export function FlyToBasketLayer() {
     }
   }, [flyAnimations.length]);
 
-  if (!portalReady) return null;
+  if (!isClient) return null;
 
   return createPortal(
     <>

@@ -43,10 +43,8 @@ suite("api smoke", () => {
 
   afterAll(async () => {
     await app?.stop();
-    const { closeRedis } = await import("../src/redis.js");
-    closeRedis();
-    const { closeDb } = await import("../src/db/client.js");
-    await closeDb();
+    // Shared db/Redis clients stay open: test files run in one process and may
+    // still be in flight. The runner exits the process when every file is done.
   });
 
   test("health reports db and redis online", async () => {
@@ -116,6 +114,89 @@ suite("api smoke", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { slug?: string };
     expect(body.slug).toBe("sunrise-coffee");
+  });
+
+  test("public menu keeps the kiosk contract", async () => {
+    const response = await api("/menu?business=sunrise-coffee");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+
+    for (const key of [
+      "business",
+      "slug",
+      "assistant_name",
+      "capabilities",
+      "vision",
+      "smart_photo_moment",
+      "lucky_spin",
+      "campaign_banner",
+      "languages",
+      "booking",
+      "products",
+    ]) {
+      expect(body).toHaveProperty(key);
+    }
+
+    expect(Array.isArray(body.products)).toBe(true);
+    const capabilities = body.capabilities as Record<string, unknown>;
+    expect(typeof capabilities.ordering_enabled).toBe("boolean");
+    expect(typeof capabilities.booking_enabled).toBe("boolean");
+
+    const vision = body.vision as Record<string, unknown>;
+    expect(typeof vision.greeting_trigger_mode).toBe("string");
+    expect(typeof vision.silence_timeout_seconds).toBe("number");
+
+    const smartPhoto = body.smart_photo_moment as Record<string, unknown>;
+    expect(typeof smartPhoto.active).toBe("boolean");
+
+    const luckySpin = body.lucky_spin as Record<string, unknown>;
+    expect(typeof luckySpin.active).toBe("boolean");
+    expect(typeof luckySpin.enabled).toBe("boolean");
+
+    const banner = body.campaign_banner as Record<string, unknown>;
+    expect(typeof banner.active).toBe("boolean");
+
+    const languages = body.languages as Record<string, unknown>;
+    expect(typeof languages.active).toBe("boolean");
+    expect(Array.isArray(languages.available)).toBe(true);
+
+    const booking = body.booking as Record<string, unknown>;
+    expect(typeof booking.active).toBe("boolean");
+    expect(Array.isArray(booking.staff)).toBe(true);
+    expect(Array.isArray(booking.services)).toBe(true);
+  });
+
+  test("order confirm is idempotent per Idempotency-Key", async () => {
+    const menuResponse = await api("/menu?business=sunrise-coffee");
+    const menu = (await menuResponse.json()) as { products: Array<{ id: string }> };
+    const productId = menu.products[0]?.id;
+    expect(productId).toBeTruthy();
+
+    const key = `smoke-${crypto.randomUUID()}`;
+    const body = JSON.stringify({ items: [{ product_id: productId, quantity: 1 }] });
+    const confirm = (idemKey?: string) =>
+      api("/businesses/sunrise-coffee/orders/confirm", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(idemKey ? { "idempotency-key": idemKey } : {}),
+        },
+        body,
+      });
+
+    const first = await confirm(key);
+    expect(first.status).toBe(200);
+    const firstOrder = (await first.json()) as { id: string };
+
+    // A retry with the same key returns the same order, not a duplicate.
+    const second = await confirm(key);
+    expect(second.status).toBe(200);
+    const secondOrder = (await second.json()) as { id: string };
+    expect(secondOrder.id).toBe(firstOrder.id);
+
+    // Supplied but malformed keys are rejected instead of silently ignored.
+    const bad = await confirm("short");
+    expect(bad.status).toBe(400);
   });
 
   test("platform login + read works", async () => {

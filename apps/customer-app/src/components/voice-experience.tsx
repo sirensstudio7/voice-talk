@@ -38,11 +38,7 @@ import {
   resolveHeroEmbedFrameOrientation,
   type DisplayOrientationSetting,
 } from "@/lib/display-orientation";
-import {
-  getKioskSlugFromLocation,
-  getStoredKioskToken,
-  lockKioskAndReturnToPin,
-} from "@/lib/kiosk-access";
+import { lockKioskAndReturnToPin } from "@/lib/kiosk-access";
 import {
   DEFAULT_KIOSK_UI_MODE,
   normalizeKioskUiMode,
@@ -51,6 +47,7 @@ import {
   type KioskUiMode,
 } from "@/lib/kiosk-ui-mode";
 import { buildBottomGradient } from "@/lib/gradient-style";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useVoiceSession } from "@/hooks/use-voice-session";
 import { useKioskStore } from "@/store/kiosk-store";
 import { useSessionStore } from "@/store/session-store";
@@ -201,7 +198,7 @@ export function VoiceExperience() {
   const [luckySpinWin, setLuckySpinWin] = useState<LuckySpinWinResult | null>(null);
 
   useEffect(() => {
-    if (!luckySpinVisible) setLuckySpinWin(null);
+    if (!luckySpinVisible) deferEffectRun(() => setLuckySpinWin(null));
   }, [luckySpinVisible]);
 
   const handlePhotoReady = useCallback(
@@ -251,7 +248,7 @@ export function VoiceExperience() {
 
   useEffect(() => {
     if (isLive || error) {
-      setStartingConversation(false);
+      deferEffectRun(() => setStartingConversation(false));
     }
   }, [error, isLive]);
 
@@ -264,7 +261,7 @@ export function VoiceExperience() {
       error ||
       (!isLive && !startingConversation)
     ) {
-      setAwaitingGreetingAudio(false);
+      deferEffectRun(() => setAwaitingGreetingAudio(false));
     }
   }, [
     assistantSpeaking,
@@ -471,7 +468,9 @@ export function VoiceExperience() {
   };
 
   const startConversationRef = useRef(handleStartConversation);
-  startConversationRef.current = handleStartConversation;
+  useEffect(() => {
+    startConversationRef.current = handleStartConversation;
+  });
 
   useEffect(() => {
     if (!showStartButton) return;

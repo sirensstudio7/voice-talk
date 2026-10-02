@@ -29,6 +29,7 @@ import {
   type BusinessHour,
 } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { useAddonStatus } from "@/lib/use-addon-status";
 
 import { BookingBookingsTable } from "./booking-bookings-table";
@@ -157,10 +158,8 @@ function DoctorAvatar({
   size?: "md" | "lg";
 }) {
   const src = resolveMediaUrl(photoUrl ?? "");
-  const [broken, setBroken] = useState(false);
-  useEffect(() => {
-    setBroken(false);
-  }, [src]);
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
+  const broken = brokenSrc === src;
   const dim = size === "lg" ? "size-24" : "size-[4.5rem]";
   if (src && !broken) {
     return (
@@ -169,7 +168,7 @@ function DoctorAvatar({
         src={src}
         alt=""
         className={`${dim} shrink-0 rounded-2xl object-cover ring-1 ring-black/5`}
-        onError={() => setBroken(true)}
+        onError={() => setBrokenSrc(src)}
       />
     );
   }
@@ -256,10 +255,8 @@ function DoctorStaffCard({
   onToggleActive: (active: boolean) => void;
 }) {
   const src = resolveMediaUrl(person.photo_url ?? "");
-  const [broken, setBroken] = useState(false);
-  useEffect(() => {
-    setBroken(false);
-  }, [src]);
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
+  const broken = brokenSrc === src;
   const tone = AVATAR_TONES[Math.abs(person.name.length) % AVATAR_TONES.length];
   const showPhoto = Boolean(src) && !broken;
 
@@ -282,7 +279,7 @@ function DoctorStaffCard({
             src={src}
             alt=""
             className="h-full w-full object-cover object-top transition duration-300 group-hover:scale-[1.03]"
-            onError={() => setBroken(true)}
+            onError={() => setBrokenSrc(src)}
           />
         ) : (
           <div
@@ -887,7 +884,7 @@ function ManageBooking({
   }, [token, businessId]);
 
   useEffect(() => {
-    void load(true);
+    deferEffectRun(() => void load(true));
   }, [load]);
 
   const closeDoctorModal = useCallback(() => {
@@ -1201,7 +1198,7 @@ export function BookingPageClient() {
 
   useEffect(() => {
     if (!token || !business?.id || !isActive) {
-      setSettingsReady(false);
+      deferEffectRun(() => setSettingsReady(false));
       return;
     }
     let cancelled = false;
@@ -1237,7 +1234,7 @@ export function BookingPageClient() {
         setSettingsBusy(false);
       }
     },
-    [token, business?.id],
+    [token, business],
   );
 
   const priceLabel = (status?.addon.price_display ?? "Rp199.000/month").replace(

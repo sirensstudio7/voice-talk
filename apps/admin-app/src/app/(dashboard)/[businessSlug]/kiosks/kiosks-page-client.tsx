@@ -26,6 +26,7 @@ import { api, type KioskDisplay } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { customerAppUrl } from "@/lib/customer-app";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 export function KiosksPageClient() {
   const router = useRouter();
@@ -63,7 +64,7 @@ export function KiosksPageClient() {
   }, [token, business]);
 
   useEffect(() => {
-    void load(false);
+    deferEffectRun(() => void load(false));
   }, [load]);
 
   useEffect(() => {

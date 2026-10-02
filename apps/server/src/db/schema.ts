@@ -480,6 +480,8 @@ export const orders = pgTable("orders", {
   customerPhone: varchar("customer_phone", { length: 50 }).notNull().default(""),
   customerAddress: text("customer_address").notNull().default(""),
   customerNotes: text("customer_notes").notNull().default(""),
+  /** Client idempotency key for kiosk order confirmation (TKT-018). */
+  clientRequestId: varchar("client_request_id", { length: 64 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
 });
@@ -868,6 +870,9 @@ export const presentations = pgTable("presentations", {
   closingScript: text("closing_script").notNull().default(""),
   thumbnailUrl: text("thumbnail_url").notNull().default(""),
   shareToken: varchar("share_token", { length: 64 }),
+  shareTokenCreatedAt: timestamp("share_token_created_at", { withTimezone: true }),
+  shareTokenExpiresAt: timestamp("share_token_expires_at", { withTimezone: true }),
+  shareTokenRevokedAt: timestamp("share_token_revoked_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -972,6 +977,7 @@ export const presentationEmbeddings = pgTable("presentation_embeddings", {
   sourceType: varchar("source_type", { length: 50 }).notNull(),
   sourceId: varchar("source_id", { length: 36 }),
   chunkText: text("chunk_text").notNull().default(""),
+  /** Reserved for pgvector. Q&A ranking is keyword-based today (TKT-010). */
   embeddingReference: text("embedding_reference").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -5,6 +5,7 @@ import { db } from "../../db/client.js";
 import { aiRules } from "../../db/schema.js";
 import { buildSystemInstruction, normalizeIdleTimeoutSeconds } from "../../services/config-builder.js";
 import { defaultAiRulesValues } from "../../services/onboarding.js";
+import { invalidateMenuCacheForBusiness } from "../../services/menu-cache.js";
 import { getBusinessWithRelations } from "../../services/tenant.js";
 import { ALLOWED_IMAGE_TYPES, deleteFromStorage, MAX_UPLOAD_BYTES, uploadToStorage } from "../../storage/index.js";
 import { assertLanguageAllowed } from "../../services/addon-entitlement.js";
@@ -99,6 +100,7 @@ export async function registerAdminAiRulesRoutes(app: Elysia): Promise<void> {
         .set(updates)
         .where(eq(aiRules.id, rules!.id))
         .returning();
+      invalidateMenuCacheForBusiness(businessId);
       return aiRulesOut(updated!);
     } catch (err) {
       return sendAuthError(request, err);
@@ -157,6 +159,7 @@ export async function registerAdminAiRulesRoutes(app: Elysia): Promise<void> {
         .set({ avatarUrl: url })
         .where(eq(aiRules.id, rules!.id))
         .returning();
+      invalidateMenuCacheForBusiness(businessId);
       return aiRulesOut(updated!);
     } catch (err) {
       return sendAuthError(request, err);
@@ -178,6 +181,7 @@ export async function registerAdminAiRulesRoutes(app: Elysia): Promise<void> {
         .set({ avatarUrl: "" })
         .where(eq(aiRules.id, rules.id))
         .returning();
+      invalidateMenuCacheForBusiness(businessId);
       return aiRulesOut(updated!);
     } catch (err) {
       return sendAuthError(request, err);

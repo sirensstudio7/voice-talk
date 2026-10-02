@@ -3,10 +3,10 @@ import type { VisionSettings } from "../db/schema.js";
 export const GREETING_TRIGGER_MODES = ["presence", "gesture", "raise_hand"] as const;
 export type GreetingTriggerMode = (typeof GREETING_TRIGGER_MODES)[number];
 
-export const VISION_SOURCES = ["auto", "python", "browser", "human"] as const;
+export const VISION_SOURCES = ["auto", "browser", "human"] as const;
 export type VisionSource = (typeof VISION_SOURCES)[number];
 
-/** Sources that run detection in the customer browser tab (not the Python sidecar). */
+/** Sources that run detection in the customer browser tab. */
 export function isBrowserClassVisionSource(source: VisionSource): boolean {
   return source === "browser" || source === "human";
 }
@@ -68,9 +68,9 @@ export function normalizeGreetingTriggerMode(value: unknown): GreetingTriggerMod
 
 export function normalizeVisionSource(value: unknown): VisionSource {
   const source = String(value ?? "").trim().toLowerCase();
-  if (source === "python") return "python";
   if (source === "browser") return "browser";
   if (source === "human") return "human";
+  // Retired "python" values (and anything unknown) fall back to browser-first.
   return "auto";
 }
 

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   CameraIcon,
-  ComputerDesktopIcon,
   EyeIcon,
   SparklesIcon,
 } from "@heroicons/react/24/outline";
@@ -23,6 +22,7 @@ import {
 import type { VisionPreviewSource } from "@/components/vision-preview-types";
 import { api, type VisionWorkspaceItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 const VisionPreviewPanel = dynamic(
   () =>
@@ -32,7 +32,6 @@ const VisionPreviewPanel = dynamic(
 
 const SOURCE_OPTIONS = [
   { value: "auto", label: "Auto" },
-  { value: "python", label: "Python sidecar" },
   { value: "browser", label: "Browser camera" },
   { value: "human", label: "Human (browser)" },
 ] as const;
@@ -49,13 +48,6 @@ const PREVIEW_BUTTONS: Array<{
     label: "Auto",
     hint: "How fallback works",
     icon: SparklesIcon,
-    live: false,
-  },
-  {
-    source: "python",
-    label: "Python",
-    hint: "Sidecar info",
-    icon: ComputerDesktopIcon,
     live: false,
   },
   {
@@ -122,7 +114,7 @@ export default function VisionPage() {
   }, [token, page, search, visionSource]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));

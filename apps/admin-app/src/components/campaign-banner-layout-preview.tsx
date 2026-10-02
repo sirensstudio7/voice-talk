@@ -115,7 +115,8 @@ function ScaledIframe({
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState({ scale: 0, offsetX: 0, offsetY: 0 });
-  const [loaded, setLoaded] = useState(false);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const loaded = loadedSrc === src;
   const design = DESIGN_SIZE[orientation];
 
   useEffect(() => {
@@ -138,10 +139,6 @@ function ScaledIframe({
     return () => observer.disconnect();
   }, [design.height, design.width]);
 
-  useEffect(() => {
-    setLoaded(false);
-  }, [src]);
-
   return (
     <div ref={hostRef} className="absolute inset-0 overflow-hidden">
       {!loaded || fit.scale <= 0 ? (
@@ -155,7 +152,7 @@ function ScaledIframe({
         title={`${orientation} kiosk preview`}
         loading="lazy"
         referrerPolicy="no-referrer"
-        onLoad={() => setLoaded(true)}
+        onLoad={() => setLoadedSrc(src)}
         onError={onFail}
         sandbox="allow-scripts allow-same-origin"
         className="absolute border-0"
@@ -187,11 +184,9 @@ function EmbeddedKiosk({
   modelPath: string;
   assistantName: string;
 }) {
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    setFailed(false);
-  }, [slug, orientation, revision]);
+  const [failedKey, setFailedKey] = useState<string | null>(null);
+  const failureKey = `${slug}|${orientation}|${revision}`;
+  const failed = failedKey === failureKey;
 
   if (!slug || failed) {
     return (
@@ -205,7 +200,7 @@ function EmbeddedKiosk({
 
   const src = `${customerAppUrl(slug)}?embed=hero&frame=${orientation}&cb_preview=${revision}`;
 
-  return <ScaledIframe src={src} orientation={orientation} onFail={() => setFailed(true)} />;
+  return <ScaledIframe src={src} orientation={orientation} onFail={() => setFailedKey(failureKey)} />;
 }
 
 export function CampaignBannerLayoutPreview({

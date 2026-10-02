@@ -64,10 +64,13 @@ import {
   unregisterActiveVoiceSession,
 } from "../services/voice-session-runtime.js";
 import { logger, shouldLogThrottled } from "../http/logger.js";
+import { observe } from "../http/metrics.js";
 
 const log = logger.child({ component: "ws" });
 
 const CONVERSATION_COMPLETION_GRACE_MS = 5_000;
+/** First audio after the greeting past this threshold gets a warn line. */
+const FIRST_AUDIO_SLOW_MS = 2_500;
 
 type TranscriptRole = "user" | "assistant";
 
@@ -245,6 +248,10 @@ async function handleSession(
   let visionMode = false;
   let visionSilenceStage: "none" | "follow_up" | "goodbye" = "none";
   const transcriptBuffer = createTranscriptTurnBuffer();
+  // Latency sampling (TKT-015): greeting dispatch -> first Gemini audio.
+  let greetingRequestedAt: number | null = null;
+  let firstAudioObserved = false;
+  let setupObserved = false;
 
   const maybeCompleteAfterUserTurn = (userText: string) => {
     if (!faqEnabled || completionScheduled || !lastAssistantTurn) return false;
@@ -525,6 +532,9 @@ async function handleSession(
                 orderingEnabled,
               );
           audioQueue.push(new ClientTextEvent(greetingPrompt));
+          if (greetingRequestedAt === null) {
+            greetingRequestedAt = performance.now();
+          }
           // If Gemini never emits turn_complete, still start the silence /
           // auto-goodbye clock so a raise-hand session cannot sit open forever.
           if (shouldUseVisionIdleTimeout()) {
@@ -685,6 +695,17 @@ async function handleSession(
       audioQueue.iterable,
       {
         audioOutput: async (data) => {
+          if (!firstAudioObserved && greetingRequestedAt !== null) {
+            firstAudioObserved = true;
+            const durationMs = performance.now() - greetingRequestedAt;
+            observe("ws.first_audio_ms", durationMs);
+            if (durationMs > FIRST_AUDIO_SLOW_MS) {
+              log.warn(
+                { businessSlug: slug, voiceSessionId, durationMs: Math.round(durationMs) },
+                "ws.first_audio_slow",
+              );
+            }
+          }
           if (socket.readyState === socket.OPEN) socket.send(data);
         },
         audioInterrupt: async () => {
@@ -766,6 +787,15 @@ async function handleSession(
       }
 
       const eventType = event.type as string;
+
+      if (
+        !setupObserved &&
+        eventType === "session.status" &&
+        (event as { status?: string }).status === "connected"
+      ) {
+        setupObserved = true;
+        observe("ws.session_setup_ms", performance.now() - connectedAt);
+      }
 
       if (eventType === "transcript.user" || eventType === "transcript.assistant") {
         const role: TranscriptRole =

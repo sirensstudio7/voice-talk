@@ -12,6 +12,7 @@ import {
 // Admin-app already uses Tailwind v4, which the viewer resolves against.
 
 import { loadPptxBytes } from "@/lib/pptx-content-cache";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { pptxI18n } from "@/lib/pptx-i18n";
 
 type Props = {
@@ -134,7 +135,9 @@ export function PptxDeckViewer({
   const [ready, setReady] = useState(false);
   const lastSynced = useRef<number | null>(null);
   const onSlideChangeRef = useRef(onSlideChange);
-  onSlideChangeRef.current = onSlideChange;
+  useEffect(() => {
+    onSlideChangeRef.current = onSlideChange;
+  }, [onSlideChange]);
   const shellBg = background === "black" ? "bg-zinc-950" : "bg-background";
   const mutedFg = background === "black" ? "text-zinc-400" : "text-muted-foreground";
   const errorFg = background === "black" ? "text-zinc-300" : "text-muted-foreground";
@@ -144,15 +147,19 @@ export function PptxDeckViewer({
 
   useEffect(() => {
     if (!pptxUrl) {
-      setContent(null);
-      setLoadError("No PPTX file on this presentation.");
+      deferEffectRun(() => {
+        setContent(null);
+        setLoadError("No PPTX file on this presentation.");
+      });
       return;
     }
 
     let cancelled = false;
-    setReady(false);
-    setLoadError("");
-    setContent(null);
+    deferEffectRun(() => {
+      setReady(false);
+      setLoadError("");
+      setContent(null);
+    });
     lastSynced.current = null;
 
     void (async () => {

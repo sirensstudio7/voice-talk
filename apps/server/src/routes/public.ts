@@ -1,38 +1,23 @@
 import { t, type Elysia } from "elysia";
-import { eq } from "drizzle-orm";
-import {
-  normalizeVoiceGender,
-  normalizeVoicePreset,
-} from "@voicetalk/shared";
 import { db } from "../db/client.js";
-import { demoRequests, orderItems } from "../db/schema.js";
+import { demoRequests } from "../db/schema.js";
 import { env } from "../env.js";
-import { getOrCreateVisionSettings } from "../services/vision-orchestrator.js";
-import { visionSettingsOut } from "../services/vision-settings.js";
 import {
   buildValidatedOrderSnapshot,
+  normalizeClientRequestId,
   OrderValidationError,
   persistConfirmedOrder,
 } from "../services/order-persistence.js";
-import { effectivePrice, serializeUtcDatetime } from "../services/pricing.js";
-import {
-  getActiveProducts,
-  getSellableProducts,
-  resolveAssistantName,
-} from "../services/config-builder.js";
+import { serializeUtcDatetime } from "../services/pricing.js";
+import { getSellableProducts } from "../services/config-builder.js";
 import { getBusinessBySlug, mapBusinessRow } from "../services/tenant.js";
 import {
   createAppointment,
   getAvailableSlots,
 } from "../services/appointments.js";
-import {
-  getLanguagePackPublicConfig,
-  getSmartPhotoMomentPublicConfig,
-} from "../services/addon-entitlement.js";
-import { getLuckySpinPublicConfig } from "../services/lucky-spin.js";
-import { getCampaignBannerPublicConfig } from "../services/campaign-banner.js";
+import { getMenuPayload } from "../services/menu.js";
 import { resolveCapabilities } from "../services/capabilities.js";
-import { getBookingPublicConfig } from "../services/booking.js";
+import { observe } from "../http/metrics.js";
 import {
   completePhotoSession,
   markPhotoOfferResponse,
@@ -43,6 +28,11 @@ import {
 } from "../services/photo-moment.js";
 import { MAX_PHOTO_UPLOAD_BYTES } from "../storage/index.js";
 import { readUploadedFile } from "../http/multipart.js";
+import {
+  allowPublicRequest,
+  RATE_LIMITS,
+  RATE_LIMIT_DETAIL,
+} from "../http/rate-limit.js";
 import { nonEmptyString, numberLike, optionalString } from "../http/validation.js";
 
 export const kioskUnlockBody = t.Object({
@@ -64,6 +54,8 @@ export const orderConfirmBody = t.Object({
       quantity: t.Number(),
     }),
   ),
+  /** Optional idempotency key; the `Idempotency-Key` header wins when both set. */
+  idempotency_key: optionalString,
 });
 
 export const appointmentCreateBody = t.Object({
@@ -226,6 +218,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
 
   app.post("/businesses/:slug/orders/confirm", async (request) => {
     const { slug } = request.params as { slug: string };
+    if (!(await allowPublicRequest(request, RATE_LIMITS.orderConfirm, slug))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const body = request.body;
     const business = await getBusinessBySlug(slug);
     if (!business) return request.status(404, { detail: "Business not found" });
@@ -236,13 +231,24 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
     }
 
     try {
+      const suppliedKey =
+        String(request.headers["idempotency-key"] ?? "").trim() ||
+        String(body.idempotency_key ?? "").trim();
+      const clientRequestId = suppliedKey ? normalizeClientRequestId(suppliedKey) : null;
+      if (suppliedKey && !clientRequestId) {
+        return request.status(400, {
+          detail: "Invalid Idempotency-Key. Use 8-64 characters: letters, digits, . _ : -",
+        });
+      }
+
       const snapshot = buildValidatedOrderSnapshot(
         getSellableProducts(business),
         body.items.map((i) => ({ productId: i.product_id, quantity: i.quantity })),
       );
-      const order = await persistConfirmedOrder(business.id, null, snapshot);
-      const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
-      return orderToOut({ ...order, items });
+      const order = await persistConfirmedOrder(business.id, null, snapshot, {
+        clientRequestId,
+      });
+      return orderToOut({ ...order, items: order.items });
     } catch (exc) {
       if (exc instanceof OrderValidationError) {
         return request.status(400, { detail: exc.detail });
@@ -256,50 +262,14 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   app.get("/menu", async (request) => {
     const query = request.query;
     const slug = query.business || env.DEFAULT_BUSINESS_SLUG;
-    const tenant = await getBusinessBySlug(slug);
-    if (!tenant) return request.status(404, { detail: "Business not found" });
-
-    const { capabilities } = await resolveCapabilities(tenant);
-    const productList = capabilities.menu_enabled ? getActiveProducts(tenant) : [];
-    const vision = await getOrCreateVisionSettings(tenant.id);
-    const smartPhotoMoment = await getSmartPhotoMomentPublicConfig(tenant.id);
-    const luckySpin = await getLuckySpinPublicConfig(tenant.id);
-    const campaignBanner = await getCampaignBannerPublicConfig(tenant.id);
-    const languagePack = await getLanguagePackPublicConfig(tenant.id);
-    const booking = await getBookingPublicConfig(tenant.id);
-    return {
-      business: tenant.name,
-      slug: tenant.slug,
-      tagline: tenant.tagline,
-      business_type: tenant.businessType,
-      assistant_name: resolveAssistantName(tenant.aiRules),
-      avatar_url: tenant.aiRules?.avatarUrl || "",
-      avatar_model_path: tenant.aiRules?.avatarModelPath || "",
-      background_url: tenant.backgroundUrl || "",
-      gradient_color: tenant.gradientColor || "",
-      display_orientation: tenant.displayOrientation || "landscape",
-      kiosk_ui_mode: tenant.kioskUiMode === "studio" ? "studio" : "classic",
-      voice_preset: normalizeVoicePreset(tenant.aiRules?.voicePreset),
-      voice_gender: normalizeVoiceGender(tenant.aiRules?.voiceGender),
-      capabilities,
-      vision: visionSettingsOut(vision),
-      smart_photo_moment: smartPhotoMoment,
-      lucky_spin: luckySpin,
-      campaign_banner: campaignBanner,
-      languages: languagePack,
-      booking,
-      products: productList.map((p) => ({
-        id: p.productId,
-        name: p.name,
-        price: effectivePrice(p.price, p.discountPercent),
-        original_price: p.discountPercent > 0 ? p.price : null,
-        discount_percent: p.discountPercent,
-        category: p.category,
-        description: p.description,
-        image_url: p.imageUrl,
-        duration_min: p.durationMin,
-      })),
-    };
+    const started = performance.now();
+    try {
+      const payload = await getMenuPayload(slug);
+      if (!payload) return request.status(404, { detail: "Business not found" });
+      return payload;
+    } finally {
+      observe("menu.request_ms", performance.now() - started);
+    }
   }, {
     query: t.Object({ business: optionalString }),
   });
@@ -341,6 +311,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
 
   app.post("/businesses/:slug/appointments", async (request) => {
     const { slug } = request.params as { slug: string };
+    if (!(await allowPublicRequest(request, RATE_LIMITS.appointmentCreate, slug))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const body = request.body;
     const business = await getBusinessBySlug(slug);
     if (!business) return request.status(404, { detail: "Business not found" });
@@ -361,7 +334,11 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
       });
       return request.status(201, appointment);
     } catch (error) {
-      return request.status(400, {
+      const status =
+        error && typeof error === "object" && "statusCode" in error
+          ? Number((error as { statusCode?: number }).statusCode) || 400
+          : 400;
+      return request.status(status, {
         detail: error instanceof Error ? error.message : "Could not create appointment.",
       });
     }
@@ -370,6 +347,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   });
 
   app.post("/public/demo-requests", async (request) => {
+    if (!(await allowPublicRequest(request, RATE_LIMITS.demoRequest))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const body = request.body;
 
     const email = body.email?.toLowerCase().trim() ?? "";
@@ -450,6 +430,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   });
 
   app.post("/public/photo/session/start", async (request) => {
+    if (!(await allowPublicRequest(request, RATE_LIMITS.photoStart))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const body = request.body;
 
     let businessId = body.businessId?.trim() ?? "";
@@ -499,6 +482,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   });
 
   app.post("/public/photo/session/:id/upload", async (request) => {
+    if (!(await allowPublicRequest(request, RATE_LIMITS.photoUpload))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const { id } = request.params as { id: string };
     const data = readUploadedFile(request.body);
     if (!data) return request.status(400, { detail: "No file uploaded." });
@@ -523,6 +509,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   });
 
   app.post("/public/photo/session/:id/complete", async (request) => {
+    if (!(await allowPublicRequest(request, RATE_LIMITS.photoComplete))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const { id } = request.params as { id: string };
     try {
       const result = await completePhotoSession(id);
@@ -563,6 +552,9 @@ export async function registerPublicRoutes(app: Elysia): Promise<void> {
   });
 
   app.post("/public/photo/events", async (request) => {
+    if (!(await allowPublicRequest(request, RATE_LIMITS.photoEvent))) {
+      return request.status(429, { detail: RATE_LIMIT_DETAIL });
+    }
     const body = request.body;
 
     let businessId = body.businessId?.trim() ?? "";

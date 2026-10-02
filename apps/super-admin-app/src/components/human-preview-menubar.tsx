@@ -17,6 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 /** Matches Human demo tabs: display / input / options / models (+ start video). */
 export type HumanMenuTab = "display" | "input" | "options" | "models" | null;
@@ -282,7 +283,7 @@ function MenuDropdown({
 
   useLayoutEffect(() => {
     if (!open) {
-      setCoords(null);
+      deferEffectRun(() => setCoords(null));
       return;
     }
     const update = () => {

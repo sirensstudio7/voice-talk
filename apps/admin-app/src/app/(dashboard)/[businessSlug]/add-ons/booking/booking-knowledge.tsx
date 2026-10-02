@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api, type KnowledgeEntry } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { CategoryBadge } from "../../knowledge/knowledge-shared";
 
 const BOOKING_CATEGORIES = ["General", "Hours", "Policies", "Payment", "Prep"] as const;
@@ -247,7 +248,7 @@ export function BookingKnowledge({
   }, [token, businessId]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
   }, [load]);
 
   const rows = useMemo(() => {

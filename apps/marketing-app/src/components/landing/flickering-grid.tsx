@@ -278,7 +278,6 @@ export const FlickeringGrid: React.FC<FlickeringGridProps> = ({
         textYRatio,
       );
 
-      const textCellCount = textMask.reduce((sum, value) => sum + value, 0);
       const squares = new Float32Array(cols * rows);
       for (let i = 0; i < squares.length; i++) {
         squares[i] = Math.random() * maxOpacity;

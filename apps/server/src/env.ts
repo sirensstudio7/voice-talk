@@ -32,10 +32,12 @@ const envSchema = z.object({
   /**
    * Max pooled Postgres connections per API instance. Keep
    * instances × DB_POOL_MAX under the plan's connection limit (Aiven free
-   * tier allows 20 total). Login and health checks use one extra connection
-   * at a time.
+   * tier allows 20 total). The default of 4 covers the worst case: two
+   * instances (8) plus the overlap while a rolling deploy runs both revisions
+   * (4 pods × 4 = 16), leaving room for the login client and tooling.
+   * Idle connections are held open deliberately — see db/client.ts.
    */
-  DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(4),
   /** Merchant admin app URL used for impersonation redirects. */
   MERCHANT_ADMIN_URL: z.string().default("http://localhost:6680"),
   /** S3-compatible object storage (Cloudflare R2 in production). */
@@ -50,10 +52,13 @@ const envSchema = z.object({
   ALLOWED_ORIGINS: z.string().optional(),
   /** Comma-separated production domains always allowed over HTTPS, e.g. lorescale.com */
   PRODUCTION_DOMAIN: z.string().default("lorescale.com"),
-  /** Public origin for photo QR download links (marketing app hosts /p/[token]). */
-  PHOTO_DOWNLOAD_BASE_URL: z.string().optional(),
   /** Public API origin used in QR codes. Phones cannot reach localhost. */
   PUBLIC_API_URL: z.string().optional(),
+  /** Analytics event retention (TKT-008). Vision events keep a longer history. */
+  ANALYTICS_RETENTION_DAYS: z.coerce.number().int().min(7).max(3650).default(180),
+  VISION_RETENTION_DAYS: z.coerce.number().int().min(7).max(3650).default(365),
+  /** Concurrent narration sockets per AI Present session (TKT-007). */
+  PRESENTER_MAX_VIEWERS_PER_SESSION: z.coerce.number().int().min(1).max(500).default(20),
 });
 
 export const env = envSchema.parse(process.env);
@@ -97,13 +102,6 @@ export function getPublicApiBaseUrl(): string {
 }
 
 /** QR links are scanned on customer phones — never emit localhost. */
-export function getPhotoDownloadBaseUrl(): string {
-  const configured = env.PHOTO_DOWNLOAD_BASE_URL?.trim();
-  if (configured && !isLocalhostUrl(configured)) {
-    return configured.replace(/\/+$/, "");
-  }
-  return getPublicApiBaseUrl();
-}
 
 export function getAllowedOrigins(): string[] | true {
   const raw = env.ALLOWED_ORIGINS?.trim();

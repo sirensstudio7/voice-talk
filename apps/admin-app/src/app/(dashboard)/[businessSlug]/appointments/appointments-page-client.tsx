@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDaysIcon,
   PhoneIcon,
@@ -14,6 +14,7 @@ import { PageHeader, StatCard } from "@/components/ui";
 import { api, type Appointment } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatFilterDateLabel, parseApiDate } from "@/lib/dates";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 function formatTimeRange(startsAt: string, endsAt: string) {
   const start = parseApiDate(startsAt);
@@ -143,7 +144,7 @@ export function AppointmentsPageClient() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token || !business) return;
     setLoading(true);
     try {
@@ -151,10 +152,10 @@ export function AppointmentsPageClient() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, business, selectedDate]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
     const interval = window.setInterval(() => {
       if (!token || !business) return;
       void api
@@ -162,7 +163,7 @@ export function AppointmentsPageClient() {
         .then(setAppointments);
     }, 15000);
     return () => window.clearInterval(interval);
-  }, [token, business, selectedDate]);
+  }, [load, token, business, selectedDate]);
 
   const groups = useMemo(() => groupByDate(appointments), [appointments]);
 

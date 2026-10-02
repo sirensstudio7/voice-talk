@@ -29,6 +29,7 @@ import {
 } from "@/lib/audience-speech";
 import { useAuth } from "@/lib/auth";
 import { DEFAULT_TEMPLATE_ID, getAssistantTemplate } from "@/lib/assistant-templates";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import { PresenterPcmPlayer, buildPresenterWsUrl } from "@/lib/presenter-pcm";
 
 const PptxDeckViewer = dynamic(
@@ -266,9 +267,11 @@ export function LiveSessionClient({
   const finishingMicRef = useRef(false);
   const [transcribing, setTranscribing] = useState(false);
 
-  if (!playerRef.current) {
-    playerRef.current = new PresenterPcmPlayer();
-  }
+  useEffect(() => {
+    if (!playerRef.current) {
+      playerRef.current = new PresenterPcmPlayer();
+    }
+  }, []);
 
   const clearPoseTimer = useCallback(() => {
     if (poseTimerRef.current) {
@@ -332,8 +335,10 @@ export function LiveSessionClient({
     talkGestureKeyRef.current = "";
     minProgressRef.current = 0;
     clearPoseTimer();
-    setAvatarMode("idle");
-    setMouthOpen(0);
+    deferEffectRun(() => {
+      setAvatarMode("idle");
+      setMouthOpen(0);
+    });
   }, [sessionId, clearPoseTimer]);
 
   const load = useCallback(async (opts?: { force?: boolean }) => {
@@ -370,7 +375,8 @@ export function LiveSessionClient({
   }, [load]);
 
   useEffect(() => {
-    if (!detail || detail.session.status === "completed") return;
+    const sessionStatus = detail?.session.status;
+    if (!sessionStatus || sessionStatus === "completed") return;
     const id = window.setInterval(() => void load(), 4000);
     return () => window.clearInterval(id);
   }, [detail?.session.status, load]);
@@ -489,10 +495,12 @@ export function LiveSessionClient({
     });
   }, [business, isShare, sessionId, shareToken, token]);
 
-  finishStageRef.current = finishStage;
+  useEffect(() => {
+    finishStageRef.current = finishStage;
+  }, [finishStage]);
 
   useEffect(() => {
-    if (isQnaStage) setAskOpen(true);
+    if (isQnaStage) deferEffectRun(() => setAskOpen(true));
   }, [isQnaStage]);
 
   useEffect(() => {
@@ -690,7 +698,7 @@ export function LiveSessionClient({
 
   useEffect(() => {
     if (!isQnaStage || stage === "thinking" || stage === "answering") {
-      stopListening({ skipSubmit: true });
+      deferEffectRun(() => stopListening({ skipSubmit: true }));
     }
   }, [isQnaStage, stage, stopListening]);
 

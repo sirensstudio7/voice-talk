@@ -44,6 +44,7 @@ import { api, type KnowledgeEntry } from "@/lib/api";
 import { adminPath } from "@/lib/admin-path";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 import {
   filterKnowledgeImportFiles,
@@ -240,7 +241,7 @@ export function KnowledgePageClient() {
   const emailMatches =
     confirmEmail.trim().toLowerCase() === confirmEmailPhrase;
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token || !business) return;
     setLoading(true);
     try {
@@ -248,11 +249,11 @@ export function KnowledgePageClient() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, business]);
 
   useEffect(() => {
-    void load();
-  }, [token, business]);
+    deferEffectRun(load);
+  }, [load]);
 
   const onImportFiles = useCallback(
     async (rawFiles: FileList | File[] | null) => {

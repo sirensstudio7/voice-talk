@@ -7,6 +7,7 @@ import { nonEmptyString, optionalBoolean, optionalString } from "../../http/vali
 import { deleteBusinessAsOwner } from "../../services/delete-business.js";
 import { assertCanCreateWorkspace } from "../../services/entitlement.js";
 import { buildOnboardingAiRules, DEFAULT_ASSISTANT_AVATAR_MODEL, DEFAULT_ASSISTANT_NAME, DEFAULT_VOICE_GENDER, DEFAULT_VOICE_PRESET, defaultAiRulesValues, isValidSlug, slugSuggestions } from "../../services/onboarding.js";
+import { invalidateMenuCacheForBusiness } from "../../services/menu-cache.js";
 import { listBusinessesForUser } from "../../services/user-businesses.js";
 import { ALLOWED_IMAGE_TYPES, deleteFromStorage, MAX_UPLOAD_BYTES, uploadToStorage } from "../../storage/index.js";
 import { readUploadedFile } from "../../http/multipart.js";
@@ -192,6 +193,7 @@ export async function registerAdminBusinessRoutes(app: Elysia): Promise<void> {
         where: eq(businesses.id, businessId),
       });
 
+      invalidateMenuCacheForBusiness(businessId);
       return {
         business: businessOut(updatedBusiness!),
         ai_rules: aiRulesOut(rules!),
@@ -220,6 +222,7 @@ export async function registerAdminBusinessRoutes(app: Elysia): Promise<void> {
         .set(updates)
         .where(eq(businesses.id, business.id))
         .returning();
+      invalidateMenuCacheForBusiness(business.id);
       return businessOut(updated!);
     } catch (err) {
       return sendAuthError(request, err);

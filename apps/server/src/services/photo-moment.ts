@@ -13,7 +13,6 @@ import { getPublicApiBaseUrl } from "../env.js";
 import {
   createSignedDownloadUrl,
   deleteStorageObject,
-  downloadFromStorage,
   PHOTO_BRANDING_BUCKET,
   PHOTO_BUCKET,
   uploadPrivateToStorage,
@@ -23,6 +22,7 @@ import {
   isPhotoMomentAvailable,
   photoSettingsOut,
 } from "./addon-entitlement.js";
+import { getBrandingAsset } from "./photo-asset-cache.js";
 
 function httpError(message: string, statusCode: number): Error & { statusCode: number } {
   const err = new Error(message) as Error & { statusCode: number };
@@ -79,11 +79,13 @@ async function applyBranding(buffer: Buffer, settings: PhotoSettings): Promise<B
   const meta = await image.metadata();
   const width = meta.width ?? 1280;
   const height = meta.height ?? 720;
+  // Branding assets are immutable per settings version; the cache key uses it.
+  const assetVersion = settings.updatedAt?.getTime() ?? 0;
 
   const composites: Array<{ input: Buffer; top: number; left: number }> = [];
 
   if (settings.frameUrl) {
-    const frameBuf = await downloadFromStorage(PHOTO_BRANDING_BUCKET, settings.frameUrl);
+    const frameBuf = await getBrandingAsset(settings.frameUrl, assetVersion);
     if (frameBuf) {
       const frame = await sharp(frameBuf).resize(width, height, { fit: "fill" }).png().toBuffer();
       composites.push({ input: frame, top: 0, left: 0 });
@@ -91,7 +93,7 @@ async function applyBranding(buffer: Buffer, settings: PhotoSettings): Promise<B
   }
 
   if (settings.logoUrl) {
-    const logoBuf = await downloadFromStorage(PHOTO_BRANDING_BUCKET, settings.logoUrl);
+    const logoBuf = await getBrandingAsset(settings.logoUrl, assetVersion);
     if (logoBuf) {
       const logoWidth = Math.max(64, Math.round(width * 0.18));
       const logo = await sharp(logoBuf)

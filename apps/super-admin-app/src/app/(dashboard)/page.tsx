@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { UsersTable } from "@/components/users-table";
 import { api, type DashboardResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 
 export default function DashboardPage() {
   const { token } = useAuth();
@@ -38,7 +39,7 @@ export default function DashboardPage() {
   }, [token, page, search, status]);
 
   useEffect(() => {
-    void load();
+    deferEffectRun(load);
     const id = setInterval(() => void load(), 5 * 60 * 1000);
     return () => clearInterval(id);
   }, [load]);

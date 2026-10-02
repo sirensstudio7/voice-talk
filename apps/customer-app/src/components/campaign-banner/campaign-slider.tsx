@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { trackCampaignBannerEvent } from "@/lib/campaign-banner-api";
+import { deferEffectRun } from "@/lib/defer-effect-run";
 import type { CampaignBannerConfig } from "@/store/kiosk-store";
 
 function cx(...parts: Array<string | false | null | undefined>) {
@@ -51,7 +52,7 @@ export function CampaignSlider({
   const multi = items.length > 1;
 
   useEffect(() => {
-    if (index >= items.length) setIndex(0);
+    if (index >= items.length) deferEffectRun(() => setIndex(0));
   }, [index, items.length]);
 
   useEffect(() => {

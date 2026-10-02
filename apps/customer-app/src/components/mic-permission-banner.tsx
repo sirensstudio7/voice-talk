@@ -4,7 +4,8 @@ import {
   ArrowTopRightOnSquareIcon,
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
-import { useEffect, useState } from "react";
+
+import { useIsClient } from "@/lib/use-is-client";
 
 function isEmbeddedPreviewBrowser(): boolean {
   const ua = navigator.userAgent;
@@ -12,11 +13,8 @@ function isEmbeddedPreviewBrowser(): boolean {
 }
 
 export function MicPermissionBanner() {
-  const [show, setShow] = useState(false);
-
-  useEffect(() => {
-    setShow(isEmbeddedPreviewBrowser());
-  }, []);
+  const isClient = useIsClient();
+  const show = isClient && isEmbeddedPreviewBrowser();
 
   if (!show) return null;
 

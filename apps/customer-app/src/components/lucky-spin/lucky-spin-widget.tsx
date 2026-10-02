@@ -4,6 +4,8 @@ import { ArrowPathIcon } from "@heroicons/react/24/outline";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
+import { useIsClient } from "@/lib/use-is-client";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const ITEM_SIZE = 168;
 const ITEM_GAP = 20;
@@ -193,27 +195,35 @@ type ConfettiPiece = {
   round: boolean;
 };
 
+/**
+ * Deterministic 0..1 value for a (burst, index, field) tuple. Rendering must
+ * stay pure (no Math.random), and every burst gets its own pseudo-random layout.
+ */
+function confettiRandom(seed: number, index: number, field: number): number {
+  let hash = Math.imul(seed + 1, 0x9e3779b1) + Math.imul(index + 1, 0x85ebca6b) + field;
+  hash = Math.imul(hash ^ (hash >>> 15), 0x2c1b3c6d);
+  hash = Math.imul(hash ^ (hash >>> 13), 0x297a2d39);
+  hash ^= hash >>> 16;
+  return (hash >>> 0) / 4294967296;
+}
+
 function WinConfetti({ burstKey }: { burstKey: number }) {
-  const [mounted, setMounted] = useState(false);
+  const isClient = useIsClient();
   const pieces = useMemo<ConfettiPiece[]>(() => {
     return Array.from({ length: 100 }, (_, i) => ({
       id: `${burstKey}-${i}`,
-      left: Math.random() * 100,
-      delay: Math.random() * 0.5,
-      duration: 2.8 + Math.random() * 2.2,
-      size: 8 + Math.random() * 10,
+      left: confettiRandom(burstKey, i, 1) * 100,
+      delay: confettiRandom(burstKey, i, 2) * 0.5,
+      duration: 2.8 + confettiRandom(burstKey, i, 3) * 2.2,
+      size: 8 + confettiRandom(burstKey, i, 4) * 10,
       color: CONFETTI_COLORS[i % CONFETTI_COLORS.length]!,
-      drift: (Math.random() - 0.5) * 240,
-      rotate: 360 + Math.random() * 720,
-      round: Math.random() > 0.5,
+      drift: (confettiRandom(burstKey, i, 5) - 0.5) * 240,
+      rotate: 360 + confettiRandom(burstKey, i, 6) * 720,
+      round: confettiRandom(burstKey, i, 7) > 0.5,
     }));
   }, [burstKey]);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) return null;
+  if (!isClient) return null;
 
   return createPortal(
     <div
