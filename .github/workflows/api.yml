@@ -25,10 +25,12 @@ concurrency:
 
 jobs:
   checks:
-    name: Lint, typecheck, tests
+    name: Lint, typecheck, tests, image
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
+      packages: write
     services:
       postgres:
         image: postgres:17-alpine
@@ -58,6 +60,9 @@ jobs:
       SMOKE_TESTS: "1"
       PLATFORM_ADMIN_EMAIL: superadmin@lorescale.com
       PLATFORM_ADMIN_PASSWORD: superadmin123
+      # Publish on main, v* tags and manual dispatches; pull requests smoke a
+      # local image instead. Computed once so every step gates on one decision.
+      PUBLISH_IMAGE: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -78,7 +83,31 @@ jobs:
         working-directory: apps/server
         run: bun test
       - uses: docker/setup-buildx-action@v4
+      - name: Log in to GHCR
+        if: env.PUBLISH_IMAGE == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker metadata
+        if: env.PUBLISH_IMAGE == 'true'
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+      # One build per run. PRs load the image locally to smoke it; releases
+      # push it, then pull the published digest to smoke exactly what shipped
+      # (a second rebuild could differ from the tested artifact). Only one of
+      # these steps runs, so the GHA cache is exported once per run as well.
       - name: Build image
+        if: env.PUBLISH_IMAGE != 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -90,60 +119,8 @@ jobs:
             GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=api-image
           cache-to: type=gha,scope=api-image,mode=max
-      - name: Smoke the image
-        run: |
-          docker run -d --name api-image --network host \
-            -e DATABASE_URL="$DATABASE_URL" \
-            -e REDIS_URL="$REDIS_URL" \
-            -e PORT=8098 \
-            -e S3_ENDPOINT=http://127.0.0.1:9 \
-            -e S3_BUCKET=ci \
-            -e S3_ACCESS_KEY_ID=ci \
-            -e S3_SECRET_ACCESS_KEY=ci \
-            -e S3_PUBLIC_BASE_URL=http://127.0.0.1:9 \
-            -e PUBLIC_API_URL=https://api.example.com \
-            -e PLATFORM_ADMIN_EMAIL="$PLATFORM_ADMIN_EMAIL" \
-            -e PLATFORM_ADMIN_PASSWORD="$PLATFORM_ADMIN_PASSWORD" \
-            voicetalk-api:ci
-          for i in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:8098/health >/dev/null; then break; fi
-            sleep 1
-          done
-          curl -sf "http://127.0.0.1:8098/health?db=1" | grep -q '"db_online":true'
-          curl -sf "http://127.0.0.1:8098/health?db=1" | grep -q '"redis_online":true'
-          docker rm -f api-image
-
-  publish:
-    name: Publish image to GHCR
-    needs: checks
-    if: >-
-      github.event_name == 'workflow_dispatch'
-      || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=ref,event=branch
-            type=sha,format=short
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
-      - name: Build and push
+      - name: Build and push image
+        if: env.PUBLISH_IMAGE == 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -156,3 +133,34 @@ jobs:
             GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=api-image
           cache-to: type=gha,scope=api-image,mode=max
+      - name: Smoke the image
+        run: |
+          if [ "${{ env.PUBLISH_IMAGE }}" = "true" ]; then
+            IMAGE="ghcr.io/${{ github.repository }}:sha-${GITHUB_SHA::7}"
+            docker pull "$IMAGE"
+          else
+            IMAGE="voicetalk-api:ci"
+          fi
+          echo "Smoking $IMAGE"
+          docker run -d --name api-image --network host \
+            -e DATABASE_URL="$DATABASE_URL" \
+            -e REDIS_URL="$REDIS_URL" \
+            -e PORT=8098 \
+            -e S3_ENDPOINT=http://127.0.0.1:9 \
+            -e S3_BUCKET=ci \
+            -e S3_ACCESS_KEY_ID=ci \
+            -e S3_SECRET_ACCESS_KEY=ci \
+            -e S3_PUBLIC_BASE_URL=http://127.0.0.1:9 \
+            -e PUBLIC_API_URL=https://api.example.com \
+            -e PLATFORM_ADMIN_EMAIL="$PLATFORM_ADMIN_EMAIL" \
+            -e PLATFORM_ADMIN_PASSWORD="$PLATFORM_ADMIN_PASSWORD" \
+            "$IMAGE"
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8098/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -sf "http://127.0.0.1:8098/health?db=1" | grep -q '"db_online":true'
+          curl -sf "http://127.0.0.1:8098/health?db=1" | grep -q '"redis_online":true'
+      - name: Remove smoke container
+        if: always()
+        run: docker rm -f api-image 2>/dev/null || true
