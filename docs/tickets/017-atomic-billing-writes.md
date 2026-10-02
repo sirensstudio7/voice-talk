@@ -72,6 +72,12 @@ double credit, but the request still fails).
 - `ensurePeriodGrant`, `writeLedger`, `creditTopupOrder` and
   `ensureEntitlementForExistingUser` insert with `onConflictDoNothing()` and
   re-read (the last one was surfacing as a 23505 on concurrent first debits).
+- `ensurePeriodGrant` resolves (insert or re-read) the current-period grant
+  *before* clearing superseded lots, and never clears the row it resolved: the
+  old "zero every subscription lot, then insert" order could zero a grant a
+  concurrent caller had just created, losing the allowance with no charge (seen
+  in CI as granted 18100 / sum 100; covered by the concurrent period-grant test
+  in `tests/billing.test.ts`).
 - Lot scans/updates are ordered by `id` so concurrent transactions lock in a
   deterministic order; the entitlement auto-create is materialized before the
   debit transaction so its nested writes cannot self-block on our locks.

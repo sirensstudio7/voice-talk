@@ -23,10 +23,14 @@ async function migrate() {
       await sql.unsafe(schema);
       console.log(`Applied ${file}.`);
     } catch (err) {
-      const code =
-        err && typeof err === "object" && "code" in err
-          ? String((err as { code?: string }).code)
-          : "";
+      // Bun's PostgresError exposes the SQLSTATE ("23514", …) as `errno`;
+      // `code` is Bun's own class, e.g. "ERR_POSTGRES_SERVER_ERROR".
+      const source =
+        err && typeof err === "object"
+          ? (err as { errno?: unknown; code?: unknown })
+          : undefined;
+      const rawCode = source?.errno ?? source?.code;
+      const code = rawCode == null ? "" : String(rawCode);
       if (ALREADY_APPLIED.has(code)) {
         console.log(`Skipped ${file} (${code}; already applied).`);
         continue;

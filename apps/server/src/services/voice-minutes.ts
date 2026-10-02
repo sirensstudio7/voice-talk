@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { db, type DbClient } from "../db/client.js";
 import { postgresErrorCode } from "../db/errors.js";
 import { logger } from "../http/logger.js";
@@ -229,55 +229,39 @@ export async function ensurePeriodGrant(userId: string, database: DbClient = db)
 
   if (existing) {
     if (seconds > existing.grantedSeconds) {
-      const extra = seconds - existing.grantedSeconds;
-      await database
+      // Conditional update so two concurrent callers upgrading the same
+      // period grant cannot each add the delta.
+      const [upgraded] = await database
         .update(minuteGrants)
         .set({
           grantedSeconds: seconds,
-          remainingSeconds: existing.remainingSeconds + extra,
+          remainingSeconds: sql`${minuteGrants.remainingSeconds} + (${seconds} - ${minuteGrants.grantedSeconds})`,
         })
-        .where(eq(minuteGrants.id, existing.id));
-      await writeLedger(
-        {
-          userId,
-          grantId: existing.id,
-          type: "SUBSCRIPTION_GRANT",
-          deltaSeconds: extra,
-          idempotencyKey: `sub-upgrade:${sourceRef}:${seconds}`,
-          sourceRef,
-        },
-        database,
-      );
+        .where(
+          and(eq(minuteGrants.id, existing.id), lt(minuteGrants.grantedSeconds, seconds)),
+        )
+        .returning({ id: minuteGrants.id });
+      if (upgraded) {
+        await writeLedger(
+          {
+            userId,
+            grantId: existing.id,
+            type: "SUBSCRIPTION_GRANT",
+            deltaSeconds: seconds - existing.grantedSeconds,
+            idempotencyKey: `sub-upgrade:${sourceRef}:${seconds}`,
+            sourceRef,
+          },
+          database,
+        );
+      }
     }
     return;
   }
 
-  const stale = await database
-    .select()
-    .from(minuteGrants)
-    .where(and(eq(minuteGrants.userId, userId), eq(minuteGrants.kind, "subscription")))
-    .orderBy(asc(minuteGrants.id));
-  for (const lot of stale) {
-    if (lot.remainingSeconds <= 0) continue;
-    await database
-      .update(minuteGrants)
-      .set({ remainingSeconds: 0 })
-      .where(eq(minuteGrants.id, lot.id));
-    await writeLedger(
-      {
-        userId,
-        grantId: lot.id,
-        type: "EXPIRATION",
-        deltaSeconds: -lot.remainingSeconds,
-        idempotencyKey: `expire-period:${lot.id}`,
-        sourceRef: lot.sourceRef,
-      },
-      database,
-    );
-  }
-
-  // Conflict-safe: a concurrent instance may have inserted the same lot while
-  // this transaction waited on the unique index; re-read the winner.
+  // Insert (or re-read the winner) before clearing superseded periods. The old
+  // order — zero every subscription lot, then insert — could zero the grant a
+  // concurrent caller had just created (the check-then-zero raced the insert):
+  // the whole allowance vanished with no matching charge (TKT-017 CI failure).
   const [inserted] = await database
     .insert(minuteGrants)
     .values({
@@ -302,6 +286,36 @@ export async function ensurePeriodGrant(userId: string, database: DbClient = db)
       ),
     }));
   if (!created) return;
+
+  const stale = await database
+    .select()
+    .from(minuteGrants)
+    .where(
+      and(
+        eq(minuteGrants.userId, userId),
+        eq(minuteGrants.kind, "subscription"),
+        ne(minuteGrants.id, created.id),
+        gt(minuteGrants.remainingSeconds, 0),
+      ),
+    )
+    .orderBy(asc(minuteGrants.id));
+  for (const lot of stale) {
+    await database
+      .update(minuteGrants)
+      .set({ remainingSeconds: 0 })
+      .where(eq(minuteGrants.id, lot.id));
+    await writeLedger(
+      {
+        userId,
+        grantId: lot.id,
+        type: "EXPIRATION",
+        deltaSeconds: -lot.remainingSeconds,
+        idempotencyKey: `expire-period:${lot.id}`,
+        sourceRef: lot.sourceRef,
+      },
+      database,
+    );
+  }
 
   await writeLedger(
     {

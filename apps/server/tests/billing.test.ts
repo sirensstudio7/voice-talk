@@ -204,4 +204,31 @@ suite("voice-minute debit", () => {
     expect(remaining + charged).toBe(granted);
     expect(usage.length).toBeLessThanOrEqual(2);
   });
+
+  test("concurrent period grants are not zeroed by a racing cleanup (TKT-017)", async () => {
+    const { db } = await import("../src/db/client.js");
+    const { minuteGrants, minuteLedger } = await import("../src/db/schema.js");
+    const { ensurePeriodGrant } = await import("../src/services/voice-minutes.js");
+
+    // Fresh account: every caller lazily creates the plan entitlement and the
+    // period grant. The cleanup that clears superseded lots must never see a
+    // concurrently inserted current-period grant as stale — doing so zeroes the
+    // whole allowance with no charge (the CI failure: granted 18100, sum 100).
+    const userId = await createProbeUser();
+    await Promise.all(Array.from({ length: 8 }, () => ensurePeriodGrant(userId)));
+
+    const grants = await db
+      .select()
+      .from(minuteGrants)
+      .where(and(eq(minuteGrants.userId, userId), eq(minuteGrants.kind, "subscription")));
+    expect(grants).toHaveLength(1);
+    expect(grants[0]!.grantedSeconds).toBeGreaterThan(0);
+    expect(grants[0]!.remainingSeconds).toBe(grants[0]!.grantedSeconds);
+
+    const expirations = await db
+      .select()
+      .from(minuteLedger)
+      .where(and(eq(minuteLedger.userId, userId), eq(minuteLedger.type, "EXPIRATION")));
+    expect(expirations).toHaveLength(0);
+  });
 });

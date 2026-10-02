@@ -76,6 +76,11 @@ suite("public rate limits", () => {
 
   test("demo requests are capped per IP", async () => {
     const ip = uniqueIp();
+    // A future date, computed rather than hardcoded: the route rejects past
+    // dates, so a fixed literal goes stale and the test stops exercising 201s.
+    const preferredDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
     const body = {
       email: `demo-${randomUUID()}@example.test`,
       phone: "+620000000000",
@@ -84,7 +89,7 @@ suite("public rate limits", () => {
       country: "Indonesia",
       business_industry: "F&B",
       branch_total: 1,
-      preferred_date: "2026-10-01",
+      preferred_date: preferredDate,
       preferred_time: "10:00",
     };
     const statuses: number[] = [];

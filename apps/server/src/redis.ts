@@ -11,8 +11,57 @@ const log = logger.child({ component: "redis" });
  *
  * The URL selects the transport: `rediss://` for managed services such as
  * Upstash, `redis://` for local development.
+ *
+ * Bun can give up reconnecting after the server closes the socket (managed
+ * Redis closes idle connections) and then no command ever succeeds again: rate
+ * limits fail open and every job tick logs `redis.job_lock_unavailable`. The
+ * onclose handler below revives the client with capped backoff, the same
+ * workaround the kiosk bus applies to its subscriber.
  */
 export const redis = new RedisClient(env.REDIS_URL);
+
+const RECONNECT_MIN_MS = 500;
+const RECONNECT_MAX_MS = 30_000;
+
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectDelayMs = RECONNECT_MIN_MS;
+let closing = false;
+let sawClose = false;
+
+function scheduleReconnect(): void {
+  if (closing || reconnectTimer) return;
+  const delay = reconnectDelayMs;
+  reconnectDelayMs = Math.min(reconnectDelayMs * 2, RECONNECT_MAX_MS);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (closing) return;
+    redis.connect().then(
+      () => {
+        reconnectDelayMs = RECONNECT_MIN_MS;
+      },
+      (err) => {
+        log.warn({ err }, "redis.reconnect_failed");
+        scheduleReconnect();
+      },
+    );
+  }, delay);
+}
+
+redis.onclose = (error) => {
+  if (closing) return;
+  sawClose = true;
+  log.warn({ err: error }, "redis.connection_closed");
+  scheduleReconnect();
+};
+
+redis.onconnect = () => {
+  reconnectDelayMs = RECONNECT_MIN_MS;
+  if (sawClose) {
+    sawClose = false;
+    inc("redis.reconnects_total");
+    log.info("redis.reconnected");
+  }
+};
 
 const RATE_LIMIT_SCRIPT = `
 local n = redis.call('INCR', KEYS[1])
@@ -113,5 +162,10 @@ export async function checkRedisHealth(force = false): Promise<RedisHealth> {
 
 /** Closes the shared Redis connection during shutdown. */
 export function closeRedis(): void {
+  closing = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   redis.close();
 }
